@@ -60,3 +60,6 @@ flutter --version
   - registra venta/items/pagos
   - descuenta inventario
   - crea movimientos y auditoria
+
+
+  flutter run -d afc25562 --debug
