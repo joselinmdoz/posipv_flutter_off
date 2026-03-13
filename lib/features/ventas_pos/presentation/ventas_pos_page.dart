@@ -1432,7 +1432,9 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
           ? await ds.exportIpvReportPdf(report.reportId)
           : await ds.exportIpvReportCsv(report.reportId);
       _show('IPV exportado $format en: $path');
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('IPV export failed (ventas_pos_page). $e');
+      debugPrintStack(stackTrace: st);
       _show('No se pudo exportar IPV: $e');
     }
   }

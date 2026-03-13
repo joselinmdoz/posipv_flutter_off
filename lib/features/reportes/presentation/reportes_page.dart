@@ -138,7 +138,9 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
         _ipvReports = rows;
         _loadingIpv = false;
       });
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('IPV export failed (reportes/reportes_page). $e');
+      debugPrintStack(stackTrace: st);
       if (!mounted) {
         return;
       }

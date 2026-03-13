@@ -120,26 +120,6 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
     );
   }
 
-  int _gridCount(double width) {
-    if (width > 1250) {
-      return 3;
-    }
-    if (width > 820) {
-      return 2;
-    }
-    return 1;
-  }
-
-  double _mainExtentByCount(int count) {
-    if (count == 1) {
-      return 106;
-    }
-    if (count == 2) {
-      return 110;
-    }
-    return 114;
-  }
-
   Future<void> _showProductQr(Product product) async {
     final String qrData = buildProductQrData(product);
 
@@ -352,27 +332,22 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
                             child: Text('No hay productos. Usa + para crear.')),
                       ],
                     )
-                  : LayoutBuilder(
-                      builder:
-                          (BuildContext context, BoxConstraints constraints) {
-                        final int count = _gridCount(constraints.maxWidth);
-                        return GridView.builder(
-                          padding: const EdgeInsets.fromLTRB(8, 10, 8, 90),
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          itemCount: _products.length,
-                          gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: count,
-                            mainAxisSpacing: 8,
-                            crossAxisSpacing: 8,
-                            mainAxisExtent: _mainExtentByCount(count),
-                          ),
-                          itemBuilder: (_, int index) {
-                            return _buildProductCard(_products[index]);
-                          },
-                        );
-                      },
+                  : GridView.builder(
+                    cacheExtent: 200,
+                    padding: const EdgeInsets.fromLTRB(8, 10, 8, 90),
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    itemCount: _products.length,
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      mainAxisSpacing: 8,
+                      crossAxisSpacing: 8,
+                      childAspectRatio: 1.5,
                     ),
+                    itemBuilder: (_, int index) {
+                      return _buildProductCard(_products[index]);
+                    },
+                  ),
             ),
     );
   }

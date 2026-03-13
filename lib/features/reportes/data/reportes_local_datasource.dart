@@ -706,111 +706,136 @@ class ReportesLocalDataSource {
       return null;
     }
 
-    final String terminalId = header.read<String>('terminal_id');
-    final String warehouseId = header.read<String>('warehouse_id');
+    final String terminalId = _readTextCell(
+      header,
+      'terminal_id',
+      fallback: '',
+    );
+    final String warehouseId = _readTextCell(
+      header,
+      'warehouse_id',
+      fallback: '',
+    );
     final DateTime openedAt = header.read<DateTime>('opened_at');
     final DateTime? closedAt = header.readNullable<DateTime>('closed_at');
     final String status =
         (header.readNullable<String>('status') ?? 'open').trim().toLowerCase();
 
-    final DateTime movementStart = await _resolveIpvMovementStart(
-      terminalId: terminalId,
-      openedAt: openedAt,
-      currentReportId: id,
-    );
+    final DateTime movementStart = terminalId.isEmpty
+        ? openedAt
+        : await _resolveIpvMovementStart(
+            terminalId: terminalId,
+            openedAt: openedAt,
+            currentReportId: id,
+          );
     final DateTime movementEnd = closedAt ?? DateTime.now();
 
-    final List<IpvReportLine> baseLines = await (_db.select(_db.ipvReportLines)
-          ..where((IpvReportLines tbl) => tbl.reportId.equals(id)))
-        .get();
-    final Map<String, _IpvAgg> byProduct = <String, _IpvAgg>{
-      for (final IpvReportLine line in baseLines)
-        line.productId: _IpvAgg(
-          startQty: line.startQty,
-          salePriceCents: line.salePriceCents,
-        ),
-    };
-
-    final List<QueryRow> movementRows = await _db.customSelect(
+    final List<QueryRow> baseLineRows = await _db.customSelect(
       '''
       SELECT
-        sm.product_id AS product_id,
-        COALESCE(SUM(
-          CASE
-            WHEN (
-              (sm.type = 'in')
-              OR (sm.type = 'adjust' AND sm.qty >= 0)
-            )
-            AND LOWER(COALESCE(sm.reason_code, '')) <> 'sale'
-              THEN ABS(sm.qty)
-            ELSE 0
-          END
-        ), 0) AS entries_qty,
-        COALESCE(SUM(
-          CASE
-            WHEN (
-              (sm.type = 'out')
-              OR (sm.type = 'adjust' AND sm.qty < 0)
-            )
-            AND NOT (
-              LOWER(COALESCE(sm.reason_code, '')) = 'sale'
-              OR LOWER(COALESCE(sm.ref_type, '')) IN ('sale', 'sale_pos', 'sale_direct')
-              OR LOWER(COALESCE(sm.movement_source, '')) IN ('pos', 'direct_sale')
-            )
-              THEN ABS(sm.qty)
-            ELSE 0
-          END
-        ), 0) AS outputs_qty,
-        COALESCE(SUM(
-          CASE
-            WHEN (
-              (sm.type = 'out')
-              OR (sm.type = 'adjust' AND sm.qty < 0)
-            )
-            AND (
-              LOWER(COALESCE(sm.reason_code, '')) = 'sale'
-              OR LOWER(COALESCE(sm.ref_type, '')) IN ('sale', 'sale_pos', 'sale_direct')
-              OR LOWER(COALESCE(sm.movement_source, '')) IN ('pos', 'direct_sale')
-            )
-              THEN ABS(sm.qty)
-            ELSE 0
-          END
-        ), 0) AS sales_qty
-      FROM stock_movements sm
-      WHERE sm.warehouse_id = ?
-        AND sm.created_at > ?
-        AND sm.created_at <= ?
-      GROUP BY sm.product_id
+        report_id,
+        product_id,
+        COALESCE(start_qty, 0) AS start_qty,
+        COALESCE(entries_qty, 0) AS entries_qty,
+        COALESCE(outputs_qty, 0) AS outputs_qty,
+        COALESCE(sales_qty, 0) AS sales_qty,
+        COALESCE(final_qty, 0) AS final_qty,
+        COALESCE(sale_price_cents, 0) AS sale_price_cents,
+        COALESCE(total_amount_cents, 0) AS total_amount_cents
+      FROM ipv_report_lines
+      WHERE report_id = ?
       ''',
-      variables: <Variable<Object>>[
-        Variable<String>(warehouseId),
-        Variable<DateTime>(movementStart),
-        Variable<DateTime>(movementEnd),
-      ],
+      variables: <Variable<Object>>[Variable<String>(id)],
     ).get();
+    final Map<String, _IpvAgg> byProduct = <String, _IpvAgg>{
+      for (final QueryRow row in baseLineRows)
+        if (_readTextCell(row, 'product_id', fallback: '').isNotEmpty)
+          _readTextCell(row, 'product_id', fallback: ''): _IpvAgg(
+            startQty: (row.data['start_qty'] as num?)?.toDouble() ?? 0,
+            salePriceCents:
+                (row.data['sale_price_cents'] as num?)?.toInt() ?? 0,
+          ),
+    };
+
+    final Set<String> productIds = byProduct.keys.toSet();
+    final Map<String, _IpvProductSnapshot> productById =
+        await _loadIpvProductSnapshots(productIds);
+
+    final List<QueryRow> movementRows = warehouseId.isEmpty
+        ? <QueryRow>[]
+        : await _db.customSelect(
+            '''
+            SELECT
+              sm.product_id AS product_id,
+              COALESCE(SUM(
+                CASE
+                  WHEN (
+                    (sm.type = 'in')
+                    OR (sm.type = 'adjust' AND sm.qty >= 0)
+                  )
+                  AND LOWER(COALESCE(sm.reason_code, '')) <> 'sale'
+                    THEN ABS(sm.qty)
+                  ELSE 0
+                END
+              ), 0) AS entries_qty,
+              COALESCE(SUM(
+                CASE
+                  WHEN (
+                    (sm.type = 'out')
+                    OR (sm.type = 'adjust' AND sm.qty < 0)
+                  )
+                  AND NOT (
+                    LOWER(COALESCE(sm.reason_code, '')) = 'sale'
+                    OR LOWER(COALESCE(sm.ref_type, '')) IN ('sale', 'sale_pos', 'sale_direct')
+                    OR LOWER(COALESCE(sm.movement_source, '')) IN ('pos', 'direct_sale')
+                  )
+                    THEN ABS(sm.qty)
+                  ELSE 0
+                END
+              ), 0) AS outputs_qty,
+              COALESCE(SUM(
+                CASE
+                  WHEN (
+                    (sm.type = 'out')
+                    OR (sm.type = 'adjust' AND sm.qty < 0)
+                  )
+                  AND (
+                    LOWER(COALESCE(sm.reason_code, '')) = 'sale'
+                    OR LOWER(COALESCE(sm.ref_type, '')) IN ('sale', 'sale_pos', 'sale_direct')
+                    OR LOWER(COALESCE(sm.movement_source, '')) IN ('pos', 'direct_sale')
+                  )
+                    THEN ABS(sm.qty)
+                  ELSE 0
+                END
+              ), 0) AS sales_qty
+            FROM stock_movements sm
+            WHERE sm.warehouse_id = ?
+              AND sm.created_at > ?
+              AND sm.created_at <= ?
+            GROUP BY sm.product_id
+            ''',
+            variables: <Variable<Object>>[
+              Variable<String>(warehouseId),
+              Variable<DateTime>(movementStart),
+              Variable<DateTime>(movementEnd),
+            ],
+          ).get();
     for (final QueryRow row in movementRows) {
-      final String productId = row.read<String>('product_id');
+      final String productId = _readTextCell(row, 'product_id', fallback: '');
+      if (productId.isEmpty) {
+        continue;
+      }
       final _IpvAgg agg = byProduct.putIfAbsent(productId, () => _IpvAgg());
       agg.entriesQty = (row.data['entries_qty'] as num?)?.toDouble() ?? 0;
       agg.outputsQty = (row.data['outputs_qty'] as num?)?.toDouble() ?? 0;
       agg.salesQty = (row.data['sales_qty'] as num?)?.toDouble() ?? 0;
     }
 
-    final Set<String> productIds = byProduct.keys.toSet();
-    final Map<String, Product> productById = productIds.isEmpty
-        ? <String, Product>{}
-        : {
-            for (final Product row in await (_db.select(_db.products)
-                  ..where((Products tbl) => tbl.id.isIn(productIds)))
-                .get())
-              row.id: row,
-          };
-
     int totalAmountCents = 0;
     final List<IpvReportLineStat> lines = <IpvReportLineStat>[];
     for (final String productId in byProduct.keys) {
       final _IpvAgg agg = byProduct[productId]!;
-      final Product? product = productById[productId];
+      final _IpvProductSnapshot? product = productById[productId];
       final int salePriceCents = agg.salePriceCents ?? product?.priceCents ?? 0;
       final double finalQty =
           agg.startQty + agg.entriesQty - agg.outputsQty - agg.salesQty;
@@ -837,7 +862,7 @@ class ReportesLocalDataSource {
 
     final IpvReportSummaryStat summary = IpvReportSummaryStat(
       reportId: id,
-      sessionId: header.read<String>('session_id'),
+      sessionId: _readTextCell(header, 'session_id', fallback: '-'),
       terminalName:
           (header.readNullable<String>('terminal_name') ?? 'TPV').trim(),
       currencySymbol:
@@ -880,109 +905,138 @@ class ReportesLocalDataSource {
   }
 
   Future<String> exportIpvReportCsv(String reportId) async {
-    final IpvReportDetailStat? detail = await loadIpvReportDetail(reportId);
-    if (detail == null) {
-      throw Exception('No se encontro el IPV solicitado.');
-    }
-    final _IpvExportMeta meta = await _loadIpvExportMeta(reportId);
-    final Directory baseDir = await _resolveExportDir(detail.summary);
-    final String fileName = _buildIpvExportFileName(
-      detail.summary,
-      extension: 'csv',
-    );
-    final File file = File(p.join(baseDir.path, fileName));
+    try {
+      final IpvReportDetailStat? detail = await loadIpvReportDetail(reportId);
+      if (detail == null) {
+        throw Exception('No se encontro el IPV solicitado.');
+      }
+      final _IpvExportMeta meta = await _loadIpvExportMeta(reportId);
+      final Directory baseDir = await _resolveExportDir(detail.summary);
+      final String fileName = _buildIpvExportFileName(
+        detail.summary,
+        extension: 'csv',
+      );
+      final File file = File(p.join(baseDir.path, fileName));
 
-    final _IpvExecutiveSummary executive = _buildIpvExecutiveSummary(detail);
-    final StringBuffer csv = StringBuffer()
-      ..writeln('Reporte,IPV')
-      ..writeln('TPV,${_csvCell(detail.summary.terminalName)}')
-      ..writeln('TPV ID,${_csvCell(meta.terminalId)}')
-      ..writeln('Almacen,${_csvCell(meta.warehouseName)}')
-      ..writeln('Almacen ID,${_csvCell(meta.warehouseId)}')
-      ..writeln('Sesion,${_csvCell(detail.summary.sessionId)}')
-      ..writeln('Empleado,${_csvCell(meta.employeesLabel)}')
-      ..writeln('Estado,${_csvCell(detail.summary.status)}')
-      ..writeln(
-          'Apertura,${_csvCell(_formatDateTimeHuman(detail.summary.openedAt))}')
-      ..writeln(
-        'Cierre,${_csvCell(detail.summary.closedAt == null ? '-' : _formatDateTimeHuman(detail.summary.closedAt!))}',
-      )
-      ..writeln('Moneda,${_csvCell(detail.summary.currencySymbol)}')
-      ..writeln('Total ventas,${_formatQtyCsv(executive.totalSalesQty)}')
-      ..writeln('Total entradas,${_formatQtyCsv(executive.totalEntriesQty)}')
-      ..writeln('Total salidas,${_formatQtyCsv(executive.totalOutputsQty)}')
-      ..writeln(
-        'Importe total,${(executive.totalSalesAmountCents / 100).toStringAsFixed(2)}',
-      )
-      ..writeln('');
-    if (meta.paymentTotalsByMethod.isNotEmpty) {
-      csv.writeln('Metodo,Monto');
-      for (final MapEntry<String, int> entry
-          in meta.paymentTotalsByMethod.entries) {
+      final _IpvExecutiveSummary executive = _buildIpvExecutiveSummary(detail);
+      final StringBuffer csv = StringBuffer()
+        ..writeln('Reporte,IPV')
+        ..writeln('TPV,${_csvCell(detail.summary.terminalName)}')
+        ..writeln('TPV ID,${_csvCell(meta.terminalId)}')
+        ..writeln('Almacen,${_csvCell(meta.warehouseName)}')
+        ..writeln('Almacen ID,${_csvCell(meta.warehouseId)}')
+        ..writeln('Sesion,${_csvCell(detail.summary.sessionId)}')
+        ..writeln('Empleado,${_csvCell(meta.employeesLabel)}')
+        ..writeln('Estado,${_csvCell(detail.summary.status)}')
+        ..writeln(
+            'Apertura,${_csvCell(_formatDateTimeHuman(detail.summary.openedAt))}')
+        ..writeln(
+          'Cierre,${_csvCell(detail.summary.closedAt == null ? '-' : _formatDateTimeHuman(detail.summary.closedAt!))}',
+        )
+        ..writeln('Moneda,${_csvCell(detail.summary.currencySymbol)}')
+        ..writeln('Total ventas,${_formatQtyCsv(executive.totalSalesQty)}')
+        ..writeln('Total entradas,${_formatQtyCsv(executive.totalEntriesQty)}')
+        ..writeln('Total salidas,${_formatQtyCsv(executive.totalOutputsQty)}')
+        ..writeln(
+          'Importe total,${(executive.totalSalesAmountCents / 100).toStringAsFixed(2)}',
+        )
+        ..writeln('');
+      if (meta.paymentTotalsByMethod.isNotEmpty) {
+        csv.writeln('Metodo,Monto');
+        for (final MapEntry<String, int> entry
+            in meta.paymentTotalsByMethod.entries) {
+          csv.writeln(
+            '${_csvCell(_paymentMethodLabel(entry.key))},${(entry.value / 100).toStringAsFixed(2)}',
+          );
+        }
+        csv.writeln('');
+      }
+      csv.writeln(
+        'Producto,Cod,Ini,Ent,Sal,Ven,Tot,Fin,Precio,Importe',
+      );
+      for (final IpvReportLineStat row in detail.lines) {
+        final double totalBeforeSales =
+            row.startQty + row.entriesQty - row.outputsQty;
+        final int salesAmountCents =
+            (row.salesQty * row.salePriceCents).round();
         csv.writeln(
-          '${_csvCell(_paymentMethodLabel(entry.key))},${(entry.value / 100).toStringAsFixed(2)}',
+          '${_csvCell(row.productName)},${_csvCell(row.sku)},${_formatQtyCsv(row.startQty)},${_formatQtyCsv(row.entriesQty)},${_formatQtyCsv(row.outputsQty)},${_formatQtyCsv(row.salesQty)},${_formatQtyCsv(totalBeforeSales)},${_formatQtyCsv(row.finalQty)},${(row.salePriceCents / 100).toStringAsFixed(2)},${(salesAmountCents / 100).toStringAsFixed(2)}',
         );
       }
-      csv.writeln('');
-    }
-    csv.writeln(
-      'Producto,Cod,Ini,Ent,Sal,Ven,Tot,Fin,Precio,Importe',
-    );
-    for (final IpvReportLineStat row in detail.lines) {
-      final double totalBeforeSales =
-          row.startQty + row.entriesQty - row.outputsQty;
-      final int salesAmountCents = (row.salesQty * row.salePriceCents).round();
       csv.writeln(
-        '${_csvCell(row.productName)},${_csvCell(row.sku)},${_formatQtyCsv(row.startQty)},${_formatQtyCsv(row.entriesQty)},${_formatQtyCsv(row.outputsQty)},${_formatQtyCsv(row.salesQty)},${_formatQtyCsv(totalBeforeSales)},${_formatQtyCsv(row.finalQty)},${(row.salePriceCents / 100).toStringAsFixed(2)},${(salesAmountCents / 100).toStringAsFixed(2)}',
+        ',,,,,,,,TOTAL IMPORTE,${(executive.totalSalesAmountCents / 100).toStringAsFixed(2)}',
       );
-    }
-    csv.writeln(
-      ',,,,,,,,TOTAL IMPORTE,${(executive.totalSalesAmountCents / 100).toStringAsFixed(2)}',
-    );
 
-    await file.writeAsString(csv.toString(), encoding: utf8, flush: true);
-    return file.path;
+      await file.writeAsString(csv.toString(), encoding: utf8, flush: true);
+      return file.path;
+    } catch (e, st) {
+      await _writeIpvExportDiagnostic(
+        reportId: reportId,
+        format: 'csv',
+        error: e,
+        stackTrace: st,
+      );
+      stderr.writeln('IPV CSV export failed. reportId=$reportId error=$e');
+      stderr.writeln(st);
+      rethrow;
+    }
   }
 
   Future<String> exportIpvReportPdf(String reportId) async {
-    final IpvReportDetailStat? loaded = await loadIpvReportDetail(reportId);
-    if (loaded == null) {
-      throw Exception('No se encontro el IPV solicitado.');
-    }
-    final IpvReportDetailStat detail = loaded;
-    final _IpvExportMeta meta = await _loadIpvExportMeta(reportId);
-    final Directory baseDir = await _resolveExportDir(detail.summary);
-    final String fileName = _buildIpvExportFileName(
-      detail.summary,
-      extension: 'pdf',
-    );
-    final File file = File(p.join(baseDir.path, fileName));
+    try {
+      final IpvReportDetailStat? loaded = await loadIpvReportDetail(reportId);
+      if (loaded == null) {
+        throw Exception('No se encontro el IPV solicitado.');
+      }
+      final IpvReportDetailStat detail = loaded;
+      final _IpvExportMeta meta = await _loadIpvExportMeta(reportId);
+      final Directory baseDir = await _resolveExportDir(detail.summary);
+      final String fileName = _buildIpvExportFileName(
+        detail.summary,
+        extension: 'pdf',
+      );
+      final File file = File(p.join(baseDir.path, fileName));
+      final String generatedAt = _formatDateTimeHuman(DateTime.now());
 
-    final pw.Document doc = pw.Document();
-    doc.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.fromLTRB(24, 24, 24, 24),
-        build: (pw.Context context) {
-          return _buildIpvPdfContent(
-            detail: detail,
-            meta: meta,
+      final pw.Document doc = pw.Document();
+      doc.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.fromLTRB(24, 24, 24, 24),
+          header: (pw.Context context) => _buildIpvPdfHeader(
+            generatedAt: generatedAt,
             pageNumber: context.pageNumber,
-          );
-        },
-      ),
-    );
+          ),
+          build: (pw.Context context) {
+            return _buildIpvPdfContent(
+              detail: detail,
+              meta: meta,
+              generatedAt: generatedAt,
+            );
+          },
+        ),
+      );
 
-    await file.writeAsBytes(await doc.save(), flush: true);
-    return file.path;
+      await file.writeAsBytes(await doc.save(), flush: true);
+      return file.path;
+    } catch (e, st) {
+      await _writeIpvExportDiagnostic(
+        reportId: reportId,
+        format: 'pdf',
+        error: e,
+        stackTrace: st,
+      );
+      stderr.writeln('IPV PDF export failed. reportId=$reportId error=$e');
+      stderr.writeln(st);
+      rethrow;
+    }
   }
 
   Future<Directory> _resolveExportDir(IpvReportSummaryStat summary) async {
     final String terminalFolder = _sanitizePathSegment(summary.terminalName);
     final Directory preferredBase = await _resolveDownloadsBaseDir();
-    Directory dir = Directory(
-      p.join(preferredBase.path, 'IPV', terminalFolder),
-    );
+    Directory dir =
+        Directory(p.join(preferredBase.path, 'IPV', terminalFolder));
     try {
       if (!dir.existsSync()) {
         await dir.create(recursive: true);
@@ -1018,6 +1072,7 @@ class ReportesLocalDataSource {
           }
         } catch (_) {}
       }
+      return getApplicationDocumentsDirectory();
     }
 
     final Directory? downloads = await getDownloadsDirectory();
@@ -1117,36 +1172,40 @@ class ReportesLocalDataSource {
       throw Exception('No se encontro el IPV solicitado.');
     }
 
-    final String sessionId = header.read<String>('session_id');
-    final List<QueryRow> employeeRows = await _db.customSelect(
-      '''
-      SELECT e.name AS employee_name
-      FROM pos_session_employees se
-      INNER JOIN employees e ON e.id = se.employee_id
-      WHERE se.session_id = ?
-      ORDER BY e.name ASC
-      ''',
-      variables: <Variable<Object>>[Variable<String>(sessionId)],
-    ).get();
+    final String sessionId = _readTextCell(header, 'session_id', fallback: '');
+    final List<QueryRow> employeeRows = sessionId.isEmpty
+        ? <QueryRow>[]
+        : await _db.customSelect(
+            '''
+            SELECT e.name AS employee_name
+            FROM pos_session_employees se
+            INNER JOIN employees e ON e.id = se.employee_id
+            WHERE se.session_id = ?
+            ORDER BY e.name ASC
+            ''',
+            variables: <Variable<Object>>[Variable<String>(sessionId)],
+          ).get();
     final List<String> employeeNames = employeeRows
         .map((QueryRow row) =>
             (row.readNullable<String>('employee_name') ?? '').trim())
         .where((String value) => value.isNotEmpty)
         .toList();
 
-    final List<QueryRow> paymentRows = await _db.customSelect(
-      '''
-      SELECT
-        p.method AS method,
-        COALESCE(SUM(p.amount_cents), 0) AS amount_cents
-      FROM payments p
-      INNER JOIN sales s ON s.id = p.sale_id
-      WHERE s.terminal_session_id = ?
-        AND s.status = 'posted'
-      GROUP BY p.method
-      ''',
-      variables: <Variable<Object>>[Variable<String>(sessionId)],
-    ).get();
+    final List<QueryRow> paymentRows = sessionId.isEmpty
+        ? <QueryRow>[]
+        : await _db.customSelect(
+            '''
+            SELECT
+              p.method AS method,
+              COALESCE(SUM(p.amount_cents), 0) AS amount_cents
+            FROM payments p
+            INNER JOIN sales s ON s.id = p.sale_id
+            WHERE s.terminal_session_id = ?
+              AND s.status = 'posted'
+            GROUP BY p.method
+            ''',
+            variables: <Variable<Object>>[Variable<String>(sessionId)],
+          ).get();
 
     final Map<String, int> paymentTotalsByMethod = <String, int>{};
     for (final QueryRow row in paymentRows) {
@@ -1159,10 +1218,10 @@ class ReportesLocalDataSource {
     }
 
     return _IpvExportMeta(
-      terminalId: header.read<String>('terminal_id'),
+      terminalId: _readTextCell(header, 'terminal_id', fallback: '-'),
       terminalName:
           (header.readNullable<String>('terminal_name') ?? 'TPV').trim(),
-      warehouseId: header.read<String>('warehouse_id'),
+      warehouseId: _readTextCell(header, 'warehouse_id', fallback: '-'),
       warehouseName:
           (header.readNullable<String>('warehouse_name') ?? 'Almacen').trim(),
       employeesLabel: employeeNames.isEmpty ? '-' : employeeNames.join(', '),
@@ -1170,64 +1229,164 @@ class ReportesLocalDataSource {
     );
   }
 
+  String _readTextCell(
+    QueryRow row,
+    String column, {
+    required String fallback,
+  }) {
+    final String value = (row.readNullable<String>(column) ?? '').trim();
+    return value.isEmpty ? fallback : value;
+  }
+
+  Future<Map<String, _IpvProductSnapshot>> _loadIpvProductSnapshots(
+    Set<String> productIds,
+  ) async {
+    if (productIds.isEmpty) {
+      return <String, _IpvProductSnapshot>{};
+    }
+    final List<QueryRow> rows = await _db.customSelect(
+      '''
+      SELECT
+        id,
+        COALESCE(name, '-') AS name,
+        COALESCE(sku, '-') AS sku,
+        COALESCE(price_cents, 0) AS price_cents
+      FROM products
+      WHERE id IN (${List<String>.filled(productIds.length, '?').join(', ')})
+      ''',
+      variables: productIds
+          .map((String productId) => Variable<String>(productId))
+          .toList(),
+    ).get();
+    final Map<String, _IpvProductSnapshot> mapped =
+        <String, _IpvProductSnapshot>{
+      for (final QueryRow row in rows)
+        _readTextCell(row, 'id', fallback: ''): _IpvProductSnapshot(
+          name: _readTextCell(row, 'name', fallback: '-'),
+          sku: _readTextCell(row, 'sku', fallback: '-'),
+          priceCents: (row.data['price_cents'] as num?)?.toInt() ?? 0,
+        ),
+    };
+    mapped.remove('');
+    return mapped;
+  }
+
+  Future<void> _writeIpvExportDiagnostic({
+    required String reportId,
+    required String format,
+    required Object error,
+    required StackTrace stackTrace,
+  }) async {
+    try {
+      final Directory docs = await getApplicationDocumentsDirectory();
+      final Directory dir = Directory(p.join(docs.path, 'exports', 'IPV'));
+      if (!dir.existsSync()) {
+        await dir.create(recursive: true);
+      }
+      final File file = File(p.join(dir.path, 'last_ipv_export_error.txt'));
+      final IpvReportDetailStat? detail = await loadIpvReportDetail(reportId);
+      final StringBuffer out = StringBuffer()
+        ..writeln('format=$format')
+        ..writeln('reportId=$reportId')
+        ..writeln('error=$error')
+        ..writeln('timestamp=${DateTime.now().toIso8601String()}');
+      if (detail != null) {
+        out
+          ..writeln('summary.sessionId=${detail.summary.sessionId}')
+          ..writeln('summary.terminalName=${detail.summary.terminalName}')
+          ..writeln('summary.status=${detail.summary.status}')
+          ..writeln(
+              'summary.openedAt=${detail.summary.openedAt.toIso8601String()}')
+          ..writeln(
+            'summary.closedAt=${detail.summary.closedAt?.toIso8601String() ?? '-'}',
+          )
+          ..writeln('lines.count=${detail.lines.length}');
+        for (int i = 0; i < detail.lines.length; i++) {
+          final IpvReportLineStat row = detail.lines[i];
+          out
+            ..writeln('line[$i].productId=${row.productId}')
+            ..writeln('line[$i].productName=${row.productName}')
+            ..writeln('line[$i].sku=${row.sku}')
+            ..writeln('line[$i].startQty=${row.startQty}')
+            ..writeln('line[$i].entriesQty=${row.entriesQty}')
+            ..writeln('line[$i].outputsQty=${row.outputsQty}')
+            ..writeln('line[$i].salesQty=${row.salesQty}')
+            ..writeln('line[$i].finalQty=${row.finalQty}')
+            ..writeln('line[$i].salePriceCents=${row.salePriceCents}');
+        }
+      }
+      out
+        ..writeln('stacktrace.begin')
+        ..writeln(stackTrace)
+        ..writeln('stacktrace.end');
+      await file.writeAsString(out.toString(), flush: true);
+    } catch (_) {
+      // Best effort only: we do not want diagnostics to mask the original export error.
+    }
+  }
+
   List<pw.Widget> _buildIpvPdfContent({
     required IpvReportDetailStat detail,
     required _IpvExportMeta meta,
-    required int pageNumber,
+    required String generatedAt,
   }) {
     final _IpvExecutiveSummary executive = _buildIpvExecutiveSummary(detail);
-    final DateTime now = DateTime.now();
-    final String generatedAt = _formatDateTimeHuman(now);
-
-    final PdfColor pageBg = PdfColor.fromHex('#ECEDEF');
-    final PdfColor navy = PdfColor.fromHex('#0F2E63');
-    final PdfColor cardBg = PdfColor.fromHex('#E8EBF0');
-    final PdfColor border = PdfColor.fromHex('#B6C1D1');
-    final PdfColor headerCell = PdfColor.fromHex('#D2DAE6');
-    final PdfColor totalBg = PdfColor.fromHex('#CFE0D7');
-    final PdfColor bodyText = PdfColor.fromHex('#112D57');
-
-    final List<MapEntry<String, String>> leftExecutive =
-        <MapEntry<String, String>>[
-      MapEntry<String, String>(
-        'Total de ventas',
-        _formatQtyPretty(executive.totalSalesQty),
-      ),
-      MapEntry<String, String>(
-        'Total de entradas',
-        _formatQtyPretty(executive.totalEntriesQty),
-      ),
-      MapEntry<String, String>(
-        'Total de salidas',
-        _formatQtyPretty(executive.totalOutputsQty),
-      ),
-    ];
-
     final List<MapEntry<String, int>> paymentEntries = meta
         .paymentTotalsByMethod.entries
         .toList()
       ..sort((MapEntry<String, int> a, MapEntry<String, int> b) {
         return _paymentMethodLabel(a.key).compareTo(_paymentMethodLabel(b.key));
       });
-    final List<MapEntry<String, String>> rightExecutive =
-        <MapEntry<String, String>>[
-      for (final MapEntry<String, int> entry in paymentEntries)
-        MapEntry<String, String>(
-          'Total ${_paymentMethodLabel(entry.key).toLowerCase()}',
-          _formatMoney(entry.value),
-        ),
-      MapEntry<String, String>(
-        'Importe total',
-        _formatMoney(executive.totalSalesAmountCents),
-      ),
-    ];
 
-    pw.Widget executiveCard(List<MapEntry<String, String>> rows) {
+    final PdfColor sectionBlue = PdfColor.fromHex('#12306B');
+    final PdfColor infoBg = PdfColor.fromHex('#EFF2F6');
+    final PdfColor infoBorder = PdfColor.fromHex('#C9D1DB');
+    final PdfColor headerBg = PdfColor.fromHex('#D8E0EC');
+    final PdfColor totalBg = PdfColor.fromHex('#D7E6DB');
+    final PdfColor stripeBg = PdfColor.fromHex('#F4F6F9');
+
+    pw.Widget sectionTitle(String text) {
+      return pw.Padding(
+        padding: const pw.EdgeInsets.only(top: 14, bottom: 8),
+        child: pw.Text(
+          text,
+          style: pw.TextStyle(
+            fontSize: 15,
+            fontWeight: pw.FontWeight.bold,
+            color: sectionBlue,
+          ),
+        ),
+      );
+    }
+
+    pw.Widget infoLine(String label, String value, {bool bold = false}) {
+      return pw.Padding(
+        padding: const pw.EdgeInsets.only(bottom: 4),
+        child: pw.RichText(
+          text: pw.TextSpan(
+            style: const pw.TextStyle(fontSize: 11),
+            children: <pw.InlineSpan>[
+              pw.TextSpan(
+                text: '$label: ',
+                style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+              ),
+              pw.TextSpan(
+                text: value,
+                style:
+                    bold ? pw.TextStyle(fontWeight: pw.FontWeight.bold) : null,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    pw.Widget summaryCard(List<MapEntry<String, String>> rows) {
       return pw.Container(
         padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: pw.BoxDecoration(
-          color: cardBg,
-          border: pw.Border.all(color: border, width: 1),
+          color: PdfColors.white,
+          border: pw.Border.all(color: infoBorder, width: 1),
         ),
         child: pw.Column(
           children: rows
@@ -1239,10 +1398,7 @@ class ReportesLocalDataSource {
                       pw.Expanded(
                         child: pw.Text(
                           row.key,
-                          style: pw.TextStyle(
-                            fontSize: 11,
-                            color: bodyText,
-                          ),
+                          style: const pw.TextStyle(fontSize: 11),
                         ),
                       ),
                       pw.Text(
@@ -1250,7 +1406,6 @@ class ReportesLocalDataSource {
                         style: pw.TextStyle(
                           fontSize: 11,
                           fontWeight: pw.FontWeight.bold,
-                          color: bodyText,
                         ),
                       ),
                     ],
@@ -1262,79 +1417,71 @@ class ReportesLocalDataSource {
       );
     }
 
-    pw.Widget infoLine(String label, String value) {
-      return pw.Padding(
-        padding: const pw.EdgeInsets.symmetric(vertical: 2),
-        child: pw.Row(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: <pw.Widget>[
-            pw.Text(
-              '$label: ',
-              style: pw.TextStyle(
-                fontWeight: pw.FontWeight.bold,
-                color: bodyText,
-                fontSize: 11,
-              ),
-            ),
-            pw.Expanded(
-              child: pw.Text(
-                value,
-                style: pw.TextStyle(
-                  color: bodyText,
-                  fontSize: 11,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    pw.Widget th(String text, {pw.Alignment alignment = pw.Alignment.center}) {
+    pw.Widget cell(
+      String text, {
+      required pw.Alignment alignment,
+      required bool header,
+      PdfColor? bg,
+      bool bold = false,
+    }) {
       return pw.Container(
         alignment: alignment,
-        padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-        color: headerCell,
+        padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        color: bg,
         child: pw.Text(
           text,
           style: pw.TextStyle(
-            fontSize: 9.5,
-            fontWeight: pw.FontWeight.bold,
-            color: bodyText,
+            fontSize: header ? 9.5 : 9.2,
+            fontWeight:
+                bold || header ? pw.FontWeight.bold : pw.FontWeight.normal,
           ),
         ),
       );
     }
 
-    pw.Widget td(
-      String text, {
-      required int index,
-      pw.Alignment alignment = pw.Alignment.center,
-    }) {
-      return pw.Container(
-        alignment: alignment,
-        padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-        color: index.isEven ? PdfColors.white : PdfColor.fromHex('#F6F8FB'),
-        child: pw.Text(
-          text,
-          style: pw.TextStyle(fontSize: 9.2, color: bodyText),
+    final List<MapEntry<String, String>> leftExecutive =
+        <MapEntry<String, String>>[
+      MapEntry<String, String>(
+          'Total de ventas', _formatQtyPretty(executive.totalSalesQty)),
+      MapEntry<String, String>(
+          'Total de entradas', _formatQtyPretty(executive.totalEntriesQty)),
+      MapEntry<String, String>(
+          'Total de salidas', _formatQtyPretty(executive.totalOutputsQty)),
+    ];
+    final List<MapEntry<String, String>> rightExecutive =
+        <MapEntry<String, String>>[
+      for (final MapEntry<String, int> entry in paymentEntries)
+        MapEntry<String, String>(
+          'Total ${_paymentMethodLabel(entry.key).toLowerCase()}',
+          _formatMoney(entry.value),
         ),
-      );
-    }
+      MapEntry<String, String>(
+          'Importe total', _formatMoney(executive.totalSalesAmountCents)),
+    ];
 
     final List<pw.TableRow> tableRows = <pw.TableRow>[
       pw.TableRow(
         children: <pw.Widget>[
-          th('Producto', alignment: pw.Alignment.centerLeft),
-          th('Cod'),
-          th('Ini'),
-          th('Ent'),
-          th('Sal'),
-          th('Ven'),
-          th('Tot'),
-          th('Fin'),
-          th('Precio', alignment: pw.Alignment.centerRight),
-          th('Importe', alignment: pw.Alignment.centerRight),
+          cell('Producto',
+              alignment: pw.Alignment.centerLeft, header: true, bg: headerBg),
+          cell('Cod',
+              alignment: pw.Alignment.center, header: true, bg: headerBg),
+          cell('Ini',
+              alignment: pw.Alignment.center, header: true, bg: headerBg),
+          cell('Ent',
+              alignment: pw.Alignment.center, header: true, bg: headerBg),
+          cell('Sal',
+              alignment: pw.Alignment.center, header: true, bg: headerBg),
+          cell('Ven',
+              alignment: pw.Alignment.center, header: true, bg: headerBg),
+          cell('Tot',
+              alignment: pw.Alignment.center, header: true, bg: headerBg),
+          cell('Fin',
+              alignment: pw.Alignment.center, header: true, bg: headerBg),
+          cell('Precio',
+              alignment: pw.Alignment.centerRight, header: true, bg: headerBg),
+          cell('Importe',
+              alignment: pw.Alignment.centerRight, header: true, bg: headerBg),
         ],
       ),
     ];
@@ -1344,21 +1491,30 @@ class ReportesLocalDataSource {
       final double totalBeforeSales =
           row.startQty + row.entriesQty - row.outputsQty;
       final int salesAmountCents = (row.salesQty * row.salePriceCents).round();
+      final PdfColor? rowBg = i.isEven ? stripeBg : null;
       tableRows.add(
         pw.TableRow(
           children: <pw.Widget>[
-            td(row.productName, index: i, alignment: pw.Alignment.centerLeft),
-            td(row.sku, index: i),
-            td(_formatQtyPretty(row.startQty), index: i),
-            td(_formatQtyPretty(row.entriesQty), index: i),
-            td(_formatQtyPretty(row.outputsQty), index: i),
-            td(_formatQtyPretty(row.salesQty), index: i),
-            td(_formatQtyPretty(totalBeforeSales), index: i),
-            td(_formatQtyPretty(row.finalQty), index: i),
-            td(_formatMoney(row.salePriceCents),
-                index: i, alignment: pw.Alignment.centerRight),
-            td(_formatMoney(salesAmountCents),
-                index: i, alignment: pw.Alignment.centerRight),
+            cell(row.productName,
+                alignment: pw.Alignment.centerLeft, header: false, bg: rowBg),
+            cell(row.sku,
+                alignment: pw.Alignment.center, header: false, bg: rowBg),
+            cell(_formatQtyPretty(row.startQty),
+                alignment: pw.Alignment.center, header: false, bg: rowBg),
+            cell(_formatQtyPretty(row.entriesQty),
+                alignment: pw.Alignment.center, header: false, bg: rowBg),
+            cell(_formatQtyPretty(row.outputsQty),
+                alignment: pw.Alignment.center, header: false, bg: rowBg),
+            cell(_formatQtyPretty(row.salesQty),
+                alignment: pw.Alignment.center, header: false, bg: rowBg),
+            cell(_formatQtyPretty(totalBeforeSales),
+                alignment: pw.Alignment.center, header: false, bg: rowBg),
+            cell(_formatQtyPretty(row.finalQty),
+                alignment: pw.Alignment.center, header: false, bg: rowBg),
+            cell(_formatMoney(row.salePriceCents),
+                alignment: pw.Alignment.centerRight, header: false, bg: rowBg),
+            cell(_formatMoney(salesAmountCents),
+                alignment: pw.Alignment.centerRight, header: false, bg: rowBg),
           ],
         ),
       );
@@ -1367,44 +1523,25 @@ class ReportesLocalDataSource {
     tableRows.add(
       pw.TableRow(
         children: <pw.Widget>[
-          pw.Container(
-            color: totalBg,
-            padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-            child: pw.Text(''),
-          ),
-          pw.Container(color: totalBg),
-          pw.Container(color: totalBg),
-          pw.Container(color: totalBg),
-          pw.Container(color: totalBg),
-          pw.Container(color: totalBg),
-          pw.Container(color: totalBg),
-          pw.Container(color: totalBg),
-          pw.Container(
-            color: totalBg,
-            padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-            alignment: pw.Alignment.centerRight,
-            child: pw.Text(
-              'TOTAL IMPORTE',
-              style: pw.TextStyle(
-                fontSize: 10,
-                color: bodyText,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-          ),
-          pw.Container(
-            color: totalBg,
-            padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-            alignment: pw.Alignment.centerRight,
-            child: pw.Text(
-              _formatMoney(executive.totalSalesAmountCents),
-              style: pw.TextStyle(
-                fontSize: 10,
-                color: bodyText,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-          ),
+          cell('',
+              alignment: pw.Alignment.centerLeft, header: false, bg: totalBg),
+          cell('', alignment: pw.Alignment.center, header: false, bg: totalBg),
+          cell('', alignment: pw.Alignment.center, header: false, bg: totalBg),
+          cell('', alignment: pw.Alignment.center, header: false, bg: totalBg),
+          cell('', alignment: pw.Alignment.center, header: false, bg: totalBg),
+          cell('', alignment: pw.Alignment.center, header: false, bg: totalBg),
+          cell('', alignment: pw.Alignment.center, header: false, bg: totalBg),
+          cell('', alignment: pw.Alignment.center, header: false, bg: totalBg),
+          cell('TOTAL IMPORTE',
+              alignment: pw.Alignment.centerRight,
+              header: false,
+              bg: totalBg,
+              bold: true),
+          cell(_formatMoney(executive.totalSalesAmountCents),
+              alignment: pw.Alignment.centerRight,
+              header: false,
+              bg: totalBg,
+              bold: true),
         ],
       ),
     );
@@ -1412,114 +1549,110 @@ class ReportesLocalDataSource {
     return <pw.Widget>[
       pw.Container(
         width: double.infinity,
-        color: pageBg,
-        padding: const pw.EdgeInsets.all(10),
+        padding: const pw.EdgeInsets.fromLTRB(12, 10, 12, 8),
+        decoration: pw.BoxDecoration(
+          color: infoBg,
+          border: pw.Border.all(color: infoBorder, width: 1),
+        ),
         child: pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: <pw.Widget>[
-            pw.Container(
-              color: navy,
-              padding: const pw.EdgeInsets.fromLTRB(14, 10, 14, 8),
-              child: pw.Row(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: <pw.Widget>[
-                  pw.Expanded(
-                    child: pw.Text(
-                      'REPORTE IPV DE SESION',
-                      style: pw.TextStyle(
-                        color: PdfColors.white,
-                        fontWeight: pw.FontWeight.bold,
-                        fontSize: 21,
-                      ),
-                    ),
-                  ),
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.end,
-                    children: <pw.Widget>[
-                      pw.Text(
-                        'Generado: $generatedAt',
-                        style: const pw.TextStyle(
-                          color: PdfColors.white,
-                          fontSize: 10.5,
-                        ),
-                      ),
-                      pw.Text(
-                        'Pagina $pageNumber',
-                        style: const pw.TextStyle(
-                          color: PdfColors.white,
-                          fontSize: 10.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+            infoLine('TPV', meta.terminalName, bold: true),
+            infoLine('Apertura', _formatDateTimeHuman(detail.summary.openedAt)),
+            if (detail.summary.closedAt != null)
+              infoLine(
+                'Cierre',
+                _formatDateTimeHuman(detail.summary.closedAt!),
               ),
-            ),
-            pw.SizedBox(height: 14),
-            pw.Container(
-              padding: const pw.EdgeInsets.fromLTRB(12, 10, 12, 8),
-              decoration: pw.BoxDecoration(
-                color: cardBg,
-                border: pw.Border.all(color: border, width: 1),
-              ),
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: <pw.Widget>[
-                  infoLine(
-                    'TPV',
-                    '${meta.terminalName} (${meta.terminalId})',
-                  ),
-                  infoLine(
-                    'Apertura',
-                    _formatDateTimeHuman(detail.summary.openedAt),
-                  ),
-                  infoLine(
-                    'Almacen',
-                    '${meta.warehouseName} (${meta.warehouseId})',
-                  ),
-                  infoLine('Empleado', meta.employeesLabel),
-                ],
-              ),
-            ),
-            pw.SizedBox(height: 18),
-            pw.Text(
-              'Resumen Ejecutivo',
-              style: pw.TextStyle(
-                color: navy,
-                fontSize: 16,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-            pw.SizedBox(height: 8),
-            pw.Row(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: <pw.Widget>[
-                pw.Expanded(child: executiveCard(leftExecutive)),
-                pw.SizedBox(width: 16),
-                pw.Expanded(child: executiveCard(rightExecutive)),
-              ],
-            ),
-            pw.SizedBox(height: 16),
-            pw.Table(
-              border: pw.TableBorder.all(color: border, width: 0.7),
-              columnWidths: const <int, pw.TableColumnWidth>{
-                0: pw.FlexColumnWidth(3.6),
-                1: pw.FlexColumnWidth(1.35),
-                2: pw.FlexColumnWidth(0.78),
-                3: pw.FlexColumnWidth(0.78),
-                4: pw.FlexColumnWidth(0.78),
-                5: pw.FlexColumnWidth(0.78),
-                6: pw.FlexColumnWidth(0.78),
-                7: pw.FlexColumnWidth(0.78),
-                8: pw.FlexColumnWidth(1.45),
-                9: pw.FlexColumnWidth(2.05),
-              },
-              children: tableRows,
-            ),
+            infoLine('Almacen', meta.warehouseName),
+            infoLine('Empleado(s)', meta.employeesLabel),
           ],
         ),
       ),
+      sectionTitle('Resumen Ejecutivo'),
+      pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: <pw.Widget>[
+          pw.Expanded(child: summaryCard(leftExecutive)),
+          pw.SizedBox(width: 16),
+          pw.Expanded(child: summaryCard(rightExecutive)),
+        ],
+      ),
+      pw.SizedBox(height: 16),
+      if (detail.lines.isEmpty)
+        pw.Text(
+          'Sin lineas de productos.',
+          style: const pw.TextStyle(fontSize: 11),
+        ),
+      if (detail.lines.isNotEmpty)
+        pw.Table(
+          border: pw.TableBorder.all(color: infoBorder, width: 0.7),
+          columnWidths: const <int, pw.TableColumnWidth>{
+            0: pw.FlexColumnWidth(3.3),
+            1: pw.FlexColumnWidth(1.2),
+            2: pw.FlexColumnWidth(0.72),
+            3: pw.FlexColumnWidth(0.72),
+            4: pw.FlexColumnWidth(0.72),
+            5: pw.FlexColumnWidth(0.72),
+            6: pw.FlexColumnWidth(0.85),
+            7: pw.FlexColumnWidth(0.72),
+            8: pw.FlexColumnWidth(1.45),
+            9: pw.FlexColumnWidth(1.9),
+          },
+          children: tableRows,
+        ),
+      pw.SizedBox(height: 8),
+      pw.Text(
+        'Reporte IPV | Estado ${detail.summary.status.toUpperCase()}',
+        style: const pw.TextStyle(fontSize: 9),
+      ),
     ];
+  }
+
+  pw.Widget _buildIpvPdfHeader({
+    required String generatedAt,
+    required int pageNumber,
+  }) {
+    final PdfColor navy = PdfColor.fromHex('#12306B');
+    return pw.Container(
+      margin: const pw.EdgeInsets.only(bottom: 14),
+      padding: const pw.EdgeInsets.fromLTRB(14, 10, 14, 8),
+      color: navy,
+      child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: <pw.Widget>[
+          pw.Expanded(
+            child: pw.Text(
+              'REPORTE IPV',
+              style: pw.TextStyle(
+                color: PdfColors.white,
+                fontWeight: pw.FontWeight.bold,
+                fontSize: 19,
+              ),
+            ),
+          ),
+          pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.end,
+            children: <pw.Widget>[
+              pw.Text(
+                'Generado: $generatedAt',
+                style: const pw.TextStyle(
+                  color: PdfColors.white,
+                  fontSize: 10.5,
+                ),
+              ),
+              pw.Text(
+                'Pagina $pageNumber',
+                style: const pw.TextStyle(
+                  color: PdfColors.white,
+                  fontSize: 10.5,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   String _paymentMethodLabel(String method) {
@@ -1655,6 +1788,18 @@ class _IpvExportMeta {
   final String warehouseName;
   final String employeesLabel;
   final Map<String, int> paymentTotalsByMethod;
+}
+
+class _IpvProductSnapshot {
+  const _IpvProductSnapshot({
+    required this.name,
+    required this.sku,
+    required this.priceCents,
+  });
+
+  final String name;
+  final String sku;
+  final int priceCents;
 }
 
 class _DayAccumulator {

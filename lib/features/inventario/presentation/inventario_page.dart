@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'dart:async';
 
 import '../../../core/db/app_database.dart';
 import '../../../shared/widgets/app_scaffold.dart';
@@ -17,6 +18,7 @@ class InventarioPage extends ConsumerStatefulWidget {
 
 class _InventarioPageState extends ConsumerState<InventarioPage> {
   final TextEditingController _searchCtrl = TextEditingController();
+  Timer? _debounceTimer;
 
   List<Warehouse> _warehouses = <Warehouse>[];
   List<InventoryView> _inventory = <InventoryView>[];
@@ -32,16 +34,20 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _searchCtrl.removeListener(_onSearchChanged);
     _searchCtrl.dispose();
     super.dispose();
   }
 
   void _onSearchChanged() {
-    if (!mounted) {
-      return;
-    }
-    setState(() {});
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) {
+        return;
+      }
+      setState(() {});
+    });
   }
 
   Future<void> _bootstrap() async {
