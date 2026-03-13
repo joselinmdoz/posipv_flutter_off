@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -27,9 +28,11 @@ class VentasDirectasPage extends ConsumerStatefulWidget {
 
 class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
   final TextEditingController _searchCtrl = TextEditingController();
+  Timer? _searchDebounce;
 
   List<Warehouse> _warehouses = <Warehouse>[];
   List<Product> _products = <Product>[];
+  List<Product> _visibleProducts = <Product>[];
   String? _selectedWarehouseId;
   String _currencySymbol = AppConfig.defaultCurrencySymbol;
   bool _allowNegativeStock = false;
@@ -56,16 +59,22 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchCtrl.removeListener(_onSearchChanged);
     _searchCtrl.dispose();
     super.dispose();
   }
 
   void _onSearchChanged() {
-    if (!mounted) {
-      return;
-    }
-    setState(() {});
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 180), () {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _visibleProducts = _filterProducts(_products, _searchCtrl.text);
+      });
+    });
   }
 
   Future<void> _bootstrap() async {
@@ -87,8 +96,6 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
       await whDs.ensureDefaultWarehouse();
       final Future<List<Warehouse>> warehousesFuture =
           whDs.listActiveWarehouses();
-      final Future<List<Product>> productsFuture =
-          ref.read(productosLocalDataSourceProvider).listActiveProducts();
       final Future<AppConfig> configFuture =
           ref.read(configuracionLocalDataSourceProvider).loadConfig();
 
@@ -99,7 +106,6 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
           )
           .toList()
         ..sort((Warehouse a, Warehouse b) => a.name.compareTo(b.name));
-      final List<Product> allProducts = await productsFuture;
       final AppConfig config = await configFuture;
 
       String? warehouseId = _selectedWarehouseId;
@@ -117,11 +123,9 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
         for (final InventoryView row in inventoryRows) row.productId: row.qty,
       };
       final Set<String> availableIds = stockByProductId.keys.toSet();
-
-      final List<Product> products = allProducts
-          .where((Product product) => availableIds.contains(product.id))
-          .toList()
-        ..sort((Product a, Product b) => a.name.compareTo(b.name));
+      final List<Product> products = await ref
+          .read(productosLocalDataSourceProvider)
+          .listActiveProductsByIds(availableIds);
 
       if (!mounted) {
         return;
@@ -130,6 +134,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
         _warehouses = warehouses;
         _selectedWarehouseId = warehouseId;
         _products = products;
+        _visibleProducts = _filterProducts(products, _searchCtrl.text);
         _stockByProductId
           ..clear()
           ..addAll(stockByProductId);
@@ -163,12 +168,12 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
     await _bootstrap();
   }
 
-  List<Product> get _filteredProducts {
-    final String query = _searchCtrl.text.trim().toLowerCase();
+  List<Product> _filterProducts(List<Product> products, String queryText) {
+    final String query = queryText.trim().toLowerCase();
     if (query.isEmpty) {
-      return _products;
+      return products;
     }
-    return _products.where((Product product) {
+    return products.where((Product product) {
       return product.name.toLowerCase().contains(query) ||
           product.sku.toLowerCase().contains(query) ||
           (product.barcode ?? '').toLowerCase().contains(query);
@@ -432,6 +437,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
     required StateSetter setModalState,
     required bool withCloseButton,
   }) {
+    final Color secondaryText = Theme.of(context).colorScheme.onSurfaceVariant;
     final List<_DirectCartLine> lines = _cartLines;
     final int subtotal = _subtotalFromLines(lines);
     final int tax = _taxFromLines(lines);
@@ -450,7 +456,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
             ),
             Text(
               '${lines.length} item(s)',
-              style: const TextStyle(color: Color(0xFF655D83)),
+              style: TextStyle(color: secondaryText),
             ),
             if (withCloseButton)
               IconButton(
@@ -1011,12 +1017,17 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
   }
 
   Widget _warehouseHeader() {
+    final ThemeData theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
+
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2DAF3)),
+        border: Border.all(
+          color: isDark ? const Color(0xFF342E46) : const Color(0xFFE2DAF3),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1026,7 +1037,6 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
             style: TextStyle(
               fontWeight: FontWeight.w800,
               fontSize: 15,
-              color: Color(0xFF30264E),
             ),
           ),
           const SizedBox(height: 8),
@@ -1053,6 +1063,8 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
   }
 
   Widget _productFilterField() {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+
     return TextField(
       controller: _searchCtrl,
       decoration: InputDecoration(
@@ -1065,27 +1077,32 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
                 icon: const Icon(Icons.clear_rounded),
               ),
         filled: true,
-        fillColor: const Color(0xFFF9F7FD),
+        fillColor: isDark ? const Color(0xFF211D2D) : const Color(0xFFF9F7FD),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFE1D8F2)),
+          borderSide: BorderSide(
+            color: isDark ? const Color(0xFF342E46) : const Color(0xFFE1D8F2),
+          ),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFE1D8F2)),
+          borderSide: BorderSide(
+            color: isDark ? const Color(0xFF342E46) : const Color(0xFFE1D8F2),
+          ),
         ),
       ),
     );
   }
 
   Widget _buildProductImage(Product product) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final String path = (product.imagePath ?? '').trim();
     if (path.isEmpty) {
       return Container(
         width: 34,
         height: 34,
         decoration: BoxDecoration(
-          color: const Color(0xFFEDE7FA),
+          color: isDark ? const Color(0xFF28233A) : const Color(0xFFEDE7FA),
           borderRadius: BorderRadius.circular(8),
         ),
         child: const Icon(Icons.inventory_2_outlined, size: 16),
@@ -1105,7 +1122,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
             width: 34,
             height: 34,
             decoration: BoxDecoration(
-              color: const Color(0xFFEDE7FA),
+              color: isDark ? const Color(0xFF28233A) : const Color(0xFFEDE7FA),
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Icon(Icons.broken_image_outlined, size: 16),
@@ -1120,12 +1137,19 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
     required VoidCallback? onTap,
     required bool isAdd,
   }) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final bool enabled = onTap != null;
-    final Color bg = isAdd ? const Color(0xFFE4EEF9) : const Color(0xFFF3EAF8);
-    final Color fg = isAdd ? const Color(0xFF305A9A) : const Color(0xFF6C427A);
+    final Color bg = isAdd
+        ? (isDark ? const Color(0xFF233246) : const Color(0xFFE4EEF9))
+        : (isDark ? const Color(0xFF35263F) : const Color(0xFFF3EAF8));
+    final Color fg = isAdd
+        ? (isDark ? const Color(0xFF9AC1FF) : const Color(0xFF305A9A))
+        : (isDark ? const Color(0xFFDAB4E7) : const Color(0xFF6C427A));
 
     return Material(
-      color: enabled ? bg : const Color(0xFFECECEC),
+      color: enabled
+          ? bg
+          : (isDark ? const Color(0xFF2A2632) : const Color(0xFFECECEC)),
       shape: const CircleBorder(),
       child: InkWell(
         customBorder: const CircleBorder(),
@@ -1133,29 +1157,41 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
         child: SizedBox(
           width: 31,
           height: 31,
-          child: Icon(icon, size: 18, color: enabled ? fg : Colors.grey),
+          child: Icon(
+            icon,
+            size: 18,
+            color:
+                enabled ? fg : Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
       ),
     );
   }
 
   Widget _productCard(Product product) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final bool isDark = theme.brightness == Brightness.dark;
     final double qty = _qtyByProductId[product.id] ?? 0;
     final double stock = _stockByProductId[product.id] ?? 0;
     final bool outOfStock = stock <= 0;
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE3DAF8)),
-        boxShadow: const <BoxShadow>[
-          BoxShadow(
-            color: Color(0x0E000000),
-            blurRadius: 6,
-            offset: Offset(0, 1.5),
-          ),
-        ],
+        border: Border.all(
+          color: isDark ? const Color(0xFF342E46) : const Color(0xFFE3DAF8),
+        ),
+        boxShadow: isDark
+            ? const <BoxShadow>[]
+            : const <BoxShadow>[
+                BoxShadow(
+                  color: Color(0x0E000000),
+                  blurRadius: 6,
+                  offset: Offset(0, 1.5),
+                ),
+              ],
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(6, 6, 6, 4),
@@ -1184,9 +1220,9 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
                         product.sku,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 9.5,
-                          color: Color(0xFF6B6287),
+                          color: scheme.onSurfaceVariant,
                         ),
                       ),
                     ],
@@ -1198,8 +1234,12 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
                       const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                   decoration: BoxDecoration(
                     color: outOfStock
-                        ? const Color(0xFFFBE9EE)
-                        : const Color(0xFFE6ECFA),
+                        ? (isDark
+                            ? const Color(0xFF472733)
+                            : const Color(0xFFFBE9EE))
+                        : (isDark
+                            ? const Color(0xFF233246)
+                            : const Color(0xFFE6ECFA)),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
@@ -1208,8 +1248,10 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
                       fontSize: 9,
                       fontWeight: FontWeight.w800,
                       color: outOfStock
-                          ? const Color(0xFFB13B5A)
-                          : const Color(0xFF3D4E89),
+                          ? const Color(0xFFFF8EB4)
+                          : (isDark
+                              ? const Color(0xFF9AC1FF)
+                              : const Color(0xFF3D4E89)),
                     ),
                   ),
                 ),
@@ -1218,10 +1260,10 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
             const SizedBox(height: 4),
             Text(
               _money(product.priceCents),
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.w900,
                 fontSize: 12.8,
-                color: Color(0xFF3A2D61),
+                color: isDark ? scheme.primary : const Color(0xFF3A2D61),
               ),
             ),
             const SizedBox(height: 2),
@@ -1240,7 +1282,9 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF7F3FC),
+                        color: isDark
+                            ? const Color(0xFF28233A)
+                            : const Color(0xFFF7F3FC),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
@@ -1267,7 +1311,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
   }
 
   Widget _productsGridSliver() {
-    final List<Product> products = _filteredProducts;
+    final List<Product> products = _visibleProducts;
     if (products.isEmpty) {
       return const SliverFillRemaining(
         hasScrollBody: false,

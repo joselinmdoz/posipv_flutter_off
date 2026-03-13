@@ -703,24 +703,33 @@ class _MovimientosInventarioPageState
   }
 
   Widget _movementCard(InventoryMovementView movement) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final bool isDark = theme.brightness == Brightness.dark;
     final bool isIn = movement.movementType == 'in';
-    final Color tone = isIn ? const Color(0xFFE3F5EE) : const Color(0xFFFCE9EE);
-    final Color ink = isIn ? const Color(0xFF148A65) : const Color(0xFFB13B5A);
+    final Color tone = isIn
+        ? (isDark ? const Color(0xFF1F3A34) : const Color(0xFFE3F5EE))
+        : (isDark ? const Color(0xFF472733) : const Color(0xFFFCE9EE));
+    final Color ink = isIn ? const Color(0xFF57D0A6) : const Color(0xFFFF8EB4);
     final IconData icon =
         isIn ? Icons.south_west_rounded : Icons.north_east_rounded;
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2D9F3)),
-        boxShadow: const <BoxShadow>[
-          BoxShadow(
-            color: Color(0x12000000),
-            blurRadius: 10,
-            offset: Offset(0, 3),
-          ),
-        ],
+        border: Border.all(
+          color: isDark ? const Color(0xFF342E46) : const Color(0xFFE2D9F3),
+        ),
+        boxShadow: isDark
+            ? const <BoxShadow>[]
+            : const <BoxShadow>[
+                BoxShadow(
+                  color: Color(0x12000000),
+                  blurRadius: 10,
+                  offset: Offset(0, 3),
+                ),
+              ],
       ),
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -769,21 +778,22 @@ class _MovimientosInventarioPageState
             const SizedBox(height: 4),
             Text(
               'SKU: ${movement.sku}',
-              style: const TextStyle(color: Color(0xFF6A6380)),
+              style: TextStyle(color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: 8),
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: BoxDecoration(
-                color: const Color(0xFFF2ECFA),
+                color:
+                    isDark ? const Color(0xFF28233A) : const Color(0xFFF2ECFA),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
                 'Cantidad: ${_formatQty(movement.qty)}',
-                style: const TextStyle(
+                style: TextStyle(
                   fontWeight: FontWeight.w800,
-                  color: Color(0xFF453A66),
+                  color: scheme.onSurface,
                 ),
               ),
             ),
@@ -802,9 +812,9 @@ class _MovimientosInventarioPageState
             const SizedBox(height: 8),
             Text(
               _formatDateTime(movement.createdAt),
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF5E567A),
+                color: scheme.onSurfaceVariant,
               ),
             ),
             if ((movement.note ?? '').trim().isNotEmpty) ...<Widget>[
@@ -814,12 +824,14 @@ class _MovimientosInventarioPageState
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8F5FE),
+                  color: isDark
+                      ? const Color(0xFF211D2D)
+                      : const Color(0xFFF8F5FE),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
                   movement.note!.trim(),
-                  style: const TextStyle(color: Color(0xFF4C446A)),
+                  style: TextStyle(color: scheme.onSurface),
                 ),
               ),
             ],
@@ -830,17 +842,20 @@ class _MovimientosInventarioPageState
   }
 
   Widget _metaPill(String label, String value) {
+    final ThemeData theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color(0xFFEDE7FA),
+        color: isDark ? const Color(0xFF28233A) : const Color(0xFFEDE7FA),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Text(
         '$label: $value',
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 11.5,
-          color: Color(0xFF4A4268),
+          color: theme.colorScheme.onSurface,
           fontWeight: FontWeight.w600,
         ),
       ),
@@ -850,6 +865,7 @@ class _MovimientosInventarioPageState
   @override
   Widget build(BuildContext context) {
     final List<_MovementDateGroup> groups = _groupByDate(_movements);
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
 
     return AppScaffold(
       title: 'Movimientos Inventario',
@@ -1010,7 +1026,9 @@ class _MovimientosInventarioPageState
                                           vertical: 8,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: const Color(0xFFEFEAF9),
+                                          color: isDark
+                                              ? const Color(0xFF28233A)
+                                              : const Color(0xFFEFEAF9),
                                           borderRadius:
                                               BorderRadius.circular(12),
                                         ),
@@ -1019,17 +1037,21 @@ class _MovimientosInventarioPageState
                                             Expanded(
                                               child: Text(
                                                 _formatDateGroup(group.date),
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                   fontWeight: FontWeight.w800,
-                                                  color: Color(0xFF433A63),
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .onSurface,
                                                 ),
                                               ),
                                             ),
                                             Text(
                                               '${group.items.length} mov.',
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 fontWeight: FontWeight.w700,
-                                                color: Color(0xFF60577E),
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .onSurfaceVariant,
                                               ),
                                             ),
                                           ],

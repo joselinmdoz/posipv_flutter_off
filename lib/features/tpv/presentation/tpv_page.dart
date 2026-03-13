@@ -14,6 +14,40 @@ import '../../reportes/presentation/reportes_providers.dart';
 import '../data/tpv_local_datasource.dart';
 import 'tpv_providers.dart';
 
+Widget _employeeAvatar({
+  required String? imagePath,
+  required double radius,
+  required Color backgroundColor,
+  required Color iconColor,
+}) {
+  final String trimmedPath = (imagePath ?? '').trim();
+  if (trimmedPath.isEmpty) {
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: backgroundColor,
+      child: Icon(Icons.badge_outlined, color: iconColor),
+    );
+  }
+
+  return CircleAvatar(
+    radius: radius,
+    backgroundColor: backgroundColor,
+    child: ClipOval(
+      child: Image.file(
+        File(trimmedPath),
+        width: radius * 2,
+        height: radius * 2,
+        fit: BoxFit.cover,
+        cacheWidth: (radius * 4).round(),
+        errorBuilder: (_, __, ___) => Icon(
+          Icons.badge_outlined,
+          color: iconColor,
+        ),
+      ),
+    ),
+  );
+}
+
 class TpvPage extends ConsumerStatefulWidget {
   const TpvPage({super.key});
 
@@ -147,10 +181,6 @@ class _TpvPageState extends ConsumerState<TpvPage> {
                               children: employees.map((TpvEmployee employee) {
                                 final bool selected =
                                     selectedEmployeeIds.contains(employee.id);
-                                final String imagePath =
-                                    (employee.imagePath ?? '').trim();
-                                final bool hasImage = imagePath.isNotEmpty &&
-                                    File(imagePath).existsSync();
                                 return InkWell(
                                   onTap: () {
                                     setStateDialog(() {
@@ -180,20 +210,12 @@ class _TpvPageState extends ConsumerState<TpvPage> {
                                     ),
                                     child: Row(
                                       children: <Widget>[
-                                        CircleAvatar(
+                                        _employeeAvatar(
+                                          imagePath: employee.imagePath,
                                           radius: 19,
                                           backgroundColor:
                                               const Color(0xFFE7E1F7),
-                                          backgroundImage: hasImage
-                                              ? FileImage(File(imagePath))
-                                              : null,
-                                          child: hasImage
-                                              ? null
-                                              : const Icon(
-                                                  Icons.badge_outlined,
-                                                  size: 18,
-                                                  color: Color(0xFF5A4D88),
-                                                ),
+                                          iconColor: const Color(0xFF5A4D88),
                                         ),
                                         const SizedBox(width: 10),
                                         Expanded(
@@ -975,6 +997,9 @@ class _TpvPageState extends ConsumerState<TpvPage> {
   }
 
   Widget _terminalCard(TpvTerminalView terminal) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final bool isDark = theme.brightness == Brightness.dark;
     final TpvSessionWithUser? open = terminal.openSession;
     final bool isOpen = open != null;
     final TpvTerminalConfig config = ref
@@ -999,7 +1024,9 @@ class _TpvPageState extends ConsumerState<TpvPage> {
       margin: const EdgeInsets.only(bottom: 10),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
-        side: const BorderSide(color: Color(0xFFDDD5EF)),
+        side: BorderSide(
+          color: isDark ? const Color(0xFF342E46) : const Color(0xFFDDD5EF),
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -1012,12 +1039,14 @@ class _TpvPageState extends ConsumerState<TpvPage> {
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFE8E2F4),
+                    color: isDark
+                        ? const Color(0xFF312948)
+                        : const Color(0xFFE8E2F4),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.point_of_sale_rounded,
-                    color: Color(0xFF5B4B8A),
+                    color: scheme.primary,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -1037,9 +1066,9 @@ class _TpvPageState extends ConsumerState<TpvPage> {
                         '${terminal.terminal.code} • Almacen: ${terminal.warehouse.name}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
-                          color: Color(0xFF655D83),
+                          color: scheme.onSurfaceVariant,
                         ),
                       ),
                     ],
@@ -1050,16 +1079,18 @@ class _TpvPageState extends ConsumerState<TpvPage> {
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: isOpen
-                        ? const Color(0xFFE3F5EE)
-                        : const Color(0xFFE9E5F5),
+                        ? (isDark
+                            ? const Color(0xFF1F3A34)
+                            : const Color(0xFFE3F5EE))
+                        : (isDark
+                            ? const Color(0xFF312948)
+                            : const Color(0xFFE9E5F5)),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
                     isOpen ? 'Turno abierto' : 'Sin turno',
                     style: TextStyle(
-                      color: isOpen
-                          ? const Color(0xFF148A65)
-                          : const Color(0xFF5A4D88),
+                      color: isOpen ? const Color(0xFF57D0A6) : scheme.primary,
                       fontWeight: FontWeight.w700,
                       fontSize: 11.5,
                     ),
@@ -1070,9 +1101,9 @@ class _TpvPageState extends ConsumerState<TpvPage> {
             const SizedBox(height: 8),
             Text(
               'Moneda: ${config.currencyCode} (${config.currencySymbol}) • Pagos: $methods',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
-                color: Color(0xFF655D83),
+                color: scheme.onSurfaceVariant,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -1083,9 +1114,9 @@ class _TpvPageState extends ConsumerState<TpvPage> {
                 children: <Widget>[
                   Text(
                     'Usuario: ${open.user.username} • Apertura: ${_formatDateTime(open.session.openedAt)}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: Color(0xFF4A3F73),
+                      color: scheme.onSurface,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -1094,9 +1125,9 @@ class _TpvPageState extends ConsumerState<TpvPage> {
                       padding: const EdgeInsets.only(top: 2),
                       child: Text(
                         'Responsables: ${open.responsibleEmployees.map((TpvEmployee row) => row.name).join(', ')}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
-                          color: Color(0xFF4A3F73),
+                          color: scheme.onSurface,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -1104,11 +1135,11 @@ class _TpvPageState extends ConsumerState<TpvPage> {
                 ],
               )
             else
-              const Text(
+              Text(
                 'No hay sesion activa para este TPV.',
                 style: TextStyle(
                   fontSize: 12,
-                  color: Color(0xFF8B83A8),
+                  color: scheme.onSurfaceVariant,
                 ),
               ),
             const SizedBox(height: 10),
@@ -1358,10 +1389,6 @@ class _TpvEmployeesPageState extends ConsumerState<TpvEmployeesPage> {
                       itemCount: _employees.length,
                       itemBuilder: (_, int index) {
                         final TpvEmployee employee = _employees[index];
-                        final String imagePath =
-                            (employee.imagePath ?? '').trim();
-                        final bool hasImage = imagePath.isNotEmpty &&
-                            File(imagePath).existsSync();
                         final List<String> info = <String>[
                           if ((employee.sex ?? '').isNotEmpty)
                             'Sexo: ${_sexLabel(employee.sex!)}',
@@ -1377,20 +1404,15 @@ class _TpvEmployeesPageState extends ConsumerState<TpvEmployeesPage> {
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: ListTile(
-                            leading: CircleAvatar(
+                            leading: _employeeAvatar(
+                              imagePath: employee.imagePath,
+                              radius: 20,
                               backgroundColor: employee.isActive
                                   ? const Color(0xFFE3F5EE)
                                   : const Color(0xFFE9E5F5),
-                              backgroundImage:
-                                  hasImage ? FileImage(File(imagePath)) : null,
-                              child: hasImage
-                                  ? null
-                                  : Icon(
-                                      Icons.badge_outlined,
-                                      color: employee.isActive
-                                          ? const Color(0xFF148A65)
-                                          : const Color(0xFF5A4D88),
-                                    ),
+                              iconColor: employee.isActive
+                                  ? const Color(0xFF148A65)
+                                  : const Color(0xFF5A4D88),
                             ),
                             title: Text(
                               employee.name,
@@ -1613,13 +1635,13 @@ class _TpvEmployeeFormPageState extends ConsumerState<_TpvEmployeeFormPage> {
 
   @override
   Widget build(BuildContext context) {
-    final String currentImagePath = (_imagePath ?? '').trim();
-    final bool hasImage =
-        currentImagePath.isNotEmpty && File(currentImagePath).existsSync();
+    final ThemeData theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF2EEF9),
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF2EEF9),
+        backgroundColor: theme.scaffoldBackgroundColor,
         centerTitle: true,
         title: Text(_isEditing ? 'Editar empleado' : 'Nuevo empleado'),
         leading: IconButton(
@@ -1635,18 +1657,15 @@ class _TpvEmployeeFormPageState extends ConsumerState<_TpvEmployeeFormPage> {
             Center(
               child: GestureDetector(
                 onTap: _saving ? null : _pickImage,
-                child: CircleAvatar(
+                child: _employeeAvatar(
+                  imagePath: _imagePath,
                   radius: 42,
-                  backgroundColor: const Color(0xFFE7E1F7),
-                  backgroundImage:
-                      hasImage ? FileImage(File(currentImagePath)) : null,
-                  child: hasImage
-                      ? null
-                      : const Icon(
-                          Icons.badge_outlined,
-                          size: 34,
-                          color: Color(0xFF5A4D88),
-                        ),
+                  backgroundColor: isDark
+                      ? const Color(0xFF312948)
+                      : const Color(0xFFE7E1F7),
+                  iconColor: isDark
+                      ? const Color(0xFFB8A9F1)
+                      : const Color(0xFF5A4D88),
                 ),
               ),
             ),
@@ -1938,10 +1957,13 @@ class _TpvFormPageState extends ConsumerState<_TpvFormPage> {
 
   @override
   Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF2EEF9),
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF2EEF9),
+        backgroundColor: theme.scaffoldBackgroundColor,
         centerTitle: true,
         title: Text(_isEditing ? 'Editar TPV' : 'Nuevo TPV'),
         leading: IconButton(
@@ -1958,7 +1980,6 @@ class _TpvFormPageState extends ConsumerState<_TpvFormPage> {
               'Nombre del TPV',
               style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF272238),
               ),
             ),
             const SizedBox(height: 8),
@@ -1967,7 +1988,7 @@ class _TpvFormPageState extends ConsumerState<_TpvFormPage> {
               decoration: InputDecoration(
                 hintText: 'Ej: Caja Principal',
                 filled: true,
-                fillColor: Colors.white,
+                fillColor: theme.inputDecorationTheme.fillColor,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
@@ -1979,7 +2000,6 @@ class _TpvFormPageState extends ConsumerState<_TpvFormPage> {
               'Codigo del TPV',
               style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF272238),
               ),
             ),
             const SizedBox(height: 8),
@@ -1992,7 +2012,7 @@ class _TpvFormPageState extends ConsumerState<_TpvFormPage> {
                     decoration: InputDecoration(
                       hintText: 'Se genera automaticamente si lo dejas vacio',
                       filled: true,
-                      fillColor: Colors.white,
+                      fillColor: theme.inputDecorationTheme.fillColor,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
@@ -2013,7 +2033,6 @@ class _TpvFormPageState extends ConsumerState<_TpvFormPage> {
               'Moneda del TPV',
               style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF272238),
               ),
             ),
             const SizedBox(height: 8),
@@ -2027,7 +2046,7 @@ class _TpvFormPageState extends ConsumerState<_TpvFormPage> {
                       labelText: 'Codigo',
                       hintText: 'USD, EUR, CUP',
                       filled: true,
-                      fillColor: Colors.white,
+                      fillColor: theme.inputDecorationTheme.fillColor,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
@@ -2044,7 +2063,7 @@ class _TpvFormPageState extends ConsumerState<_TpvFormPage> {
                       labelText: 'Simbolo',
                       hintText: r'$',
                       filled: true,
-                      fillColor: Colors.white,
+                      fillColor: theme.inputDecorationTheme.fillColor,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
@@ -2059,7 +2078,6 @@ class _TpvFormPageState extends ConsumerState<_TpvFormPage> {
               'Metodos de pago habilitados',
               style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF272238),
               ),
             ),
             const SizedBox(height: 8),
@@ -2094,7 +2112,6 @@ class _TpvFormPageState extends ConsumerState<_TpvFormPage> {
               'Denominaciones de efectivo',
               style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF272238),
               ),
             ),
             const SizedBox(height: 8),
@@ -2104,7 +2121,7 @@ class _TpvFormPageState extends ConsumerState<_TpvFormPage> {
                 hintText: 'Ej: 100, 50, 20, 10, 5, 1, 0.25',
                 helperText: 'Separadas por coma. Se usan en cierre de turno.',
                 filled: true,
-                fillColor: Colors.white,
+                fillColor: theme.inputDecorationTheme.fillColor,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
@@ -2112,11 +2129,11 @@ class _TpvFormPageState extends ConsumerState<_TpvFormPage> {
               ),
             ),
             const SizedBox(height: 10),
-            const Text(
+            Text(
               'Al guardar el TPV se crea automaticamente su almacen asociado.',
               style: TextStyle(
                 fontSize: 12.5,
-                color: Color(0xFF655D83),
+                color: scheme.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 24),

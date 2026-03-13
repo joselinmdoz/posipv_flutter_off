@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -32,11 +33,13 @@ class VentasPosPage extends ConsumerStatefulWidget {
 
 class _VentasPosPageState extends ConsumerState<VentasPosPage> {
   List<Product> _products = <Product>[];
+  List<Product> _visibleProducts = <Product>[];
   List<Product> _quickAdjustProducts = <Product>[];
   final Set<String> _warehouseProductIds = <String>{};
   final Map<String, double> _qtyByProductId = <String, double>{};
   final Map<String, double> _stockByProductId = <String, double>{};
   final TextEditingController _searchCtrl = TextEditingController();
+  Timer? _searchDebounce;
 
   String? _warehouseId;
   String? _warehouseName;
@@ -61,16 +64,22 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchCtrl.removeListener(_onSearchChanged);
     _searchCtrl.dispose();
     super.dispose();
   }
 
   void _onSearchChanged() {
-    if (!mounted) {
-      return;
-    }
-    setState(() {});
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 180), () {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _visibleProducts = _filterProducts(_products, _searchCtrl.text);
+      });
+    });
   }
 
   Future<void> _bootstrap() async {
@@ -137,22 +146,33 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       final Future<List<InventoryView>> stockedFuture = ref
           .read(inventarioLocalDataSourceProvider)
           .listStocked(warehouseId: terminalView.warehouse.id);
-      final Future<List<Product>> productsFuture =
-          ref.read(productosLocalDataSourceProvider).listActiveProducts();
+      final Future<List<InventoryView>> warehouseRowsFuture = ref
+          .read(inventarioLocalDataSourceProvider)
+          .listByWarehouse(terminalView.warehouse.id);
 
       final PosSession? openSession = await openSessionFuture;
       final List<InventoryView> stockedRows = await stockedFuture;
-      final List<Product> allProducts = await productsFuture;
+      final List<InventoryView> warehouseRows = await warehouseRowsFuture;
 
       final Set<String> warehouseProductIds =
           stockedRows.map((InventoryView row) => row.productId).toSet();
+      final Set<String> quickAdjustIds =
+          warehouseRows.map((InventoryView row) => row.productId).toSet();
       final Map<String, double> stockByProductId = <String, double>{
         for (final InventoryView row in stockedRows) row.productId: row.qty,
       };
-      final List<Product> products = allProducts
-          .where((Product product) => warehouseProductIds.contains(product.id))
-          .toList()
-        ..sort((Product a, Product b) => a.name.compareTo(b.name));
+      final List<Product> products = await ref
+          .read(productosLocalDataSourceProvider)
+          .listActiveProductsByIds(warehouseProductIds);
+      final List<Product> quickAdjustProducts = quickAdjustIds
+              .difference(
+                warehouseProductIds,
+              )
+              .isEmpty
+          ? products
+          : await ref
+              .read(productosLocalDataSourceProvider)
+              .listActiveProductsByIds(quickAdjustIds);
 
       if (!mounted) {
         return;
@@ -160,7 +180,8 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
 
       setState(() {
         _products = products;
-        _quickAdjustProducts = products;
+        _visibleProducts = _filterProducts(products, _searchCtrl.text);
+        _quickAdjustProducts = quickAdjustProducts;
         _warehouseProductIds
           ..clear()
           ..addAll(warehouseProductIds);
@@ -196,6 +217,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     required bool allowNegativeStock,
   }) {
     _products = <Product>[];
+    _visibleProducts = <Product>[];
     _quickAdjustProducts = <Product>[];
     _warehouseProductIds.clear();
     _qtyByProductId.clear();
@@ -226,12 +248,12 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     });
   }
 
-  List<Product> get _filteredProducts {
-    final String query = _searchCtrl.text.trim().toLowerCase();
+  List<Product> _filterProducts(List<Product> products, String queryText) {
+    final String query = queryText.trim().toLowerCase();
     if (query.isEmpty) {
-      return _products;
+      return products;
     }
-    return _products.where((Product product) {
+    return products.where((Product product) {
       return product.name.toLowerCase().contains(query) ||
           product.sku.toLowerCase().contains(query) ||
           (product.barcode ?? '').toLowerCase().contains(query);
@@ -507,6 +529,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     required StateSetter setModalState,
     required bool withCloseButton,
   }) {
+    final Color secondaryText = Theme.of(context).colorScheme.onSurfaceVariant;
     final List<_CartLine> lines = _cartLines;
     final int subtotal = _subtotalFromLines(lines);
     final int tax = _taxFromLines(lines);
@@ -528,7 +551,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
             ),
             Text(
               '${lines.length} item(s)',
-              style: const TextStyle(color: Color(0xFF655D83)),
+              style: TextStyle(color: secondaryText),
             ),
             if (withCloseButton)
               IconButton(
@@ -1113,9 +1136,32 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       _show('No hay productos para ajustar.');
       return;
     }
+    final InventarioLocalDataSource inventarioDs =
+        ref.read(inventarioLocalDataSourceProvider);
+    final List<InventoryMovementReason> entryReasons =
+        await inventarioDs.listManualMovementReasons(movementType: 'in');
+    final List<InventoryMovementReason> outputReasons =
+        await inventarioDs.listManualMovementReasons(movementType: 'out');
+    if (entryReasons.isEmpty && outputReasons.isEmpty) {
+      _show('No hay motivos disponibles para registrar movimientos.');
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
 
-    String selectedProductId = adjustProducts.first.id;
-    bool isEntry = true;
+    final Map<String, Product> productById = <String, Product>{
+      for (final Product product in adjustProducts) product.id: product,
+    };
+    final List<Product> stockedAdjustProducts = adjustProducts
+        .where((Product product) => (_stockByProductId[product.id] ?? 0) > 0)
+        .toList();
+
+    String? selectedProductId = adjustProducts.first.id;
+    bool isEntry = entryReasons.isNotEmpty || outputReasons.isEmpty;
+    String? selectedReasonCode = isEntry
+        ? (entryReasons.isNotEmpty ? entryReasons.first.code : null)
+        : (outputReasons.isNotEmpty ? outputReasons.first.code : null);
     String qtyText = '';
     String noteText = '';
 
@@ -1124,6 +1170,19 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       builder: (BuildContext context) {
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setStateDialog) {
+            final bool isDark = Theme.of(context).brightness == Brightness.dark;
+            final Color secondaryText =
+                Theme.of(context).colorScheme.onSurfaceVariant;
+            final List<Product> selectableProducts =
+                isEntry ? adjustProducts : stockedAdjustProducts;
+            final List<InventoryMovementReason> selectableReasons =
+                isEntry ? entryReasons : outputReasons;
+            final Product? selectedProduct = selectedProductId == null
+                ? null
+                : productById[selectedProductId];
+            final double selectedStock = selectedProduct == null
+                ? 0
+                : (_stockByProductId[selectedProduct.id] ?? 0);
             return AlertDialog(
               title: const Text('Entrada / Salida'),
               content: SizedBox(
@@ -1132,25 +1191,72 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
-                      DropdownButtonFormField<String>(
+                      DropdownButtonFormField<String?>(
                         initialValue: selectedProductId,
                         isExpanded: true,
                         decoration:
                             const InputDecoration(labelText: 'Producto'),
-                        items: adjustProducts
+                        items: selectableProducts
                             .map(
-                              (Product p) => DropdownMenuItem<String>(
+                              (Product p) => DropdownMenuItem<String?>(
                                 value: p.id,
                                 child: Text('${p.sku} - ${p.name}'),
                               ),
                             )
                             .toList(),
                         onChanged: (String? value) {
-                          if (value == null) {
-                            return;
-                          }
                           setStateDialog(() => selectedProductId = value);
                         },
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? const Color(0xFF241F33)
+                              : const Color(0xFFF6F2FC),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isDark
+                                ? const Color(0xFF342E46)
+                                : const Color(0xFFD8D0EB),
+                          ),
+                        ),
+                        child: selectedProduct == null
+                            ? Text(
+                                'No hay productos con stock para realizar una salida.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: secondaryText,
+                                ),
+                              )
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  Text(
+                                    selectedProduct.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Precio venta: ${_money(selectedProduct.priceCents)}',
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Stock TPV: ${_formatQty(selectedStock)}',
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                ],
+                              ),
                       ),
                       const SizedBox(height: 8),
                       SegmentedButton<bool>(
@@ -1168,8 +1274,64 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
                         ],
                         selected: <bool>{isEntry},
                         onSelectionChanged: (Set<bool> value) {
-                          setStateDialog(() => isEntry = value.first);
+                          setStateDialog(() {
+                            final bool nextIsEntry = value.first;
+                            final List<InventoryMovementReason> nextReasons =
+                                nextIsEntry ? entryReasons : outputReasons;
+                            isEntry = nextIsEntry;
+                            if (!nextIsEntry) {
+                              if (stockedAdjustProducts.isEmpty) {
+                                selectedProductId = null;
+                              } else if (selectedProductId == null ||
+                                  !_stockByProductId.containsKey(
+                                    selectedProductId,
+                                  ) ||
+                                  (_stockByProductId[selectedProductId] ?? 0) <=
+                                      0) {
+                                selectedProductId =
+                                    stockedAdjustProducts.first.id;
+                              }
+                            } else if (selectedProductId == null &&
+                                adjustProducts.isNotEmpty) {
+                              selectedProductId = adjustProducts.first.id;
+                            }
+                            if (nextReasons.isEmpty) {
+                              selectedReasonCode = null;
+                            } else if (selectedReasonCode == null ||
+                                !nextReasons.any(
+                                  (InventoryMovementReason reason) =>
+                                      reason.code == selectedReasonCode,
+                                )) {
+                              selectedReasonCode = nextReasons.first.code;
+                            }
+                          });
                         },
+                      ),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String?>(
+                        key: ValueKey<String>(
+                          '${isEntry ? 'in' : 'out'}-${selectedReasonCode ?? 'none'}',
+                        ),
+                        initialValue: selectedReasonCode,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Motivo del movimiento',
+                        ),
+                        items: selectableReasons
+                            .map(
+                              (InventoryMovementReason reason) =>
+                                  DropdownMenuItem<String?>(
+                                value: reason.code,
+                                child: Text(reason.label),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: selectableReasons.isEmpty
+                            ? null
+                            : (String? value) {
+                                setStateDialog(
+                                    () => selectedReasonCode = value);
+                              },
                       ),
                       const SizedBox(height: 8),
                       TextField(
@@ -1198,7 +1360,10 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
                   child: const Text('Cancelar'),
                 ),
                 FilledButton(
-                  onPressed: () => Navigator.of(context).pop(true),
+                  onPressed:
+                      selectedProductId == null || selectedReasonCode == null
+                          ? null
+                          : () => Navigator.of(context).pop(true),
                   child: const Text('Aplicar'),
                 ),
               ],
@@ -1212,6 +1377,17 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       return;
     }
 
+    if (selectedProductId == null) {
+      _show('Selecciona un producto valido para ajustar.');
+      return;
+    }
+    final String safeProductId = selectedProductId!;
+    if (selectedReasonCode == null || selectedReasonCode!.trim().isEmpty) {
+      _show('Selecciona un motivo para registrar el movimiento.');
+      return;
+    }
+    final String safeReasonCode = selectedReasonCode!;
+
     final double? qty = double.tryParse(qtyText.trim().replaceAll(',', '.'));
     final String note = noteText.trim();
 
@@ -1220,23 +1396,37 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       return;
     }
 
-    final double currentQty = _stockByProductId[selectedProductId] ?? 0;
+    final double currentQty = _stockByProductId[safeProductId] ?? 0;
     final double nextQty = isEntry ? currentQty + qty : currentQty - qty;
-    if (!_allowNegativeStock && nextQty < 0) {
+    if (!isEntry && currentQty <= 0) {
+      _show('Solo puedes hacer salidas de productos con stock en el TPV.');
+      return;
+    }
+    if (!isEntry && qty > currentQty) {
+      _show('La salida supera el stock disponible en el TPV.');
+      return;
+    }
+    if (isEntry == false && nextQty < 0) {
       _show('La salida supera el stock disponible.');
+      return;
+    }
+    if (isEntry && !_allowNegativeStock && nextQty < 0) {
+      _show('No se pudo calcular el stock final.');
       return;
     }
 
     try {
-      await ref.read(inventarioLocalDataSourceProvider).setStock(
-            productId: selectedProductId,
-            warehouseId: _warehouseId!,
-            qty: nextQty,
-            userId: session.userId,
-            note: note.isEmpty
-                ? (isEntry ? 'Entrada rapida TPV' : 'Salida rapida TPV')
-                : note,
-          );
+      await inventarioDs.createManualMovement(
+        productId: safeProductId,
+        warehouseId: _warehouseId!,
+        type: isEntry ? 'in' : 'out',
+        qty: qty,
+        reasonCode: safeReasonCode,
+        userId: session.userId,
+        note: note.isEmpty
+            ? (isEntry ? 'Entrada rapida TPV' : 'Salida rapida TPV')
+            : note,
+      );
       await _bootstrap();
       _show('Inventario actualizado desde TPV.');
     } catch (e) {
@@ -1515,6 +1705,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       builder: (BuildContext context) {
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setStateDialog) {
+            final bool isDark = Theme.of(context).brightness == Brightness.dark;
             void refreshDialog() {
               if (!context.mounted) {
                 return;
@@ -1570,7 +1761,9 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
                           vertical: 8,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFE8EEF9),
+                          color: isDark
+                              ? const Color(0xFF233246)
+                              : const Color(0xFFE8EEF9),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Column(
@@ -1640,7 +1833,9 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
                           vertical: 8,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFEDE7FA),
+                          color: isDark
+                              ? const Color(0xFF28233A)
+                              : const Color(0xFFEDE7FA),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
@@ -1657,8 +1852,12 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
                         ),
                         decoration: BoxDecoration(
                           color: cashMatchesExpected
-                              ? const Color(0xFFE3F5EE)
-                              : const Color(0xFFFCE9EE),
+                              ? (isDark
+                                  ? const Color(0xFF1F3A34)
+                                  : const Color(0xFFE3F5EE))
+                              : (isDark
+                                  ? const Color(0xFF472733)
+                                  : const Color(0xFFFCE9EE)),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Column(
@@ -1671,8 +1870,8 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
                               style: TextStyle(
                                 fontWeight: FontWeight.w800,
                                 color: cashMatchesExpected
-                                    ? const Color(0xFF148A65)
-                                    : const Color(0xFFB13B5A),
+                                    ? const Color(0xFF57D0A6)
+                                    : const Color(0xFFFF8EB4),
                               ),
                             ),
                             const SizedBox(height: 2),
@@ -1903,6 +2102,9 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
   }
 
   Widget _terminalHeader() {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final bool isDark = theme.brightness == Brightness.dark;
     final bool hasTerminal = _terminalId != null;
     final String title =
         hasTerminal ? (_terminalName ?? 'TPV') : 'Sin TPV activo';
@@ -1911,9 +2113,11 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2DAF3)),
+        border: Border.all(
+          color: isDark ? const Color(0xFF342E46) : const Color(0xFFE2DAF3),
+        ),
       ),
       child: Row(
         children: <Widget>[
@@ -1929,7 +2133,6 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
                   style: const TextStyle(
                     fontWeight: FontWeight.w800,
                     fontSize: 15,
-                    color: Color(0xFF30264E),
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -1938,10 +2141,16 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: !hasTerminal
-                        ? const Color(0xFFECE9F5)
+                        ? (isDark
+                            ? const Color(0xFF2D2740)
+                            : const Color(0xFFECE9F5))
                         : open
-                            ? const Color(0xFFE3F5EE)
-                            : const Color(0xFFF8E9EF),
+                            ? (isDark
+                                ? const Color(0xFF1F3A34)
+                                : const Color(0xFFE3F5EE))
+                            : (isDark
+                                ? const Color(0xFF472733)
+                                : const Color(0xFFF8E9EF)),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
@@ -1953,10 +2162,10 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
                     style: TextStyle(
                       fontSize: 11.5,
                       color: !hasTerminal
-                          ? const Color(0xFF5E527E)
+                          ? scheme.onSurfaceVariant
                           : open
-                              ? const Color(0xFF148A65)
-                              : const Color(0xFFB13B5A),
+                              ? const Color(0xFF57D0A6)
+                              : const Color(0xFFFF8EB4),
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -1975,6 +2184,8 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
   }
 
   Widget _productFilterField() {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+
     return TextField(
       controller: _searchCtrl,
       decoration: InputDecoration(
@@ -1987,27 +2198,32 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
                 icon: const Icon(Icons.clear_rounded),
               ),
         filled: true,
-        fillColor: const Color(0xFFF9F7FD),
+        fillColor: isDark ? const Color(0xFF211D2D) : const Color(0xFFF9F7FD),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFE1D8F2)),
+          borderSide: BorderSide(
+            color: isDark ? const Color(0xFF342E46) : const Color(0xFFE1D8F2),
+          ),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFE1D8F2)),
+          borderSide: BorderSide(
+            color: isDark ? const Color(0xFF342E46) : const Color(0xFFE1D8F2),
+          ),
         ),
       ),
     );
   }
 
   Widget _buildProductImage(Product product) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final String path = (product.imagePath ?? '').trim();
     if (path.isEmpty) {
       return Container(
         width: 34,
         height: 34,
         decoration: BoxDecoration(
-          color: const Color(0xFFEDE7FA),
+          color: isDark ? const Color(0xFF28233A) : const Color(0xFFEDE7FA),
           borderRadius: BorderRadius.circular(8),
         ),
         child: const Icon(Icons.inventory_2_outlined, size: 16),
@@ -2027,7 +2243,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
             width: 34,
             height: 34,
             decoration: BoxDecoration(
-              color: const Color(0xFFEDE7FA),
+              color: isDark ? const Color(0xFF28233A) : const Color(0xFFEDE7FA),
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Icon(Icons.broken_image_outlined, size: 16),
@@ -2042,12 +2258,19 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     required VoidCallback? onTap,
     required bool isAdd,
   }) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final bool enabled = onTap != null;
-    final Color bg = isAdd ? const Color(0xFFE4EEF9) : const Color(0xFFF3EAF8);
-    final Color fg = isAdd ? const Color(0xFF305A9A) : const Color(0xFF6C427A);
+    final Color bg = isAdd
+        ? (isDark ? const Color(0xFF233246) : const Color(0xFFE4EEF9))
+        : (isDark ? const Color(0xFF35263F) : const Color(0xFFF3EAF8));
+    final Color fg = isAdd
+        ? (isDark ? const Color(0xFF9AC1FF) : const Color(0xFF305A9A))
+        : (isDark ? const Color(0xFFDAB4E7) : const Color(0xFF6C427A));
 
     return Material(
-      color: enabled ? bg : const Color(0xFFECECEC),
+      color: enabled
+          ? bg
+          : (isDark ? const Color(0xFF2A2632) : const Color(0xFFECECEC)),
       shape: const CircleBorder(),
       child: InkWell(
         customBorder: const CircleBorder(),
@@ -2055,29 +2278,41 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
         child: SizedBox(
           width: 31,
           height: 31,
-          child: Icon(icon, size: 18, color: enabled ? fg : Colors.grey),
+          child: Icon(
+            icon,
+            size: 18,
+            color:
+                enabled ? fg : Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
       ),
     );
   }
 
   Widget _productCard(Product product) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final bool isDark = theme.brightness == Brightness.dark;
     final double qty = _qtyByProductId[product.id] ?? 0;
     final double stock = _stockByProductId[product.id] ?? 0;
     final bool outOfStock = stock <= 0;
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE3DAF8)),
-        boxShadow: const <BoxShadow>[
-          BoxShadow(
-            color: Color(0x0E000000),
-            blurRadius: 6,
-            offset: Offset(0, 1.5),
-          ),
-        ],
+        border: Border.all(
+          color: isDark ? const Color(0xFF342E46) : const Color(0xFFE3DAF8),
+        ),
+        boxShadow: isDark
+            ? const <BoxShadow>[]
+            : const <BoxShadow>[
+                BoxShadow(
+                  color: Color(0x0E000000),
+                  blurRadius: 6,
+                  offset: Offset(0, 1.5),
+                ),
+              ],
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(6, 6, 6, 4),
@@ -2106,9 +2341,9 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
                         product.sku,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 9.5,
-                          color: Color(0xFF6B6287),
+                          color: scheme.onSurfaceVariant,
                         ),
                       ),
                     ],
@@ -2120,8 +2355,12 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
                       const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                   decoration: BoxDecoration(
                     color: outOfStock
-                        ? const Color(0xFFFBE9EE)
-                        : const Color(0xFFE6ECFA),
+                        ? (isDark
+                            ? const Color(0xFF472733)
+                            : const Color(0xFFFBE9EE))
+                        : (isDark
+                            ? const Color(0xFF233246)
+                            : const Color(0xFFE6ECFA)),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
@@ -2130,8 +2369,10 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
                       fontSize: 9,
                       fontWeight: FontWeight.w800,
                       color: outOfStock
-                          ? const Color(0xFFB13B5A)
-                          : const Color(0xFF3D4E89),
+                          ? const Color(0xFFFF8EB4)
+                          : (isDark
+                              ? const Color(0xFF9AC1FF)
+                              : const Color(0xFF3D4E89)),
                     ),
                   ),
                 ),
@@ -2140,10 +2381,10 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
             const SizedBox(height: 4),
             Text(
               _money(product.priceCents),
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.w900,
                 fontSize: 12.8,
-                color: Color(0xFF3A2D61),
+                color: isDark ? scheme.primary : const Color(0xFF3A2D61),
               ),
             ),
             const SizedBox(height: 2),
@@ -2160,7 +2401,9 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF7F3FC),
+                        color: isDark
+                            ? const Color(0xFF28233A)
+                            : const Color(0xFFF7F3FC),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
@@ -2187,7 +2430,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
   }
 
   Widget _productsGridSliver() {
-    final List<Product> products = _filteredProducts;
+    final List<Product> products = _visibleProducts;
     if (products.isEmpty) {
       return SliverFillRemaining(
         hasScrollBody: false,

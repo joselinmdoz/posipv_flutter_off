@@ -74,6 +74,23 @@ class ProductosLocalDataSource {
         .get();
   }
 
+  Future<List<Product>> listActiveProductsByIds(Set<String> productIds) {
+    if (productIds.isEmpty) {
+      return Future<List<Product>>.value(const <Product>[]);
+    }
+    return (_db.select(_db.products)
+          ..where(
+            (Products tbl) =>
+                tbl.id.isIn(productIds) &
+                tbl.isActive.equals(true) &
+                _hasUsableProductFields(tbl),
+          )
+          ..orderBy(<OrderingTerm Function(Products)>[
+            (Products tbl) => OrderingTerm.asc(tbl.name),
+          ]))
+        .get();
+  }
+
   Future<Product?> findActiveProductById(String productId) {
     return (_db.select(_db.products)
           ..where(

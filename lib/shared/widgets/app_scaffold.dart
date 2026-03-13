@@ -43,6 +43,11 @@ class AppScaffold extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final String activeRoute = currentRoute ?? _currentLocation(context);
+    final ThemeData theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
+    final List<Color> bodyGradient = isDark
+        ? const <Color>[Color(0xFF16131E), Color(0xFF0F0D15)]
+        : const <Color>[Color(0xFFF4F1FA), Color(0xFFECE8F4)];
 
     return Scaffold(
       drawer: _buildDrawer(context, ref, activeRoute),
@@ -98,11 +103,11 @@ class AppScaffold extends ConsumerWidget {
             : null,
       ),
       body: DecoratedBox(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: <Color>[Color(0xFFF4F1FA), Color(0xFFECE8F4)],
+            colors: bodyGradient,
           ),
         ),
         child: body,
@@ -111,11 +116,15 @@ class AppScaffold extends ConsumerWidget {
   }
 
   Widget _buildTopTabs(BuildContext context, String activeRoute) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final bool isDark = theme.brightness == Brightness.dark;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(12, 2, 12, 10),
-      decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: Color(0x1A000000))),
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: theme.dividerColor)),
       ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
@@ -133,8 +142,12 @@ class AppScaffold extends ConsumerWidget {
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     color: isActive
-                        ? const Color(0xFFDDD5F4)
-                        : const Color(0xFFEDE8F8),
+                        ? (isDark
+                            ? const Color(0xFF3B3158)
+                            : const Color(0xFFDDD5F4))
+                        : (isDark
+                            ? const Color(0xFF241F33)
+                            : const Color(0xFFEDE8F8)),
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Row(
@@ -143,14 +156,17 @@ class AppScaffold extends ConsumerWidget {
                       Icon(
                         item.icon,
                         size: 16,
-                        color: const Color(0xFF4A3F73),
+                        color:
+                            isDark ? scheme.primary : const Color(0xFF4A3F73),
                       ),
                       const SizedBox(width: 6),
                       Text(
                         item.label,
                         style: TextStyle(
                           fontSize: 13,
-                          color: const Color(0xFF3A3354),
+                          color: isDark
+                              ? const Color(0xFFF0ECFA)
+                              : const Color(0xFF3A3354),
                           fontWeight:
                               isActive ? FontWeight.w700 : FontWeight.w500,
                         ),
@@ -168,14 +184,20 @@ class AppScaffold extends ConsumerWidget {
 
   Drawer _buildDrawer(BuildContext context, WidgetRef ref, String activeRoute) {
     bool isTravelMode = false;
+    final ThemeData theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
+    final Color drawerTitleColor =
+        isDark ? const Color(0xFFF1EDFA) : const Color(0xFF4C4376);
+    final Color drawerSubtitleColor =
+        isDark ? const Color(0xFFB8B0CE) : const Color(0xFF5C5970);
 
     return Drawer(
       child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 14, 20, 8),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
@@ -184,18 +206,18 @@ class AppScaffold extends ConsumerWidget {
                     style: TextStyle(
                       fontSize: 30,
                       fontWeight: FontWeight.w800,
-                      color: Color(0xFF4C4376),
+                      color: drawerTitleColor,
                     ),
                   ),
-                  SizedBox(height: 4),
+                  const SizedBox(height: 4),
                   Text(
                     'Ventas y control offline',
-                    style: TextStyle(fontSize: 14, color: Color(0xFF5C5970)),
+                    style: TextStyle(fontSize: 14, color: drawerSubtitleColor),
                   ),
                 ],
               ),
             ),
-            const Divider(height: 1),
+            Divider(height: 1, color: theme.dividerColor),
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(8, 10, 8, 8),
@@ -206,7 +228,9 @@ class AppScaffold extends ConsumerWidget {
                         borderRadius: BorderRadius.circular(14),
                       ),
                       selected: item.route == activeRoute,
-                      selectedTileColor: const Color(0xFFE2DBF6),
+                      selectedTileColor: isDark
+                          ? const Color(0xFF312948)
+                          : const Color(0xFFE2DBF6),
                       leading: Icon(item.icon),
                       title: Text(
                         item.label,
@@ -222,7 +246,7 @@ class AppScaffold extends ConsumerWidget {
                       },
                     ),
                   const SizedBox(height: 8),
-                  const Divider(height: 1),
+                  Divider(height: 1, color: theme.dividerColor),
                   const SizedBox(height: 8),
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -249,14 +273,15 @@ class AppScaffold extends ConsumerWidget {
                 ],
               ),
             ),
-            const Divider(height: 1),
+            Divider(height: 1, color: theme.dividerColor),
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 6, 12, 14),
               child: ListTile(
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
                 ),
-                tileColor: const Color(0xFFF4EFFB),
+                tileColor:
+                    isDark ? const Color(0xFF241F33) : const Color(0xFFF4EFFB),
                 leading: const Icon(Icons.logout_rounded),
                 title: const Text('Cerrar sesion'),
                 onTap: () {

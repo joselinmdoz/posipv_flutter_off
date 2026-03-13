@@ -107,6 +107,85 @@ class _IpvReportesPageState extends ConsumerState<IpvReportesPage> {
     }
   }
 
+  Widget _reportCard(IpvReportSummaryStat report) {
+    final ThemeData theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      elevation: 0,
+      color: isDark ? const Color(0xFF1C2430) : const Color(0xFFEFF3FB),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _openDetail(report),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      report.terminalName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${_formatDateTime(report.openedAt)} → ${report.closedAt == null ? '-' : _formatDateTime(report.closedAt!)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${_ipvSourceLabel(report.openingSource)} • ${report.lineCount} producto(s)',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 88, maxWidth: 112),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: <Widget>[
+                    Text(
+                      _moneyWithSymbol(
+                        report.totalAmountCents,
+                        report.currencySymbol,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.end,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      report.status == 'open' ? 'IPV abierto' : 'IPV cerrado',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.end,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isDark
+                            ? const Color(0xFFB8A9F1)
+                            : const Color(0xFF5B4B8A),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _pickFromDate() async {
     final DateTime now = DateTime.now();
     final DateTime initial = _fromDate ?? now;
@@ -192,6 +271,8 @@ class _IpvReportesPageState extends ConsumerState<IpvReportesPage> {
         context: context,
         isScrollControlled: true,
         builder: (BuildContext context) {
+          final Color secondaryText =
+              Theme.of(context).colorScheme.onSurfaceVariant;
           return FractionallySizedBox(
             heightFactor: 0.92,
             child: SafeArea(
@@ -210,9 +291,9 @@ class _IpvReportesPageState extends ConsumerState<IpvReportesPage> {
                     const SizedBox(height: 4),
                     Text(
                       '${_formatDateTime(report.openedAt)} → ${report.closedAt == null ? '-' : _formatDateTime(report.closedAt!)}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: Color(0xFF655D83),
+                        color: secondaryText,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -236,11 +317,11 @@ class _IpvReportesPageState extends ConsumerState<IpvReportesPage> {
                     ),
                     const SizedBox(height: 8),
                     const SizedBox(height: 4),
-                    const Text(
+                    Text(
                       'El detalle IPV se consulta por archivo exportado.',
                       style: TextStyle(
                         fontSize: 12.5,
-                        color: Color(0xFF655D83),
+                        color: secondaryText,
                       ),
                     ),
                   ],
@@ -289,6 +370,7 @@ class _IpvReportesPageState extends ConsumerState<IpvReportesPage> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     return AppScaffold(
       title: 'Reportes IPV',
       currentRoute: '/ipv-reportes',
@@ -307,7 +389,9 @@ class _IpvReportesPageState extends ConsumerState<IpvReportesPage> {
                     ),
                   Card(
                     elevation: 0,
-                    color: const Color(0xFFF4F1FB),
+                    color: isDark
+                        ? const Color(0xFF241F33)
+                        : const Color(0xFFF4F1FB),
                     child: Padding(
                       padding: const EdgeInsets.all(12),
                       child: Wrap(
@@ -383,51 +467,14 @@ class _IpvReportesPageState extends ConsumerState<IpvReportesPage> {
                       ),
                     )
                   else
-                    ..._reports.map((IpvReportSummaryStat report) {
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        elevation: 0,
-                        color: const Color(0xFFEFF3FB),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 2,
-                          ),
-                          title: Text(
-                            report.terminalName,
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                          subtitle: Text(
-                            '${_formatDateTime(report.openedAt)} → ${report.closedAt == null ? '-' : _formatDateTime(report.closedAt!)}\n${_ipvSourceLabel(report.openingSource)} • ${report.lineCount} producto(s)',
-                          ),
-                          trailing: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: <Widget>[
-                              Text(
-                                _moneyWithSymbol(
-                                  report.totalAmountCents,
-                                  report.currencySymbol,
-                                ),
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w800),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                report.status == 'open'
-                                    ? 'IPV abierto'
-                                    : 'IPV cerrado',
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: Color(0xFF5B4B8A),
-                                ),
-                              ),
-                            ],
-                          ),
-                          onTap: () => _openDetail(report),
-                        ),
-                      );
-                    }),
+                    ListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: _reports.length,
+                      itemBuilder: (BuildContext context, int index) {
+                        return _reportCard(_reports[index]);
+                      },
+                    ),
                 ],
               ),
             ),

@@ -104,13 +104,18 @@ class _AlmacenesPageState extends ConsumerState<AlmacenesPage> {
   }
 
   Widget _buildWarehouseCard(WarehouseWithStock wws) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final bool isDark = theme.brightness == Brightness.dark;
     final bool isCentral = wws.warehouse.warehouseType == 'Central';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
-        side: const BorderSide(color: Color(0xFFDDD5EF)),
+        side: BorderSide(
+          color: isDark ? const Color(0xFF342E46) : const Color(0xFFDDD5EF),
+        ),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
@@ -124,8 +129,12 @@ class _AlmacenesPageState extends ConsumerState<AlmacenesPage> {
                 height: 44,
                 decoration: BoxDecoration(
                   color: isCentral
-                      ? const Color(0xFFE7F6F1)
-                      : const Color(0xFFE8E2F4),
+                      ? (isDark
+                          ? const Color(0xFF1F3A34)
+                          : const Color(0xFFE7F6F1))
+                      : (isDark
+                          ? const Color(0xFF312948)
+                          : const Color(0xFFE8E2F4)),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
@@ -148,7 +157,6 @@ class _AlmacenesPageState extends ConsumerState<AlmacenesPage> {
                       style: const TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 15,
-                        color: Color(0xFF272238),
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -177,17 +185,17 @@ class _AlmacenesPageState extends ConsumerState<AlmacenesPage> {
                         const SizedBox(width: 8),
                         Text(
                           '${wws.totalProducts} productos',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
-                            color: Color(0xFF655D83),
+                            color: scheme.onSurfaceVariant,
                           ),
                         ),
                         const SizedBox(width: 4),
                         Text(
                           '(${wws.totalQuantity.toStringAsFixed(0)})',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
-                            color: Color(0xFF8B83A8),
+                            color: scheme.onSurfaceVariant,
                           ),
                         ),
                       ],
@@ -319,9 +327,9 @@ class _WarehouseFormPageState extends ConsumerState<_WarehouseFormPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF2EEF9),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF2EEF9),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         title: const Text(
           'Nuevo Almacén',
           style: TextStyle(fontWeight: FontWeight.w700),
@@ -351,7 +359,7 @@ class _WarehouseFormPageState extends ConsumerState<_WarehouseFormPage> {
               decoration: InputDecoration(
                 hintText: 'Ej: Tienda Central, Sucursal 1',
                 filled: true,
-                fillColor: Colors.white,
+                fillColor: Theme.of(context).inputDecorationTheme.fillColor,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
@@ -445,16 +453,21 @@ class _TypeOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
-          color: isSelected ? color.withValues(alpha: 0.1) : Colors.white,
+          color: isSelected
+              ? color.withValues(alpha: 0.1)
+              : Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: isSelected ? color : const Color(0xFFDDD5EF),
+            color: isSelected
+                ? color
+                : (isDark ? const Color(0xFF342E46) : const Color(0xFFDDD5EF)),
             width: isSelected ? 2 : 1,
           ),
         ),
@@ -570,12 +583,15 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final bool isDark = theme.brightness == Brightness.dark;
     final bool isCentral = _selectedType == 'Central';
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF2EEF9),
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF2EEF9),
+        backgroundColor: theme.scaffoldBackgroundColor,
         title: Text(_isEditing ? 'Editar Almacén' : 'Detalles'),
         centerTitle: true,
         leading: IconButton(
@@ -610,19 +626,19 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: theme.cardColor,
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   if (_isEditing) ...<Widget>[
-                    const Text(
+                    Text(
                       'Nombre',
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: Color(0xFF655D83),
+                        color: scheme.onSurfaceVariant,
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -630,7 +646,9 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
                       controller: _nameCtrl,
                       decoration: InputDecoration(
                         filled: true,
-                        fillColor: const Color(0xFFF5F3FA),
+                        fillColor: isDark
+                            ? const Color(0xFF211D2D)
+                            : const Color(0xFFF5F3FA),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                           borderSide: BorderSide.none,
@@ -642,12 +660,12 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    const Text(
+                    Text(
                       'Tipo',
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: Color(0xFF655D83),
+                        color: scheme.onSurfaceVariant,
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -681,8 +699,12 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
                           height: 56,
                           decoration: BoxDecoration(
                             color: isCentral
-                                ? const Color(0xFFE7F6F1)
-                                : const Color(0xFFE8E2F4),
+                                ? (isDark
+                                    ? const Color(0xFF1F3A34)
+                                    : const Color(0xFFE7F6F1))
+                                : (isDark
+                                    ? const Color(0xFF312948)
+                                    : const Color(0xFFE8E2F4)),
                             borderRadius: BorderRadius.circular(16),
                           ),
                           child: Icon(
@@ -705,7 +727,6 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
                                 style: const TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.w800,
-                                  color: Color(0xFF272238),
                                 ),
                               ),
                               const SizedBox(height: 4),
@@ -743,7 +764,7 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: theme.cardColor,
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Column(
@@ -751,26 +772,26 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
                 children: <Widget>[
                   Row(
                     children: <Widget>[
-                      const Icon(
+                      Icon(
                         Icons.inventory_2_outlined,
-                        color: Color(0xFF5B4B8A),
+                        color: scheme.primary,
                         size: 20,
                       ),
                       const SizedBox(width: 8),
-                      const Text(
+                      Text(
                         'Stock en este almacén',
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFF272238),
+                          color: scheme.onSurface,
                         ),
                       ),
                       const Spacer(),
                       Text(
                         '${_stock.length} productos',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
-                          color: Color(0xFF655D83),
+                          color: scheme.onSurfaceVariant,
                         ),
                       ),
                     ],

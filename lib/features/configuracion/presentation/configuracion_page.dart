@@ -17,13 +17,19 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
   final TextEditingController _currencyCtrl = TextEditingController();
 
   bool _allowNegativeStock = false;
+  AppThemePreference _themePreference = AppThemePreference.light;
   bool _loading = true;
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
-    _loadConfig();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _loadConfig();
+    });
   }
 
   @override
@@ -38,7 +44,7 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
 
     try {
       final AppConfig config =
-          await ref.read(configuracionLocalDataSourceProvider).loadConfig();
+          await ref.read(appConfigControllerProvider.notifier).refresh();
       if (!mounted) {
         return;
       }
@@ -47,6 +53,7 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
         _businessCtrl.text = config.businessName;
         _currencyCtrl.text = config.currencySymbol;
         _allowNegativeStock = config.allowNegativeStock;
+        _themePreference = config.themePreference;
         _loading = false;
       });
     } catch (e) {
@@ -74,11 +81,12 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
 
     setState(() => _saving = true);
     try {
-      await ref.read(configuracionLocalDataSourceProvider).saveConfig(
+      await ref.read(appConfigControllerProvider.notifier).save(
             AppConfig(
               businessName: business,
               currencySymbol: currency,
               allowNegativeStock: _allowNegativeStock,
+              themePreference: _themePreference,
             ),
           );
       if (!mounted) {
@@ -152,6 +160,36 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
                             value: _allowNegativeStock,
                             onChanged: (bool value) {
                               setState(() => _allowNegativeStock = value);
+                            },
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Tema de la aplicacion',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 8),
+                          SegmentedButton<AppThemePreference>(
+                            segments: const <ButtonSegment<AppThemePreference>>[
+                              ButtonSegment<AppThemePreference>(
+                                value: AppThemePreference.light,
+                                icon: Icon(Icons.light_mode_outlined),
+                                label: Text('Claro'),
+                              ),
+                              ButtonSegment<AppThemePreference>(
+                                value: AppThemePreference.dark,
+                                icon: Icon(Icons.dark_mode_outlined),
+                                label: Text('Oscuro'),
+                              ),
+                            ],
+                            selected: <AppThemePreference>{_themePreference},
+                            onSelectionChanged:
+                                (Set<AppThemePreference> value) {
+                              if (value.isEmpty) {
+                                return;
+                              }
+                              setState(
+                                () => _themePreference = value.first,
+                              );
                             },
                           ),
                           const SizedBox(height: 12),

@@ -301,12 +301,13 @@ class AppDatabase extends _$AppDatabase {
   final Uuid _uuid = const Uuid();
 
   @override
-  int get schemaVersion => 13;
+  int get schemaVersion => 14;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (Migrator m) async {
           await m.createAll();
+          await _createPerformanceIndexes();
           await _seedDefaultProductCatalogItems();
           await _bootstrapTerminalsForTpvWarehouses();
         },
@@ -463,6 +464,9 @@ class AppDatabase extends _$AppDatabase {
               () => m.addColumn(employees, employees.associatedUserId),
             );
           }
+          if (from < 14) {
+            await _createPerformanceIndexes();
+          }
         },
       );
 
@@ -519,6 +523,93 @@ class AppDatabase extends _$AppDatabase {
     if (!exists) {
       await addColumn();
     }
+  }
+
+  Future<void> _createPerformanceIndexes() async {
+    await customStatement(
+      '''
+      CREATE INDEX IF NOT EXISTS idx_products_active_name
+      ON products (is_active, name)
+      ''',
+    );
+    await customStatement(
+      '''
+      CREATE INDEX IF NOT EXISTS idx_products_barcode
+      ON products (barcode)
+      ''',
+    );
+    await customStatement(
+      '''
+      CREATE INDEX IF NOT EXISTS idx_stock_balances_warehouse_product
+      ON stock_balances (warehouse_id, product_id)
+      ''',
+    );
+    await customStatement(
+      '''
+      CREATE INDEX IF NOT EXISTS idx_stock_movements_warehouse_created_at
+      ON stock_movements (warehouse_id, created_at)
+      ''',
+    );
+    await customStatement(
+      '''
+      CREATE INDEX IF NOT EXISTS idx_stock_movements_product_warehouse
+      ON stock_movements (product_id, warehouse_id)
+      ''',
+    );
+    await customStatement(
+      '''
+      CREATE INDEX IF NOT EXISTS idx_sales_status_created_at
+      ON sales (status, created_at)
+      ''',
+    );
+    await customStatement(
+      '''
+      CREATE INDEX IF NOT EXISTS idx_sales_terminal_session_status
+      ON sales (terminal_session_id, status)
+      ''',
+    );
+    await customStatement(
+      '''
+      CREATE INDEX IF NOT EXISTS idx_sales_warehouse_created_at
+      ON sales (warehouse_id, created_at)
+      ''',
+    );
+    await customStatement(
+      '''
+      CREATE INDEX IF NOT EXISTS idx_sale_items_sale_id
+      ON sale_items (sale_id)
+      ''',
+    );
+    await customStatement(
+      '''
+      CREATE INDEX IF NOT EXISTS idx_payments_sale_id
+      ON payments (sale_id)
+      ''',
+    );
+    await customStatement(
+      '''
+      CREATE INDEX IF NOT EXISTS idx_pos_sessions_status_closed_at
+      ON pos_sessions (status, closed_at)
+      ''',
+    );
+    await customStatement(
+      '''
+      CREATE INDEX IF NOT EXISTS idx_pos_sessions_terminal_user_status
+      ON pos_sessions (terminal_id, user_id, status)
+      ''',
+    );
+    await customStatement(
+      '''
+      CREATE INDEX IF NOT EXISTS idx_ipv_reports_status_closed_at
+      ON ipv_reports (status, closed_at)
+      ''',
+    );
+    await customStatement(
+      '''
+      CREATE INDEX IF NOT EXISTS idx_ipv_reports_terminal_status_closed_at
+      ON ipv_reports (terminal_id, status, closed_at)
+      ''',
+    );
   }
 
   Future<void> _bootstrapTerminalsForTpvWarehouses() async {

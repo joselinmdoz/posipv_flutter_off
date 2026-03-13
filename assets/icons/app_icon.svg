@@ -1,0 +1,42 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="140" y1="108" x2="860" y2="916" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6F5AA7"/>
+      <stop offset="1" stop-color="#4F427E"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(312 228) rotate(42.5) scale(514 448)">
+      <stop stop-color="#FFFFFF" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="56" y="56" width="912" height="912" rx="248" fill="url(#bg)"/>
+  <rect x="56" y="56" width="912" height="912" rx="248" fill="url(#glow)"/>
+
+  <circle cx="808" cy="244" r="124" fill="#FFFFFF" fill-opacity="0.08"/>
+  <circle cx="224" cy="820" r="164" fill="#FFFFFF" fill-opacity="0.07"/>
+
+  <rect x="238" y="174" width="548" height="676" rx="132" fill="#231C3F" fill-opacity="0.12"/>
+  <rect x="252" y="162" width="520" height="652" rx="120" fill="#FFFFFF"/>
+
+  <rect x="320" y="236" width="384" height="190" rx="48" fill="#F1ECFD"/>
+  <rect x="346" y="262" width="332" height="138" rx="38" fill="#5B4B8A"/>
+
+  <path d="M418 354L490 298L560 336L628 286" stroke="#6EE7BF" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="628" cy="286" r="22" fill="#6EE7BF"/>
+
+  <rect x="334" y="486" width="356" height="40" rx="20" fill="#E8E1F8"/>
+  <rect x="334" y="548" width="226" height="34" rx="17" fill="#E8E1F8"/>
+
+  <circle cx="386" cy="654" r="30" fill="#D9D0F0"/>
+  <circle cx="512" cy="654" r="30" fill="#D9D0F0"/>
+  <circle cx="638" cy="654" r="30" fill="#D9D0F0"/>
+  <circle cx="386" cy="736" r="30" fill="#D9D0F0"/>
+  <circle cx="512" cy="736" r="30" fill="#D9D0F0"/>
+
+  <rect x="574" y="692" width="128" height="88" rx="26" fill="#21B58B"/>
+  <path d="M609 722H668" stroke="#FFFFFF" stroke-width="18" stroke-linecap="round"/>
+  <path d="M638 693V780" stroke="#FFFFFF" stroke-width="18" stroke-linecap="round"/>
+
+  <rect x="428" y="852" width="168" height="26" rx="13" fill="#DCD4F1"/>
+</svg>

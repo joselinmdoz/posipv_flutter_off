@@ -205,15 +205,25 @@ class ReportesLocalDataSource {
     final DateTime startTopWindow =
         startToday.subtract(Duration(days: safeTopDays - 1));
 
-    final List<Sale> todaySales = await _postedSalesSince(startToday);
-    final List<Sale> lastSales = await _postedSalesSince(startLastDays);
-    final List<TopProductStat> top =
-        await _topProducts(startTopWindow, safeTopLimit);
-    final List<RecentSaleStat> recent = await _recentSales(safeRecentLimit);
+    final Future<List<Sale>> todaySalesFuture = _postedSalesSince(startToday);
+    final Future<List<Sale>> lastSalesFuture = _postedSalesSince(startLastDays);
+    final Future<List<TopProductStat>> topFuture =
+        _topProducts(startTopWindow, safeTopLimit);
+    final Future<List<RecentSaleStat>> recentFuture =
+        _recentSales(safeRecentLimit);
+    final Future<List<RecentSessionClosureStat>> recentSessionClosuresFuture =
+        _recentSessionClosures(safeSessionClosureLimit);
+    final Future<List<IpvReportSummaryStat>> recentIpvReportsFuture =
+        listIpvReports(limit: safeIpvLimit);
+
+    final List<Sale> todaySales = await todaySalesFuture;
+    final List<Sale> lastSales = await lastSalesFuture;
+    final List<TopProductStat> top = await topFuture;
+    final List<RecentSaleStat> recent = await recentFuture;
     final List<RecentSessionClosureStat> recentSessionClosures =
-        await _recentSessionClosures(safeSessionClosureLimit);
+        await recentSessionClosuresFuture;
     final List<IpvReportSummaryStat> recentIpvReports =
-        await listIpvReports(limit: safeIpvLimit);
+        await recentIpvReportsFuture;
 
     return ReportesDashboard(
       today: _buildTodaySummary(todaySales),
@@ -314,81 +324,38 @@ class ReportesLocalDataSource {
   }
 
   Future<List<TopProductStat>> _topProducts(DateTime from, int limit) async {
-    final List<Sale> sales = await _postedSalesSince(from);
-    if (sales.isEmpty) {
-      return <TopProductStat>[];
-    }
+    final List<QueryRow> rows = await _db.customSelect(
+      '''
+      SELECT
+        COALESCE(p.name, si.product_id) AS product_name,
+        COALESCE(p.sku, '-') AS sku,
+        COALESCE(SUM(si.qty), 0) AS qty,
+        COALESCE(SUM(si.line_total_cents), 0) AS total_cents
+      FROM sale_items si
+      INNER JOIN sales s
+        ON s.id = si.sale_id
+      LEFT JOIN products p
+        ON p.id = si.product_id
+      WHERE s.status = 'posted'
+        AND s.created_at >= ?
+      GROUP BY si.product_id, p.name, p.sku
+      ORDER BY qty DESC, total_cents DESC
+      LIMIT ?
+      ''',
+      variables: <Variable<Object>>[
+        Variable<DateTime>(from),
+        Variable<int>(limit),
+      ],
+    ).get();
 
-    final Set<String> saleIds = sales.map((Sale sale) => sale.id).toSet();
-    final List<SaleItem> saleItems = await (_db.select(_db.saleItems)
-          ..where((SaleItems tbl) =>
-              tbl.saleId.isIn(saleIds) &
-              tbl.id.isNotNull() &
-              tbl.saleId.isNotNull() &
-              tbl.productId.isNotNull() &
-              tbl.qty.isNotNull() &
-              tbl.unitPriceCents.isNotNull() &
-              tbl.taxRateBps.isNotNull() &
-              tbl.lineSubtotalCents.isNotNull() &
-              tbl.lineTaxCents.isNotNull() &
-              tbl.lineTotalCents.isNotNull()))
-        .get();
-    if (saleItems.isEmpty) {
-      return <TopProductStat>[];
-    }
-
-    final Set<String> productIds =
-        saleItems.map((SaleItem item) => item.productId).toSet();
-    final List<Product> products = await (_db.select(_db.products)
-          ..where((Products tbl) =>
-              tbl.id.isIn(productIds) &
-              tbl.id.isNotNull() &
-              tbl.sku.isNotNull() &
-              tbl.name.isNotNull() &
-              tbl.priceCents.isNotNull() &
-              tbl.taxRateBps.isNotNull() &
-              tbl.costPriceCents.isNotNull() &
-              tbl.category.isNotNull() &
-              tbl.productType.isNotNull() &
-              tbl.unitMeasure.isNotNull() &
-              tbl.currencyCode.isNotNull() &
-              tbl.isActive.isNotNull() &
-              tbl.createdAt.isNotNull()))
-        .get();
-
-    final Map<String, Product> productById = <String, Product>{
-      for (final Product product in products) product.id: product,
-    };
-
-    final Map<String, _TopAccumulator> aggByProduct =
-        <String, _TopAccumulator>{};
-    for (final SaleItem item in saleItems) {
-      final _TopAccumulator acc =
-          aggByProduct.putIfAbsent(item.productId, _TopAccumulator.new);
-      acc.qty += item.qty;
-      acc.totalCents += item.lineTotalCents;
-    }
-
-    final List<TopProductStat> stats = aggByProduct.entries.map((entry) {
-      final Product? product = productById[entry.key];
-      final _TopAccumulator acc = entry.value;
+    return rows.map((QueryRow row) {
       return TopProductStat(
-        productName: product?.name ?? entry.key,
-        sku: product?.sku ?? '-',
-        qty: acc.qty,
-        totalCents: acc.totalCents,
+        productName: (row.readNullable<String>('product_name') ?? '-').trim(),
+        sku: (row.readNullable<String>('sku') ?? '-').trim(),
+        qty: (row.data['qty'] as num?)?.toDouble() ?? 0,
+        totalCents: (row.data['total_cents'] as num?)?.toInt() ?? 0,
       );
     }).toList();
-
-    stats.sort((TopProductStat a, TopProductStat b) {
-      final int byQty = b.qty.compareTo(a.qty);
-      if (byQty != 0) {
-        return byQty;
-      }
-      return b.totalCents.compareTo(a.totalCents);
-    });
-
-    return stats.take(limit).toList();
   }
 
   Future<List<RecentSessionClosureStat>> _recentSessionClosures(
@@ -1738,11 +1705,6 @@ class ReportesLocalDataSource {
     final String d = local.day.toString().padLeft(2, '0');
     return '$y-$m-$d';
   }
-}
-
-class _TopAccumulator {
-  double qty = 0;
-  int totalCents = 0;
 }
 
 class _IpvAgg {

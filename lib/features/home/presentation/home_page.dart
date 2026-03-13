@@ -28,7 +28,12 @@ class _HomePageState extends ConsumerState<HomePage> {
   @override
   void initState() {
     super.initState();
-    _loadDashboard();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _loadDashboard();
+    });
   }
 
   Future<void> _loadDashboard() async {
@@ -92,6 +97,8 @@ class _HomePageState extends ConsumerState<HomePage> {
   Widget build(BuildContext context) {
     final UserSession? session = ref.watch(currentSessionProvider);
     final ReportesDashboard? dashboard = _dashboard;
+    final ThemeData theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
 
     return AppScaffold(
       title: _businessName,
@@ -129,19 +136,25 @@ class _HomePageState extends ConsumerState<HomePage> {
                     title: 'Ventas hoy',
                     value: dashboard.today.salesCount.toString(),
                     icon: Icons.receipt_long_rounded,
-                    tint: const Color(0xFFD8D0F3),
+                    tint: isDark
+                        ? const Color(0xFF3B3158)
+                        : const Color(0xFFD8D0F3),
                   ),
                   _kpiCard(
                     title: 'Total hoy',
                     value: _money(dashboard.today.totalCents),
                     icon: Icons.trending_up_rounded,
-                    tint: const Color(0xFFCFEEDF),
+                    tint: isDark
+                        ? const Color(0xFF1F3A34)
+                        : const Color(0xFFCFEEDF),
                   ),
                   _kpiCard(
                     title: 'Impuesto',
                     value: _money(dashboard.today.taxCents),
                     icon: Icons.account_balance_wallet_outlined,
-                    tint: const Color(0xFFF6D6E6),
+                    tint: isDark
+                        ? const Color(0xFF4A2633)
+                        : const Color(0xFFF6D6E6),
                   ),
                 ],
               ),
@@ -151,68 +164,6 @@ class _HomePageState extends ConsumerState<HomePage> {
                 trailing: const Icon(Icons.show_chart_rounded),
                 child: _weeklyBars(dashboard.lastDays),
               ),
-              const SizedBox(height: 12),
-              _sectionCard(
-                title: 'Accesos rapidos',
-                trailing: const Icon(Icons.dashboard_customize_outlined),
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _quickActions
-                      .map(
-                        (_QuickAction action) => ActionChip(
-                          avatar: Icon(action.icon, size: 18),
-                          label: Text(action.label),
-                          onPressed: () => context.go(action.route),
-                        ),
-                      )
-                      .toList(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              _sectionCard(
-                title: 'Ultimas ventas',
-                trailing: TextButton(
-                  onPressed: () => context.go('/reportes'),
-                  child: const Text('Ver todo'),
-                ),
-                child: dashboard.recentSales.isEmpty
-                    ? const Text('Aun no hay ventas registradas.')
-                    : Column(
-                        children: dashboard.recentSales
-                            .take(5)
-                            .map(
-                              (RecentSaleStat sale) => ListTile(
-                                contentPadding: EdgeInsets.zero,
-                                leading: const CircleAvatar(
-                                  backgroundColor: Color(0xFFE2DCF5),
-                                  child: Icon(
-                                    Icons.receipt,
-                                    size: 18,
-                                    color: Color(0xFF4D4272),
-                                  ),
-                                ),
-                                title: Text(
-                                  sale.folio,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                subtitle: Text(
-                                  '${sale.warehouseName} | ${sale.cashierUsername}',
-                                ),
-                                trailing: Text(
-                                  _money(sale.totalCents),
-                                  style: const TextStyle(
-                                    color: Color(0xFF1E9A74),
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ),
-                            )
-                            .toList(),
-                      ),
-              ),
             ],
           ],
         ),
@@ -221,6 +172,8 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   Widget _heroCard(UserSession? session) {
+    final Color secondaryText = Theme.of(context).colorScheme.onSurfaceVariant;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -255,7 +208,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                   Text(
                     'Controla ventas, stock y almacenes desde un solo panel.',
                     style: TextStyle(
-                      color: Colors.grey.shade700,
+                      color: secondaryText,
                     ),
                   ),
                 ],
@@ -272,6 +225,8 @@ class _HomePageState extends ConsumerState<HomePage> {
     required Widget child,
     Widget? trailing,
   }) {
+    final Color titleColor = Theme.of(context).colorScheme.onSurface;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -283,10 +238,10 @@ class _HomePageState extends ConsumerState<HomePage> {
                 Expanded(
                   child: Text(
                     title,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w700,
-                      color: Color(0xFF35304D),
+                      color: titleColor,
                     ),
                   ),
                 ),
@@ -302,6 +257,9 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   Widget _weeklyBars(List<DailySalesPoint> points) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+
     if (points.isEmpty) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 18),
@@ -333,10 +291,10 @@ class _HomePageState extends ConsumerState<HomePage> {
                 children: <Widget>[
                   Text(
                     _moneyCompact(p.totalCents),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: Color(0xFF4E4768),
+                      color: scheme.onSurface,
                     ),
                   ),
                   const SizedBox(height: 6),
@@ -344,7 +302,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                     duration: const Duration(milliseconds: 200),
                     height: barHeight,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF47B88E),
+                      color: scheme.secondary,
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
@@ -352,7 +310,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                   Text(
                     p.day.length >= 10 ? p.day.substring(8, 10) : p.day,
                     style: TextStyle(
-                      color: Colors.grey.shade700,
+                      color: scheme.onSurfaceVariant,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -371,6 +329,8 @@ class _HomePageState extends ConsumerState<HomePage> {
     required IconData icon,
     required Color tint,
   }) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+
     return SizedBox(
       width: 170,
       child: Card(
@@ -380,7 +340,7 @@ class _HomePageState extends ConsumerState<HomePage> {
             children: <Widget>[
               CircleAvatar(
                 backgroundColor: tint,
-                child: Icon(icon, size: 18, color: const Color(0xFF50467A)),
+                child: Icon(icon, size: 18, color: scheme.onSurface),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -391,7 +351,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                       title,
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.grey.shade700,
+                        color: scheme.onSurfaceVariant,
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -424,27 +384,3 @@ class _HomePageState extends ConsumerState<HomePage> {
     return '$_currencySymbol${value.toStringAsFixed(0)}';
   }
 }
-
-class _QuickAction {
-  const _QuickAction(this.label, this.route, this.icon);
-
-  final String label;
-  final String route;
-  final IconData icon;
-}
-
-const List<_QuickAction> _quickActions = <_QuickAction>[
-  _QuickAction('TPV', '/tpv', Icons.storefront_rounded),
-  _QuickAction('Empleados', '/tpv-empleados', Icons.badge_outlined),
-  _QuickAction('Ventas', '/ventas-directas', Icons.point_of_sale_rounded),
-  _QuickAction('Inventario', '/inventario', Icons.inventory_2_outlined),
-  _QuickAction(
-    'Movimientos',
-    '/inventario-movimientos',
-    Icons.swap_horiz_rounded,
-  ),
-  _QuickAction('Productos', '/productos', Icons.shopping_bag_outlined),
-  _QuickAction('Reportes', '/reportes', Icons.stacked_bar_chart_rounded),
-  _QuickAction('IPV', '/ipv-reportes', Icons.table_chart_outlined),
-  _QuickAction('Ajustes', '/configuracion', Icons.settings_outlined),
-];

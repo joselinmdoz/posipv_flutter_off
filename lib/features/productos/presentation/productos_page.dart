@@ -89,12 +89,19 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
   }
 
   Widget _buildImageContent(String? path) {
+    final ThemeData theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
+    final Color placeholder =
+        isDark ? const Color(0xFF2A243B) : const Color(0xFFDCD5F3);
+    final Color placeholderIcon =
+        isDark ? const Color(0xFFB9AEE2) : const Color(0xFF574A82);
+
     if (path == null || path.isEmpty) {
       return Container(
-        color: const Color(0xFFDCD5F3),
-        child: const Icon(
+        color: placeholder,
+        child: Icon(
           Icons.inventory_2_outlined,
-          color: Color(0xFF574A82),
+          color: placeholderIcon,
         ),
       );
     }
@@ -103,9 +110,10 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
       return Image.network(
         path,
         fit: BoxFit.cover,
+        cacheWidth: 480,
         errorBuilder: (_, __, ___) => Container(
-          color: const Color(0xFFDCD5F3),
-          child: const Icon(Icons.broken_image_outlined),
+          color: placeholder,
+          child: Icon(Icons.broken_image_outlined, color: placeholderIcon),
         ),
       );
     }
@@ -113,9 +121,10 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
     return Image.file(
       File(path),
       fit: BoxFit.cover,
+      cacheWidth: 480,
       errorBuilder: (_, __, ___) => Container(
-        color: const Color(0xFFDCD5F3),
-        child: const Icon(Icons.broken_image_outlined),
+        color: placeholder,
+        child: Icon(Icons.broken_image_outlined, color: placeholderIcon),
       ),
     );
   }
@@ -127,6 +136,8 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
       context: context,
       isScrollControlled: true,
       builder: (BuildContext context) {
+        final ThemeData theme = Theme.of(context);
+        final bool isDark = theme.brightness == Brightness.dark;
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -158,10 +169,14 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 12),
-                const Text(
+                Text(
                   'Este QR contiene: id, codigo, nombre, precio de venta y moneda.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Color(0xFF59526E)),
+                  style: TextStyle(
+                    color: isDark
+                        ? const Color(0xFFB9B1CD)
+                        : const Color(0xFF59526E),
+                  ),
                 ),
               ],
             ),
@@ -172,131 +187,162 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
   }
 
   Widget _buildProductCard(Product product) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final bool isDark = theme.brightness == Brightness.dark;
     final String barcode = (product.barcode ?? '').trim();
+    final Widget imageThumb = Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isDark ? const Color(0xFF342E46) : const Color(0xFFD8D0EB),
+        ),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: SizedBox(
+          width: 46,
+          height: 46,
+          child: _buildImageContent(product.imagePath),
+        ),
+      ),
+    );
+    final Widget infoBlock = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                product.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13.2,
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Ver QR',
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints.tightFor(
+                width: 28,
+                height: 28,
+              ),
+              padding: EdgeInsets.zero,
+              splashRadius: 16,
+              onPressed: () => _showProductQr(product),
+              icon: const Icon(
+                Icons.qr_code_2_rounded,
+                size: 18,
+              ),
+            ),
+          ],
+        ),
+        Text(
+          barcode.isEmpty
+              ? 'Cod: ${product.sku}'
+              : 'Cod: ${product.sku} • Bar: $barcode',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: scheme.onSurfaceVariant,
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        Text(
+          '${product.category} • ${product.productType} • ${product.unitMeasure} • ${_dateText(product.createdAt)}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: scheme.onSurfaceVariant.withValues(alpha: 0.82),
+            fontSize: 9,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+    final Widget priceBlock = Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: <Widget>[
+        Text(
+          _moneyByCurrency(product.priceCents, product.currencyCode),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            color: isDark ? const Color(0xFF57D0A6) : const Color(0xFF148A65),
+            fontSize: 11.8,
+          ),
+        ),
+        const SizedBox(height: 1),
+        Text(
+          'Costo ${_moneyByCurrency(product.costPriceCents, product.currencyCode)}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: scheme.onSurfaceVariant,
+            fontSize: 8.8,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
 
     return Card(
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Color(0xFFDDD5EF)),
+        side: BorderSide(
+          color: isDark ? const Color(0xFF342E46) : const Color(0xFFDDD5EF),
+        ),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: () => _openProductForm(product: product),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-          child: Row(
-            children: <Widget>[
-              Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFD8D0EB)),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: SizedBox(
-                    width: 46,
-                    height: 46,
-                    child: _buildImageContent(product.imagePath),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final bool compact = constraints.maxWidth < 182;
+              if (compact) {
+                return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
                   children: <Widget>[
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
-                        Expanded(
-                          child: Text(
-                            product.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 13.2,
-                              color: Color(0xFF272238),
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: 'Ver QR',
-                          visualDensity: VisualDensity.compact,
-                          constraints: const BoxConstraints.tightFor(
-                            width: 28,
-                            height: 28,
-                          ),
-                          padding: EdgeInsets.zero,
-                          splashRadius: 16,
-                          onPressed: () => _showProductQr(product),
-                          icon: const Icon(
-                            Icons.qr_code_2_rounded,
-                            size: 18,
-                            color: Color(0xFF5A4D88),
-                          ),
-                        ),
+                        imageThumb,
+                        const SizedBox(width: 8),
+                        Expanded(child: infoBlock),
                       ],
                     ),
-                    Text(
-                      barcode.isEmpty
-                          ? 'Cod: ${product.sku}'
-                          : 'Cod: ${product.sku} • Bar: $barcode',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF655D83),
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    Text(
-                      '${product.category} • ${product.productType} • ${product.unitMeasure} • ${_dateText(product.createdAt)}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF8A84A2),
-                        fontSize: 9,
-                        fontWeight: FontWeight.w500,
-                      ),
+                    const SizedBox(height: 6),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: priceBlock,
                     ),
                   ],
-                ),
-              ),
-              const SizedBox(width: 6),
-              SizedBox(
-                width: 108,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: <Widget>[
-                    Text(
-                      _moneyByCurrency(
-                          product.priceCents, product.currencyCode),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF148A65),
-                        fontSize: 11.8,
-                      ),
-                    ),
-                    const SizedBox(height: 1),
-                    Text(
-                      'Costo ${_moneyByCurrency(product.costPriceCents, product.currencyCode)}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF5F6E6B),
-                        fontSize: 8.8,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+                );
+              }
+
+              return Row(
+                children: <Widget>[
+                  imageThumb,
+                  const SizedBox(width: 8),
+                  Expanded(child: infoBlock),
+                  const SizedBox(width: 6),
+                  SizedBox(
+                    width: 108,
+                    child: priceBlock,
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -333,21 +379,21 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
                       ],
                     )
                   : GridView.builder(
-                    cacheExtent: 200,
-                    padding: const EdgeInsets.fromLTRB(8, 10, 8, 90),
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    itemCount: _products.length,
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      mainAxisSpacing: 8,
-                      crossAxisSpacing: 8,
-                      childAspectRatio: 1.5,
+                      cacheExtent: 200,
+                      padding: const EdgeInsets.fromLTRB(8, 10, 8, 90),
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      itemCount: _products.length,
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        mainAxisSpacing: 8,
+                        crossAxisSpacing: 8,
+                        childAspectRatio: 1.5,
+                      ),
+                      itemBuilder: (_, int index) {
+                        return _buildProductCard(_products[index]);
+                      },
                     ),
-                    itemBuilder: (_, int index) {
-                      return _buildProductCard(_products[index]);
-                    },
-                  ),
             ),
     );
   }
@@ -941,13 +987,14 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
   }
 
   Widget _buildImageContent(String? path) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     if (path == null || path.isEmpty) {
       return Container(
-        color: const Color(0xFFE7E1F6),
-        child: const Icon(
+        color: isDark ? const Color(0xFF28233A) : const Color(0xFFE7E1F6),
+        child: Icon(
           Icons.image_not_supported_outlined,
           size: 30,
-          color: Color(0xFF5A4D88),
+          color: isDark ? const Color(0xFFB8A9F1) : const Color(0xFF5A4D88),
         ),
       );
     }
@@ -956,8 +1003,9 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
       return Image.network(
         path,
         fit: BoxFit.cover,
+        cacheWidth: 640,
         errorBuilder: (_, __, ___) => Container(
-          color: const Color(0xFFDCD5F3),
+          color: isDark ? const Color(0xFF28233A) : const Color(0xFFDCD5F3),
           child: const Icon(Icons.broken_image_outlined),
         ),
       );
@@ -966,14 +1014,16 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
     return Image.file(
       File(path),
       fit: BoxFit.cover,
+      cacheWidth: 640,
       errorBuilder: (_, __, ___) => Container(
-        color: const Color(0xFFDCD5F3),
+        color: isDark ? const Color(0xFF28233A) : const Color(0xFFDCD5F3),
         child: const Icon(Icons.broken_image_outlined),
       ),
     );
   }
 
   Widget _buildImagePickerThumb() {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     return InkWell(
       onTap: _saving ? null : _pickImage,
       borderRadius: BorderRadius.circular(18),
@@ -985,7 +1035,10 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
             height: 92,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: const Color(0xFFD8D0EC)),
+              border: Border.all(
+                color:
+                    isDark ? const Color(0xFF342E46) : const Color(0xFFD8D0EC),
+              ),
             ),
             clipBehavior: Clip.antiAlias,
             child: _buildImageContent(_selectedImagePath),
@@ -999,7 +1052,12 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
               decoration: BoxDecoration(
                 color: const Color(0xFF5B4B8A),
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFF2EEF9), width: 2),
+                border: Border.all(
+                  color: isDark
+                      ? const Color(0xFF16131E)
+                      : const Color(0xFFF2EEF9),
+                  width: 2,
+                ),
               ),
               child: const Icon(
                 Icons.photo_camera_rounded,
@@ -1019,12 +1077,16 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
     required Widget child,
     Widget? trailing,
   }) {
+    final ThemeData theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFEDE8F7),
+        color: isDark ? const Color(0xFF241F33) : const Color(0xFFEDE8F7),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFDCD3EE)),
+        border: Border.all(
+          color: isDark ? const Color(0xFF342E46) : const Color(0xFFDCD3EE),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1035,19 +1097,27 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
                 width: 28,
                 height: 28,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFDCD3F1),
+                  color: isDark
+                      ? const Color(0xFF312948)
+                      : const Color(0xFFDCD3F1),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(icon, size: 16, color: const Color(0xFF564781)),
+                child: Icon(
+                  icon,
+                  size: 16,
+                  color: isDark
+                      ? const Color(0xFFB8A9F1)
+                      : const Color(0xFF564781),
+                ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF403856),
+                    color: theme.colorScheme.onSurface,
                   ),
                 ),
               ),
@@ -1062,6 +1132,7 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
   }
 
   Widget _buildCurrencySelector() {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
@@ -1071,7 +1142,8 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: _selectedCurrency,
-          dropdownColor: const Color(0xFFF4EFFB),
+          dropdownColor:
+              isDark ? const Color(0xFF241F33) : const Color(0xFFF4EFFB),
           style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.w700,
@@ -1103,15 +1175,20 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
     required Color iconColor,
     required ValueChanged<String> onChanged,
   }) {
+    final ThemeData theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
     return Row(
       children: <Widget>[
         Expanded(
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: const Color(0xFFEDE8F7),
+              color: isDark ? const Color(0xFF241F33) : const Color(0xFFEDE8F7),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFFDDD5EE)),
+              border: Border.all(
+                color:
+                    isDark ? const Color(0xFF342E46) : const Color(0xFFDDD5EE),
+              ),
             ),
             child: Row(
               children: <Widget>[
@@ -1136,9 +1213,9 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
                       hintText: '0.00',
                       labelText: label,
                       filled: false,
-                      labelStyle: const TextStyle(
+                      labelStyle: TextStyle(
                         fontWeight: FontWeight.w600,
-                        color: Color(0xFF5A5373),
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                     style: const TextStyle(
@@ -1158,23 +1235,27 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
   }
 
   Widget _buildProfitField() {
+    final ThemeData theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFEDE8F7),
+        color: isDark ? const Color(0xFF241F33) : const Color(0xFFEDE8F7),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFDDD5EE)),
+        border: Border.all(
+          color: isDark ? const Color(0xFF342E46) : const Color(0xFFDDD5EE),
+        ),
       ),
       child: Row(
         children: <Widget>[
           const Icon(Icons.trending_up_rounded, color: Color(0xFF51457D)),
           const SizedBox(width: 8),
-          const Expanded(
+          Expanded(
             child: Text(
               '% de ganancia',
               style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF41395A),
+                color: theme.colorScheme.onSurface,
               ),
             ),
           ),
@@ -1272,11 +1353,13 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
   @override
   Widget build(BuildContext context) {
     final DateTime now = DateTime.now();
+    final ThemeData theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF2EEF9),
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF2EEF9),
+        backgroundColor: theme.scaffoldBackgroundColor,
         title: Text(
           _isEditing ? 'Editar' : 'Anadir',
           style: const TextStyle(fontWeight: FontWeight.w700),
@@ -1306,7 +1389,6 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
                     style: const TextStyle(
                       fontSize: 25,
                       fontWeight: FontWeight.w400,
-                      color: Color(0xFF2D2941),
                       height: 1.1,
                     ),
                     maxLines: 1,
@@ -1325,7 +1407,6 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
                   _dateText(now),
                   style: const TextStyle(
                     fontSize: 15,
-                    color: Color(0xFF5F587A),
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -1333,7 +1414,6 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
                   _timeText(now),
                   style: const TextStyle(
                     fontSize: 15,
-                    color: Color(0xFF5F587A),
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -1435,7 +1515,7 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
       bottomNavigationBar: Container(
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
         decoration: BoxDecoration(
-          color: const Color(0xFFEAE4F6),
+          color: isDark ? const Color(0xFF1B1826) : const Color(0xFFEAE4F6),
           boxShadow: <BoxShadow>[
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.06),

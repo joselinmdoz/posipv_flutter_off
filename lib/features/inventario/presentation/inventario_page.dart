@@ -22,6 +22,7 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
 
   List<Warehouse> _warehouses = <Warehouse>[];
   List<InventoryView> _inventory = <InventoryView>[];
+  List<InventoryView> _visibleInventory = <InventoryView>[];
   String? _selectedWarehouseId;
   bool _loading = true;
 
@@ -46,7 +47,9 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
       if (!mounted) {
         return;
       }
-      setState(() {});
+      setState(() {
+        _visibleInventory = _filterInventory(_inventory, _searchCtrl.text);
+      });
     });
   }
 
@@ -75,6 +78,7 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
         _warehouses = warehouses;
         _selectedWarehouseId = warehouseId;
         _inventory = inventory;
+        _visibleInventory = _filterInventory(inventory, _searchCtrl.text);
         _loading = false;
       });
     } catch (e) {
@@ -95,15 +99,19 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
     }
     setState(() {
       _inventory = inventory;
+      _visibleInventory = _filterInventory(inventory, _searchCtrl.text);
     });
   }
 
-  List<InventoryView> get _stockedFilteredInventory {
-    final String query = _searchCtrl.text.trim().toLowerCase();
-    return _inventory.where((InventoryView row) {
-      if (query.isEmpty) {
-        return true;
-      }
+  List<InventoryView> _filterInventory(
+    List<InventoryView> inventory,
+    String queryText,
+  ) {
+    final String query = queryText.trim().toLowerCase();
+    if (query.isEmpty) {
+      return inventory;
+    }
+    return inventory.where((InventoryView row) {
       return row.productName.toLowerCase().contains(query) ||
           row.sku.toLowerCase().contains(query);
     }).toList();
@@ -131,7 +139,10 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
 
   @override
   Widget build(BuildContext context) {
-    final List<InventoryView> rows = _stockedFilteredInventory;
+    final List<InventoryView> rows = _visibleInventory;
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final bool isDark = theme.brightness == Brightness.dark;
 
     return AppScaffold(
       title: 'Inventario',
@@ -194,14 +205,24 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
                               icon: const Icon(Icons.clear_rounded),
                             ),
                       filled: true,
-                      fillColor: const Color(0xFFF9F6FD),
+                      fillColor: isDark
+                          ? const Color(0xFF211D2D)
+                          : const Color(0xFFF9F6FD),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(color: Color(0xFFE1D8F2)),
+                        borderSide: BorderSide(
+                          color: isDark
+                              ? const Color(0xFF342E46)
+                              : const Color(0xFFE1D8F2),
+                        ),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(color: Color(0xFFE1D8F2)),
+                        borderSide: BorderSide(
+                          color: isDark
+                              ? const Color(0xFF342E46)
+                              : const Color(0xFFE1D8F2),
+                        ),
                       ),
                     ),
                   ),
@@ -228,18 +249,22 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
                                 final InventoryView row = rows[index];
                                 return Container(
                                   decoration: BoxDecoration(
-                                    color: Colors.white,
+                                    color: theme.cardColor,
                                     borderRadius: BorderRadius.circular(14),
                                     border: Border.all(
-                                      color: const Color(0xFFE1D8F2),
+                                      color: isDark
+                                          ? const Color(0xFF342E46)
+                                          : const Color(0xFFE1D8F2),
                                     ),
-                                    boxShadow: const <BoxShadow>[
-                                      BoxShadow(
-                                        color: Color(0x10000000),
-                                        blurRadius: 8,
-                                        offset: Offset(0, 2),
-                                      ),
-                                    ],
+                                    boxShadow: isDark
+                                        ? const <BoxShadow>[]
+                                        : const <BoxShadow>[
+                                            BoxShadow(
+                                              color: Color(0x10000000),
+                                              blurRadius: 8,
+                                              offset: Offset(0, 2),
+                                            ),
+                                          ],
                                   ),
                                   child: Padding(
                                     padding: const EdgeInsets.all(10),
@@ -259,8 +284,9 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
                                               const SizedBox(height: 2),
                                               Text(
                                                 'SKU: ${row.sku}',
-                                                style: const TextStyle(
-                                                  color: Color(0xFF625D78),
+                                                style: TextStyle(
+                                                  color:
+                                                      scheme.onSurfaceVariant,
                                                 ),
                                               ),
                                               const SizedBox(height: 6),
@@ -290,15 +316,19 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
                                             vertical: 8,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: const Color(0xFFE6ECFA),
+                                            color: isDark
+                                                ? const Color(0xFF233246)
+                                                : const Color(0xFFE6ECFA),
                                             borderRadius:
                                                 BorderRadius.circular(20),
                                           ),
                                           child: Text(
                                             _formatQty(row.qty),
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontWeight: FontWeight.w800,
-                                              color: Color(0xFF2D4A86),
+                                              color: isDark
+                                                  ? const Color(0xFF9AC1FF)
+                                                  : const Color(0xFF2D4A86),
                                             ),
                                           ),
                                         ),
@@ -317,18 +347,21 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
   }
 
   Widget _infoChip(String label, String value) {
+    final ThemeData theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color(0xFFF2ECFA),
+        color: isDark ? const Color(0xFF28233A) : const Color(0xFFF2ECFA),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Text(
         '$label: $value',
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 11.5,
           fontWeight: FontWeight.w600,
-          color: Color(0xFF4B426A),
+          color: theme.colorScheme.onSurface,
         ),
       ),
     );

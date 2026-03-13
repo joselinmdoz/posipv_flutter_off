@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -45,15 +47,6 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
     final Future<ReportesDashboard> dashboardFuture =
         reportesDs.loadDashboard();
     final Future<AppConfig> configFuture = configDs.loadConfig();
-    final Future<List<PosTerminal>> ipvTerminalsFuture =
-        reportesDs.listIpvTerminalOptions();
-    final Future<List<IpvReportSummaryStat>> ipvReportsFuture =
-        reportesDs.listIpvReports(
-      terminalId: _ipvTerminalId,
-      fromDate: _ipvFromDate,
-      toDate: _ipvToDate,
-      limit: 120,
-    );
 
     ReportesDashboard dashboard = const ReportesDashboard(
       today: SalesSummary(salesCount: 0, totalCents: 0, taxCents: 0),
@@ -80,27 +73,6 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
           warningMessage == null ? message : '$warningMessage\n$message';
     }
 
-    try {
-      final List<PosTerminal> terminals = await ipvTerminalsFuture;
-      _ipvTerminalOptions = terminals;
-      List<IpvReportSummaryStat> ipvRows = await ipvReportsFuture;
-      if (_ipvTerminalId != null &&
-          terminals.every((PosTerminal row) => row.id != _ipvTerminalId)) {
-        _ipvTerminalId = null;
-        ipvRows = await reportesDs.listIpvReports(
-          terminalId: null,
-          fromDate: _ipvFromDate,
-          toDate: _ipvToDate,
-          limit: 120,
-        );
-      }
-      _ipvReports = ipvRows;
-    } catch (e) {
-      final String message = 'IPV: $e';
-      warningMessage =
-          warningMessage == null ? message : '$warningMessage\n$message';
-    }
-
     if (!mounted) {
       return;
     }
@@ -116,25 +88,43 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
         SnackBar(content: Text('Cargado con advertencias:\n$warningMessage')),
       );
     }
+
+    unawaited(
+        _reloadIpvReports(loadTerminalOptions: _ipvTerminalOptions.isEmpty));
   }
 
-  Future<void> _reloadIpvReports() async {
+  Future<void> _reloadIpvReports({bool loadTerminalOptions = false}) async {
     if (mounted) {
       setState(() => _loadingIpv = true);
     }
     final ReportesLocalDataSource ds =
         ref.read(reportesLocalDataSourceProvider);
     try {
-      final List<IpvReportSummaryStat> rows = await ds.listIpvReports(
+      final Future<List<PosTerminal>> terminalFuture = loadTerminalOptions
+          ? ds.listIpvTerminalOptions()
+          : Future<List<PosTerminal>>.value(_ipvTerminalOptions);
+      List<PosTerminal> terminals = await terminalFuture;
+      List<IpvReportSummaryStat> rows = await ds.listIpvReports(
         terminalId: _ipvTerminalId,
         fromDate: _ipvFromDate,
         toDate: _ipvToDate,
         limit: 120,
       );
+      if (_ipvTerminalId != null &&
+          terminals.every((PosTerminal row) => row.id != _ipvTerminalId)) {
+        _ipvTerminalId = null;
+        rows = await ds.listIpvReports(
+          terminalId: null,
+          fromDate: _ipvFromDate,
+          toDate: _ipvToDate,
+          limit: 120,
+        );
+      }
       if (!mounted) {
         return;
       }
       setState(() {
+        _ipvTerminalOptions = terminals;
         _ipvReports = rows;
         _loadingIpv = false;
       });
@@ -154,6 +144,7 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
   @override
   Widget build(BuildContext context) {
     final ReportesDashboard? dashboard = _dashboard;
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
 
     return AppScaffold(
       title: 'Reportes',
@@ -274,7 +265,9 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
                                     (RecentSessionClosureStat closure) => Card(
                                       margin: const EdgeInsets.only(bottom: 8),
                                       elevation: 0,
-                                      color: const Color(0xFFF4F1FB),
+                                      color: isDark
+                                          ? const Color(0xFF241F33)
+                                          : const Color(0xFFF4F1FB),
                                       child: Padding(
                                         padding: const EdgeInsets.all(10),
                                         child: Column(
@@ -306,9 +299,11 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
                                             const SizedBox(height: 2),
                                             Text(
                                               '${_formatDateTime(closure.closedAt)} | ${closure.cashierUsername}',
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 fontSize: 12,
-                                                color: Color(0xFF655D83),
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .onSurfaceVariant,
                                               ),
                                             ),
                                             if (closure.breakdown.isNotEmpty)
@@ -427,61 +422,14 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
                           const SizedBox(height: 10),
                           _ipvReports.isEmpty
                               ? const Text('No hay reportes IPV en el filtro.')
-                              : Column(
-                                  children: _ipvReports
-                                      .map(
-                                        (IpvReportSummaryStat report) => Card(
-                                          margin:
-                                              const EdgeInsets.only(bottom: 8),
-                                          elevation: 0,
-                                          color: const Color(0xFFEFF3FB),
-                                          child: ListTile(
-                                            contentPadding:
-                                                const EdgeInsets.symmetric(
-                                              horizontal: 10,
-                                              vertical: 2,
-                                            ),
-                                            title: Text(
-                                              report.terminalName,
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                            ),
-                                            subtitle: Text(
-                                              '${_formatDateTime(report.openedAt)} → ${report.closedAt == null ? '-' : _formatDateTime(report.closedAt!)}\n${_ipvSourceLabel(report.openingSource)} • ${report.lineCount} producto(s)',
-                                            ),
-                                            trailing: Column(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.center,
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.end,
-                                              children: <Widget>[
-                                                Text(
-                                                  _moneyWithSymbol(
-                                                    report.totalAmountCents,
-                                                    report.currencySymbol,
-                                                  ),
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.w800,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 4),
-                                                Text(
-                                                  report.status == 'open'
-                                                      ? 'IPV abierto'
-                                                      : 'IPV cerrado',
-                                                  style: const TextStyle(
-                                                    fontSize: 11,
-                                                    color: Color(0xFF5B4B8A),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            onTap: () => _openIpvDetail(report),
-                                          ),
-                                        ),
-                                      )
-                                      .toList(),
+                              : ListView.builder(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  itemCount: _ipvReports.length,
+                                  itemBuilder:
+                                      (BuildContext context, int index) {
+                                    return _ipvReportCard(_ipvReports[index]);
+                                  },
                                 ),
                         ],
                       ),
@@ -494,6 +442,8 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
   }
 
   Widget _section({required String title, required Widget child}) {
+    final Color titleColor = Theme.of(context).colorScheme.onSurface;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -502,11 +452,95 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
           children: <Widget>[
             Text(
               title,
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
+                color: titleColor,
+              ),
             ),
             const SizedBox(height: 8),
             child,
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _ipvReportCard(IpvReportSummaryStat report) {
+    final ThemeData theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      elevation: 0,
+      color: isDark ? const Color(0xFF1C2430) : const Color(0xFFEFF3FB),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _openIpvDetail(report),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      report.terminalName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${_formatDateTime(report.openedAt)} → ${report.closedAt == null ? '-' : _formatDateTime(report.closedAt!)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${_ipvSourceLabel(report.openingSource)} • ${report.lineCount} producto(s)',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 88, maxWidth: 112),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: <Widget>[
+                    Text(
+                      _moneyWithSymbol(
+                        report.totalAmountCents,
+                        report.currencySymbol,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.end,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      report.status == 'open' ? 'IPV abierto' : 'IPV cerrado',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.end,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isDark
+                            ? const Color(0xFFB8A9F1)
+                            : const Color(0xFF5B4B8A),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -517,6 +551,10 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
     required String value,
     required IconData icon,
   }) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final bool isDark = theme.brightness == Brightness.dark;
+
     return SizedBox(
       width: 200,
       child: Card(
@@ -524,19 +562,31 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
           padding: const EdgeInsets.all(12),
           child: Row(
             children: <Widget>[
-              Icon(icon, size: 20),
+              CircleAvatar(
+                radius: 18,
+                backgroundColor:
+                    isDark ? const Color(0xFF312948) : const Color(0xFFE9E3F7),
+                child: Icon(icon, size: 18, color: scheme.primary),
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text(title, style: const TextStyle(fontSize: 12)),
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
                     const SizedBox(height: 4),
                     Text(
                       value,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
+                        color: scheme.onSurface,
                       ),
                     ),
                   ],
@@ -687,9 +737,9 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
                     const SizedBox(height: 4),
                     Text(
                       '${_formatDateTime(report.openedAt)} → ${report.closedAt == null ? '-' : _formatDateTime(report.closedAt!)}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: Color(0xFF655D83),
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -713,11 +763,11 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
                     ),
                     const SizedBox(height: 8),
                     const SizedBox(height: 4),
-                    const Text(
+                    Text(
                       'El detalle IPV se consulta por archivo exportado.',
                       style: TextStyle(
                         fontSize: 12.5,
-                        color: Color(0xFF655D83),
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ],
