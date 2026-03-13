@@ -41,23 +41,29 @@ class _HomePageState extends ConsumerState<HomePage> {
     final ConfiguracionLocalDataSource configDs =
         ref.read(configuracionLocalDataSourceProvider);
 
+    final Future<ReportesDashboard> dashboardFuture =
+        reportesDs.loadDashboard();
+    final Future<AppConfig> configFuture = configDs.loadConfig();
+
     ReportesDashboard dashboard = const ReportesDashboard(
       today: SalesSummary(salesCount: 0, totalCents: 0, taxCents: 0),
       lastDays: <DailySalesPoint>[],
       topProducts: <TopProductStat>[],
       recentSales: <RecentSaleStat>[],
+      recentSessionClosures: <RecentSessionClosureStat>[],
+      recentIpvReports: <IpvReportSummaryStat>[],
     );
     AppConfig config = AppConfig.defaults;
     String? warningMessage;
 
     try {
-      dashboard = await reportesDs.loadDashboard();
+      dashboard = await dashboardFuture;
     } catch (e) {
       warningMessage = 'Dashboard: $e';
     }
 
     try {
-      config = await configDs.loadConfig();
+      config = await configFuture;
     } catch (e) {
       final String message = 'Configuracion: $e';
       warningMessage =
@@ -92,7 +98,7 @@ class _HomePageState extends ConsumerState<HomePage> {
       currentRoute: '/home',
       onRefresh: _loadDashboard,
       floatingActionButton: FloatingActionButton.large(
-        onPressed: () => context.go('/ventas-pos'),
+        onPressed: () => context.go('/tpv'),
         child: const Icon(Icons.add_rounded, size: 32),
       ),
       body: RefreshIndicator(
@@ -428,9 +434,17 @@ class _QuickAction {
 }
 
 const List<_QuickAction> _quickActions = <_QuickAction>[
-  _QuickAction('Venta', '/ventas-pos', Icons.add_circle_outline),
+  _QuickAction('TPV', '/tpv', Icons.storefront_rounded),
+  _QuickAction('Empleados', '/tpv-empleados', Icons.badge_outlined),
+  _QuickAction('Ventas', '/ventas-directas', Icons.point_of_sale_rounded),
   _QuickAction('Inventario', '/inventario', Icons.inventory_2_outlined),
+  _QuickAction(
+    'Movimientos',
+    '/inventario-movimientos',
+    Icons.swap_horiz_rounded,
+  ),
   _QuickAction('Productos', '/productos', Icons.shopping_bag_outlined),
   _QuickAction('Reportes', '/reportes', Icons.stacked_bar_chart_rounded),
+  _QuickAction('IPV', '/ipv-reportes', Icons.table_chart_outlined),
   _QuickAction('Ajustes', '/configuracion', Icons.settings_outlined),
 ];

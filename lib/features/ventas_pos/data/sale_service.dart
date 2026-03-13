@@ -25,9 +25,68 @@ class SaleService {
         'La venta debe tener al menos un pago.',
       );
     }
+    if (input.discountCents < 0) {
+      return const AppFailure<CreateSaleResult>(
+        'El descuento no puede ser negativo.',
+      );
+    }
 
     try {
       final CreateSaleResult result = await _db.transaction(() async {
+        final String saleOrigin = input.saleOrigin.trim().toLowerCase();
+        final bool isDirectSale = saleOrigin == 'direct';
+        final String movementSource = isDirectSale ? 'direct_sale' : 'pos';
+        final String movementRefType =
+            isDirectSale ? 'sale_direct' : 'sale_pos';
+        final String movementNotePrefix =
+            isDirectSale ? 'Venta directa' : 'Venta POS';
+        String? saleTerminalId = input.terminalId?.trim();
+        String? saleTerminalSessionId = input.terminalSessionId?.trim();
+        if (saleTerminalId != null && saleTerminalId.isEmpty) {
+          saleTerminalId = null;
+        }
+        if (saleTerminalSessionId != null && saleTerminalSessionId.isEmpty) {
+          saleTerminalSessionId = null;
+        }
+
+        if (!isDirectSale) {
+          if (saleTerminalId == null || saleTerminalSessionId == null) {
+            throw const _SaleException(
+              'Debe existir un TPV con turno abierto para vender en POS.',
+            );
+          }
+          final PosTerminal? terminal = await (_db.select(_db.posTerminals)
+                ..where((PosTerminals tbl) => tbl.id.equals(saleTerminalId!)))
+              .getSingleOrNull();
+          if (terminal == null || !terminal.isActive) {
+            throw const _SaleException('El TPV seleccionado no es valido.');
+          }
+          if (terminal.warehouseId != input.warehouseId) {
+            throw const _SaleException(
+              'El TPV no corresponde al almacen seleccionado.',
+            );
+          }
+
+          final PosSession? tpvSession = await (_db.select(_db.posSessions)
+                ..where((PosSessions tbl) =>
+                    tbl.id.equals(saleTerminalSessionId!) &
+                    tbl.terminalId.equals(saleTerminalId!)))
+              .getSingleOrNull();
+          if (tpvSession == null || tpvSession.status != 'open') {
+            throw const _SaleException(
+              'No hay un turno abierto valido en este TPV.',
+            );
+          }
+          if (tpvSession.userId != input.cashierId) {
+            throw const _SaleException(
+              'El turno abierto pertenece a otro usuario.',
+            );
+          }
+        } else {
+          saleTerminalId = null;
+          saleTerminalSessionId = null;
+        }
+
         final Warehouse? warehouse = await (_db.select(_db.warehouses)
               ..where((Warehouses tbl) => tbl.id.equals(input.warehouseId)))
             .getSingleOrNull();
@@ -93,7 +152,13 @@ class SaleService {
           );
         }
 
-        final int totalCents = subtotalCents + taxCents;
+        final int grossTotalCents = subtotalCents + taxCents;
+        if (input.discountCents > grossTotalCents) {
+          throw const _SaleException(
+            'El descuento no puede superar el total de la venta.',
+          );
+        }
+        final int totalCents = grossTotalCents - input.discountCents;
         final int totalPayments = input.payments.fold<int>(
           0,
           (int sum, PaymentInput payment) => sum + payment.amountCents,
@@ -110,6 +175,8 @@ class SaleService {
                 folio: folio,
                 warehouseId: input.warehouseId,
                 cashierId: input.cashierId,
+                terminalId: Value(saleTerminalId),
+                terminalSessionId: Value(saleTerminalSessionId),
                 subtotalCents: subtotalCents,
                 taxCents: taxCents,
                 totalCents: totalCents,
@@ -146,9 +213,11 @@ class SaleService {
                   warehouseId: input.warehouseId,
                   type: 'out',
                   qty: line.item.qty,
-                  refType: const Value('sale'),
+                  reasonCode: const Value('sale'),
+                  movementSource: Value(movementSource),
+                  refType: Value(movementRefType),
                   refId: Value(saleId),
-                  note: Value('Venta POS $folio'),
+                  note: Value('$movementNotePrefix $folio'),
                   createdBy: input.cashierId,
                 ),
               );
@@ -176,6 +245,7 @@ class SaleService {
                   'folio': folio,
                   'subtotalCents': subtotalCents,
                   'taxCents': taxCents,
+                  'discountCents': input.discountCents,
                   'totalCents': totalCents,
                   'items': processed.length,
                 }),

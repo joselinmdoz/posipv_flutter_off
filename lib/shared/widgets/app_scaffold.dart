@@ -24,11 +24,19 @@ class AppScaffold extends ConsumerWidget {
 
   static const List<_NavItem> _navItems = <_NavItem>[
     _NavItem('Principal', '/home', Icons.grid_view_rounded),
-    _NavItem('Ventas', '/ventas-pos', Icons.point_of_sale_rounded),
+    _NavItem('TPV', '/tpv', Icons.storefront_rounded),
+    _NavItem('Empleados', '/tpv-empleados', Icons.badge_outlined),
+    _NavItem('Ventas', '/ventas-directas', Icons.point_of_sale_rounded),
     _NavItem('Inventario', '/inventario', Icons.inventory_2_outlined),
+    _NavItem(
+      'Movimientos',
+      '/inventario-movimientos',
+      Icons.swap_horiz_rounded,
+    ),
     _NavItem('Productos', '/productos', Icons.shopping_bag_outlined),
     _NavItem('Almacenes', '/almacenes', Icons.warehouse_outlined),
     _NavItem('Reportes', '/reportes', Icons.bar_chart_rounded),
+    _NavItem('IPV', '/ipv-reportes', Icons.table_chart_outlined),
     _NavItem('Ajustes', '/configuracion', Icons.settings_outlined),
   ];
 
@@ -286,6 +294,7 @@ class AppScaffold extends ConsumerWidget {
   }
 
   void _logout(BuildContext context, WidgetRef ref) {
+    ref.read(localAuthServiceProvider).clearRememberedSession();
     ref.read(currentSessionProvider.notifier).state = null;
     context.go('/login');
   }

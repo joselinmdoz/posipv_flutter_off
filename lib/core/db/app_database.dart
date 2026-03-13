@@ -1,9 +1,11 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:uuid/uuid.dart';
 
 part 'app_database.g.dart';
 
@@ -71,6 +73,76 @@ class Warehouses extends Table {
   Set<Column> get primaryKey => <Column>{id};
 }
 
+class PosTerminals extends Table {
+  TextColumn get id => text()();
+  TextColumn get code => text().unique()();
+  TextColumn get name => text()();
+  TextColumn get warehouseId => text().references(Warehouses, #id).unique()();
+  TextColumn get currencyCode => text().withDefault(const Constant('USD'))();
+  TextColumn get currencySymbol => text().withDefault(const Constant(r'$'))();
+  TextColumn get paymentMethodsJson =>
+      text().withDefault(const Constant('["cash"]'))();
+  TextColumn get cashDenominationsJson =>
+      text().withDefault(const Constant('[10000,5000,2000,1000,500,100]'))();
+  BoolColumn get isActive => boolean().withDefault(const Constant(true))();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get updatedAt => dateTime().nullable()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{id};
+}
+
+class PosSessions extends Table {
+  TextColumn get id => text()();
+  TextColumn get terminalId => text().references(PosTerminals, #id)();
+  TextColumn get userId => text().references(Users, #id)();
+  DateTimeColumn get openedAt => dateTime().withDefault(currentDateAndTime)();
+  IntColumn get openingFloatCents => integer().withDefault(const Constant(0))();
+  DateTimeColumn get closedAt => dateTime().nullable()();
+  IntColumn get closingCashCents => integer().nullable()();
+  TextColumn get status => text().withDefault(const Constant('open'))();
+  TextColumn get note => text().nullable()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{id};
+}
+
+class PosSessionCashBreakdowns extends Table {
+  TextColumn get sessionId => text().references(PosSessions, #id)();
+  IntColumn get denominationCents => integer()();
+  IntColumn get unitCount => integer().withDefault(const Constant(0))();
+  IntColumn get subtotalCents => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => <Column>{sessionId, denominationCents};
+}
+
+class Employees extends Table {
+  TextColumn get id => text()();
+  TextColumn get code => text().unique()();
+  TextColumn get name => text()();
+  TextColumn get sex => text().nullable()();
+  TextColumn get identityNumber => text().nullable()();
+  TextColumn get address => text().nullable()();
+  TextColumn get imagePath => text().nullable()();
+  TextColumn get associatedUserId => text().references(Users, #id).nullable()();
+  BoolColumn get isActive => boolean().withDefault(const Constant(true))();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get updatedAt => dateTime().nullable()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{id};
+}
+
+class PosSessionEmployees extends Table {
+  TextColumn get sessionId => text().references(PosSessions, #id)();
+  TextColumn get employeeId => text().references(Employees, #id)();
+  DateTimeColumn get assignedAt => dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column> get primaryKey => <Column>{sessionId, employeeId};
+}
+
 class StockBalances extends Table {
   TextColumn get productId => text().references(Products, #id)();
   TextColumn get warehouseId => text().references(Warehouses, #id)();
@@ -87,6 +159,9 @@ class StockMovements extends Table {
   TextColumn get warehouseId => text().references(Warehouses, #id)();
   TextColumn get type => text()();
   RealColumn get qty => real()();
+  TextColumn get reasonCode => text().nullable()();
+  TextColumn get movementSource =>
+      text().withDefault(const Constant('manual'))();
   TextColumn get refType => text().nullable()();
   TextColumn get refId => text().nullable()();
   TextColumn get note => text().nullable()();
@@ -102,6 +177,10 @@ class Sales extends Table {
   TextColumn get folio => text().unique()();
   TextColumn get warehouseId => text().references(Warehouses, #id)();
   TextColumn get cashierId => text().references(Users, #id)();
+  TextColumn get terminalId =>
+      text().references(PosTerminals, #id).nullable()();
+  TextColumn get terminalSessionId =>
+      text().references(PosSessions, #id).nullable()();
   IntColumn get subtotalCents => integer()();
   IntColumn get taxCents => integer()();
   IntColumn get totalCents => integer()();
@@ -138,6 +217,41 @@ class Payments extends Table {
   Set<Column> get primaryKey => <Column>{id};
 }
 
+class IpvReports extends Table {
+  TextColumn get id => text()();
+  TextColumn get terminalId => text().references(PosTerminals, #id)();
+  TextColumn get warehouseId => text().references(Warehouses, #id)();
+  TextColumn get sessionId => text().references(PosSessions, #id).unique()();
+  TextColumn get status => text().withDefault(const Constant('open'))();
+  DateTimeColumn get openedAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get closedAt => dateTime().nullable()();
+  @ReferenceName('openedIpvReports')
+  TextColumn get openedBy => text().references(Users, #id)();
+  @ReferenceName('closedIpvReports')
+  TextColumn get closedBy => text().references(Users, #id).nullable()();
+  TextColumn get openingSource =>
+      text().withDefault(const Constant('initial_stock'))();
+  TextColumn get note => text().nullable()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{id};
+}
+
+class IpvReportLines extends Table {
+  TextColumn get reportId => text().references(IpvReports, #id)();
+  TextColumn get productId => text().references(Products, #id)();
+  RealColumn get startQty => real().withDefault(const Constant(0))();
+  RealColumn get entriesQty => real().withDefault(const Constant(0))();
+  RealColumn get outputsQty => real().withDefault(const Constant(0))();
+  RealColumn get salesQty => real().withDefault(const Constant(0))();
+  RealColumn get finalQty => real().withDefault(const Constant(0))();
+  IntColumn get salePriceCents => integer().withDefault(const Constant(0))();
+  IntColumn get totalAmountCents => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => <Column>{reportId, productId};
+}
+
 class AppSettings extends Table {
   TextColumn get key => text()();
   TextColumn get value => text()();
@@ -166,26 +280,35 @@ class AuditLogs extends Table {
     Products,
     ProductCatalogItems,
     Warehouses,
+    PosTerminals,
+    PosSessions,
+    PosSessionCashBreakdowns,
+    Employees,
+    PosSessionEmployees,
     StockBalances,
     StockMovements,
     Sales,
     SaleItems,
     Payments,
+    IpvReports,
+    IpvReportLines,
     AppSettings,
     AuditLogs,
   ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
+  final Uuid _uuid = const Uuid();
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 13;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (Migrator m) async {
           await m.createAll();
           await _seedDefaultProductCatalogItems();
+          await _bootstrapTerminalsForTpvWarehouses();
         },
         onUpgrade: (Migrator m, int from, int to) async {
           if (from < 2) {
@@ -206,8 +329,282 @@ class AppDatabase extends _$AppDatabase {
           if (from < 5) {
             await m.addColumn(products, products.barcode);
           }
+          if (from < 6) {
+            await _addWarehouseColumnIfMissing(
+              m,
+              'warehouse_type',
+              () => m.addColumn(warehouses, warehouses.warehouseType),
+            );
+            await _addWarehouseColumnIfMissing(
+              m,
+              'created_at',
+              () => m.addColumn(warehouses, warehouses.createdAt),
+            );
+          }
+          if (from < 7) {
+            await m.createTable(posTerminals);
+            await m.createTable(posSessions);
+            await _bootstrapTerminalsForTpvWarehouses();
+          }
+          if (from < 8) {
+            await _addSalesColumnIfMissing(
+              m,
+              'terminal_id',
+              () => m.addColumn(sales, sales.terminalId),
+            );
+            await _addSalesColumnIfMissing(
+              m,
+              'terminal_session_id',
+              () => m.addColumn(sales, sales.terminalSessionId),
+            );
+          }
+          if (from < 9) {
+            await _addPosTerminalColumnIfMissing(
+              m,
+              'currency_code',
+              () => m.addColumn(posTerminals, posTerminals.currencyCode),
+            );
+            await _addPosTerminalColumnIfMissing(
+              m,
+              'currency_symbol',
+              () => m.addColumn(posTerminals, posTerminals.currencySymbol),
+            );
+            await _addPosTerminalColumnIfMissing(
+              m,
+              'payment_methods_json',
+              () => m.addColumn(posTerminals, posTerminals.paymentMethodsJson),
+            );
+            await _addPosTerminalColumnIfMissing(
+              m,
+              'cash_denominations_json',
+              () => m.addColumn(
+                posTerminals,
+                posTerminals.cashDenominationsJson,
+              ),
+            );
+          }
+          if (from < 10) {
+            await m.createTable(posSessionCashBreakdowns);
+          }
+          if (from < 11) {
+            await _addStockMovementColumnIfMissing(
+              m,
+              'reason_code',
+              () => m.addColumn(stockMovements, stockMovements.reasonCode),
+            );
+            await _addStockMovementColumnIfMissing(
+              m,
+              'movement_source',
+              () => m.addColumn(
+                stockMovements,
+                stockMovements.movementSource,
+              ),
+            );
+            await customStatement(
+              '''
+              UPDATE stock_movements
+              SET reason_code = CASE
+                WHEN reason_code IS NOT NULL AND TRIM(reason_code) <> '' THEN reason_code
+                WHEN ref_type IN ('sale', 'sale_pos', 'sale_direct') THEN 'sale'
+                ELSE 'adjust'
+              END
+              ''',
+            );
+            await customStatement(
+              '''
+              UPDATE stock_movements
+              SET movement_source = CASE
+                WHEN movement_source IS NOT NULL AND TRIM(movement_source) <> '' THEN movement_source
+                WHEN ref_type IN ('sale', 'sale_pos') THEN 'pos'
+                WHEN ref_type = 'sale_direct' THEN 'direct_sale'
+                ELSE 'manual'
+              END
+              ''',
+            );
+          }
+          if (from < 12) {
+            if (!await _tableExists('employees')) {
+              await m.createTable(employees);
+            }
+            if (!await _tableExists('pos_session_employees')) {
+              await m.createTable(posSessionEmployees);
+            }
+            if (!await _tableExists('ipv_reports')) {
+              await m.createTable(ipvReports);
+            }
+            if (!await _tableExists('ipv_report_lines')) {
+              await m.createTable(ipvReportLines);
+            }
+          }
+          if (from < 13) {
+            await _addEmployeeColumnIfMissing(
+              m,
+              'sex',
+              () => m.addColumn(employees, employees.sex),
+            );
+            await _addEmployeeColumnIfMissing(
+              m,
+              'identity_number',
+              () => m.addColumn(employees, employees.identityNumber),
+            );
+            await _addEmployeeColumnIfMissing(
+              m,
+              'address',
+              () => m.addColumn(employees, employees.address),
+            );
+            await _addEmployeeColumnIfMissing(
+              m,
+              'image_path',
+              () => m.addColumn(employees, employees.imagePath),
+            );
+            await _addEmployeeColumnIfMissing(
+              m,
+              'associated_user_id',
+              () => m.addColumn(employees, employees.associatedUserId),
+            );
+          }
         },
       );
+
+  Future<void> _addWarehouseColumnIfMissing(
+    Migrator migrator,
+    String columnName,
+    Future<void> Function() addColumn,
+  ) async {
+    final bool exists = await _tableHasColumn('warehouses', columnName);
+    if (!exists) {
+      await addColumn();
+    }
+  }
+
+  Future<void> _addSalesColumnIfMissing(
+    Migrator migrator,
+    String columnName,
+    Future<void> Function() addColumn,
+  ) async {
+    final bool exists = await _tableHasColumn('sales', columnName);
+    if (!exists) {
+      await addColumn();
+    }
+  }
+
+  Future<void> _addPosTerminalColumnIfMissing(
+    Migrator migrator,
+    String columnName,
+    Future<void> Function() addColumn,
+  ) async {
+    final bool exists = await _tableHasColumn('pos_terminals', columnName);
+    if (!exists) {
+      await addColumn();
+    }
+  }
+
+  Future<void> _addStockMovementColumnIfMissing(
+    Migrator migrator,
+    String columnName,
+    Future<void> Function() addColumn,
+  ) async {
+    final bool exists = await _tableHasColumn('stock_movements', columnName);
+    if (!exists) {
+      await addColumn();
+    }
+  }
+
+  Future<void> _addEmployeeColumnIfMissing(
+    Migrator migrator,
+    String columnName,
+    Future<void> Function() addColumn,
+  ) async {
+    final bool exists = await _tableHasColumn('employees', columnName);
+    if (!exists) {
+      await addColumn();
+    }
+  }
+
+  Future<void> _bootstrapTerminalsForTpvWarehouses() async {
+    final List<Warehouse> tpvWarehouses = await (select(warehouses)
+          ..where((Warehouses tbl) =>
+              tbl.warehouseType.equals('TPV') & tbl.isActive.equals(true)))
+        .get();
+    if (tpvWarehouses.isEmpty) {
+      return;
+    }
+
+    for (final Warehouse warehouse in tpvWarehouses) {
+      final TypedResult? existing = await (selectOnly(posTerminals)
+            ..addColumns(<Expression<Object>>[posTerminals.id])
+            ..where(posTerminals.warehouseId.equals(warehouse.id))
+            ..limit(1))
+          .getSingleOrNull();
+      if (existing?.read(posTerminals.id) != null) {
+        continue;
+      }
+
+      final String code = await _nextTerminalCodeSeed(warehouse);
+      await into(posTerminals).insert(
+        PosTerminalsCompanion.insert(
+          id: _uuid.v4(),
+          code: code,
+          name: warehouse.name,
+          warehouseId: warehouse.id,
+        ),
+      );
+    }
+  }
+
+  Future<String> _nextTerminalCodeSeed(Warehouse warehouse) async {
+    final String normalized = _slug(warehouse.name).toUpperCase();
+    final String suffix = warehouse.id.replaceAll('-', '').toUpperCase();
+    final String fallback = suffix.substring(0, math.min(6, suffix.length));
+    final String base = normalized.isEmpty
+        ? 'TPV-$fallback'
+        : 'TPV-${normalized.substring(0, math.min(8, normalized.length))}';
+
+    String code = base;
+    int index = 2;
+    while (await _terminalCodeExists(code)) {
+      code = '$base-$index';
+      index += 1;
+    }
+    return code;
+  }
+
+  Future<bool> _terminalCodeExists(String code) async {
+    final TypedResult? existing = await (selectOnly(posTerminals)
+          ..addColumns(<Expression<Object>>[posTerminals.id])
+          ..where(posTerminals.code.equals(code))
+          ..limit(1))
+        .getSingleOrNull();
+    return existing?.read(posTerminals.id) != null;
+  }
+
+  Future<bool> _tableHasColumn(String tableName, String columnName) async {
+    final List<QueryRow> rows =
+        await customSelect('PRAGMA table_info($tableName)').get();
+
+    for (final QueryRow row in rows) {
+      final Object? rawName = row.data['name'];
+      final String name = (rawName is String ? rawName : '').toLowerCase();
+      if (name == columnName.toLowerCase()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<bool> _tableExists(String tableName) async {
+    final List<QueryRow> rows = await customSelect(
+      '''
+      SELECT 1
+      FROM sqlite_master
+      WHERE type = 'table'
+        AND name = ?
+      LIMIT 1
+      ''',
+      variables: <Variable<Object>>[Variable<String>(tableName)],
+    ).get();
+    return rows.isNotEmpty;
+  }
 
   Future<void> _seedDefaultProductCatalogItems() async {
     const Map<String, List<String>> defaults = <String, List<String>>{

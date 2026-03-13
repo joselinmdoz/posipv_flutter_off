@@ -14,6 +14,8 @@ class LoginPage extends ConsumerStatefulWidget {
 class _LoginPageState extends ConsumerState<LoginPage> {
   final TextEditingController _usernameCtrl = TextEditingController();
   final TextEditingController _passwordCtrl = TextEditingController();
+  bool _rememberSession = true;
+  bool _checkingRememberedSession = true;
   bool _isLoading = false;
 
   @override
@@ -21,6 +23,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await ref.read(localAuthServiceProvider).ensureDefaultAdmin();
+      await _tryRestoreRememberedSession();
     });
   }
 
@@ -29,6 +32,20 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     _usernameCtrl.dispose();
     _passwordCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _tryRestoreRememberedSession() async {
+    final session =
+        await ref.read(localAuthServiceProvider).restoreRememberedSession();
+    if (!mounted) {
+      return;
+    }
+    if (session != null) {
+      ref.read(currentSessionProvider.notifier).state = session;
+      context.go('/home');
+      return;
+    }
+    setState(() => _checkingRememberedSession = false);
   }
 
   Future<void> _login() async {
@@ -54,6 +71,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     }
 
     ref.read(currentSessionProvider.notifier).state = session;
+    await ref.read(localAuthServiceProvider).persistSession(
+          session: session,
+          rememberOnDevice: _rememberSession,
+        );
     if (mounted) {
       context.go('/home');
     }
@@ -67,6 +88,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_checkingRememberedSession) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       body: Center(
         child: ConstrainedBox(
@@ -88,7 +115,20 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   decoration: const InputDecoration(labelText: 'Contrasena'),
                   onSubmitted: (_) => _login(),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 12),
+                CheckboxListTile(
+                  value: _rememberSession,
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  title: const Text('Recordar sesion en este dispositivo'),
+                  onChanged: _isLoading
+                      ? null
+                      : (bool? value) {
+                          setState(() => _rememberSession = value ?? false);
+                        },
+                  controlAffinity: ListTileControlAffinity.leading,
+                ),
+                const SizedBox(height: 12),
                 FilledButton(
                   onPressed: _isLoading ? null : _login,
                   child: Text(_isLoading ? 'Validando...' : 'Entrar'),

@@ -1,0 +1,434 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../core/db/app_database.dart';
+import '../../../shared/widgets/app_scaffold.dart';
+import '../data/reportes_local_datasource.dart';
+import 'reportes_providers.dart';
+
+class IpvReportesPage extends ConsumerStatefulWidget {
+  const IpvReportesPage({super.key});
+
+  @override
+  ConsumerState<IpvReportesPage> createState() => _IpvReportesPageState();
+}
+
+class _IpvReportesPageState extends ConsumerState<IpvReportesPage> {
+  bool _loading = true;
+  bool _loadingIpv = false;
+  bool _showingIpvSheet = false;
+  List<PosTerminal> _terminalOptions = <PosTerminal>[];
+  String? _terminalId;
+  DateTime? _fromDate;
+  DateTime? _toDate;
+  List<IpvReportSummaryStat> _reports = <IpvReportSummaryStat>[];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (mounted) {
+      setState(() => _loading = true);
+    }
+    final ReportesLocalDataSource ds =
+        ref.read(reportesLocalDataSourceProvider);
+    try {
+      final Future<List<PosTerminal>> terminalsFuture =
+          ds.listIpvTerminalOptions();
+      List<IpvReportSummaryStat> reports = await ds.listIpvReports(
+        terminalId: _terminalId,
+        fromDate: _fromDate,
+        toDate: _toDate,
+        limit: 200,
+      );
+      final List<PosTerminal> terminals = await terminalsFuture;
+      if (_terminalId != null &&
+          terminals.every((PosTerminal row) => row.id != _terminalId)) {
+        _terminalId = null;
+        reports = await ds.listIpvReports(
+          terminalId: null,
+          fromDate: _fromDate,
+          toDate: _toDate,
+          limit: 200,
+        );
+      }
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _terminalOptions = terminals;
+        _reports = reports;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo cargar IPV: $e')),
+      );
+    }
+  }
+
+  Future<void> _reloadIpvReports() async {
+    if (mounted) {
+      setState(() => _loadingIpv = true);
+    }
+    final ReportesLocalDataSource ds =
+        ref.read(reportesLocalDataSourceProvider);
+    try {
+      final List<IpvReportSummaryStat> reports = await ds.listIpvReports(
+        terminalId: _terminalId,
+        fromDate: _fromDate,
+        toDate: _toDate,
+        limit: 200,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _reports = reports;
+        _loadingIpv = false;
+      });
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _loadingIpv = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo cargar IPV: $e')),
+      );
+    }
+  }
+
+  Future<void> _pickFromDate() async {
+    final DateTime now = DateTime.now();
+    final DateTime initial = _fromDate ?? now;
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020, 1, 1),
+      lastDate: DateTime(now.year + 2, 12, 31),
+    );
+    if (picked == null) {
+      return;
+    }
+    setState(() => _fromDate = picked);
+  }
+
+  Future<void> _pickToDate() async {
+    final DateTime now = DateTime.now();
+    final DateTime initial = _toDate ?? now;
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020, 1, 1),
+      lastDate: DateTime(now.year + 2, 12, 31),
+    );
+    if (picked == null) {
+      return;
+    }
+    setState(() => _toDate = picked);
+  }
+
+  void _clearFilters() {
+    setState(() {
+      _terminalId = null;
+      _fromDate = null;
+      _toDate = null;
+    });
+    _reloadIpvReports();
+  }
+
+  Future<void> _exportIpv(IpvReportSummaryStat report, String format) async {
+    final ReportesLocalDataSource ds =
+        ref.read(reportesLocalDataSourceProvider);
+    try {
+      final String path = format == 'pdf'
+          ? await ds.exportIpvReportPdf(report.reportId)
+          : await ds.exportIpvReportCsv(report.reportId);
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Exportado $format en: $path')),
+      );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo exportar IPV: $e')),
+      );
+    }
+  }
+
+  Future<void> _closeSheetAndExportIpv(
+    BuildContext sheetContext,
+    IpvReportSummaryStat report,
+    String format,
+  ) async {
+    Navigator.of(sheetContext).pop();
+    await _exportIpv(report, format);
+  }
+
+  Future<void> _openDetail(IpvReportSummaryStat report) async {
+    if (_showingIpvSheet) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+
+    _showingIpvSheet = true;
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (BuildContext context) {
+          return FractionallySizedBox(
+            heightFactor: 0.92,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'IPV ${report.terminalName}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${_formatDateTime(report.openedAt)} → ${report.closedAt == null ? '-' : _formatDateTime(report.closedAt!)}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF655D83),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: <Widget>[
+                        OutlinedButton.icon(
+                          onPressed: () =>
+                              _closeSheetAndExportIpv(context, report, 'csv'),
+                          icon: const Icon(Icons.table_view_outlined),
+                          label: const Text('Exportar CSV'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: () =>
+                              _closeSheetAndExportIpv(context, report, 'pdf'),
+                          icon: const Icon(Icons.picture_as_pdf_outlined),
+                          label: const Text('Exportar PDF'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'El detalle IPV se consulta por archivo exportado.',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: Color(0xFF655D83),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    } finally {
+      _showingIpvSheet = false;
+    }
+  }
+
+  String _moneyWithSymbol(int cents, String symbol) {
+    return '$symbol${(cents / 100).toStringAsFixed(2)}';
+  }
+
+  String _formatDate(DateTime dt) {
+    final DateTime local = dt.toLocal();
+    final String y = local.year.toString().padLeft(4, '0');
+    final String m = local.month.toString().padLeft(2, '0');
+    final String d = local.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
+  String _formatDateTime(DateTime dt) {
+    final DateTime local = dt.toLocal();
+    final String y = local.year.toString().padLeft(4, '0');
+    final String m = local.month.toString().padLeft(2, '0');
+    final String d = local.day.toString().padLeft(2, '0');
+    final String hh = local.hour.toString().padLeft(2, '0');
+    final String mm = local.minute.toString().padLeft(2, '0');
+    return '$y-$m-$d $hh:$mm';
+  }
+
+  String _ipvSourceLabel(String source) {
+    switch (source.trim().toLowerCase()) {
+      case 'previous_final':
+        return 'Inicio desde cierre IPV anterior';
+      case 'initial_stock':
+      default:
+        return 'Inicio desde stock del TPV';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppScaffold(
+      title: 'Reportes IPV',
+      currentRoute: '/ipv-reportes',
+      onRefresh: _load,
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _load,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+                children: <Widget>[
+                  if (_loadingIpv)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 8),
+                      child: LinearProgressIndicator(minHeight: 2),
+                    ),
+                  Card(
+                    elevation: 0,
+                    color: const Color(0xFFF4F1FB),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: <Widget>[
+                          SizedBox(
+                            width: 230,
+                            child: DropdownButtonFormField<String?>(
+                              initialValue: _terminalId,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                labelText: 'TPV',
+                                isDense: true,
+                              ),
+                              items: <DropdownMenuItem<String?>>[
+                                const DropdownMenuItem<String?>(
+                                  value: null,
+                                  child: Text('Todos los TPV'),
+                                ),
+                                ..._terminalOptions.map(
+                                  (PosTerminal terminal) =>
+                                      DropdownMenuItem<String?>(
+                                    value: terminal.id,
+                                    child: Text(terminal.name),
+                                  ),
+                                ),
+                              ],
+                              onChanged: (String? value) {
+                                setState(() => _terminalId = value);
+                              },
+                            ),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: _pickFromDate,
+                            icon: const Icon(Icons.date_range_outlined),
+                            label: Text(
+                              _fromDate == null
+                                  ? 'Desde'
+                                  : _formatDate(_fromDate!),
+                            ),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: _pickToDate,
+                            icon: const Icon(Icons.event_outlined),
+                            label: Text(_toDate == null
+                                ? 'Hasta'
+                                : _formatDate(_toDate!)),
+                          ),
+                          IconButton(
+                            tooltip: 'Limpiar filtros',
+                            onPressed: _clearFilters,
+                            icon: const Icon(Icons.restart_alt_rounded),
+                          ),
+                          FilledButton.tonalIcon(
+                            onPressed: _loadingIpv ? null : _reloadIpvReports,
+                            icon: const Icon(Icons.filter_alt_rounded),
+                            label: const Text('Aplicar'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  if (_reports.isEmpty)
+                    const Card(
+                      elevation: 0,
+                      child: Padding(
+                        padding: EdgeInsets.all(16),
+                        child:
+                            Text('No hay reportes IPV para el filtro actual.'),
+                      ),
+                    )
+                  else
+                    ..._reports.map((IpvReportSummaryStat report) {
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        elevation: 0,
+                        color: const Color(0xFFEFF3FB),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 2,
+                          ),
+                          title: Text(
+                            report.terminalName,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          subtitle: Text(
+                            '${_formatDateTime(report.openedAt)} → ${report.closedAt == null ? '-' : _formatDateTime(report.closedAt!)}\n${_ipvSourceLabel(report.openingSource)} • ${report.lineCount} producto(s)',
+                          ),
+                          trailing: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: <Widget>[
+                              Text(
+                                _moneyWithSymbol(
+                                  report.totalAmountCents,
+                                  report.currencySymbol,
+                                ),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w800),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                report.status == 'open'
+                                    ? 'IPV abierto'
+                                    : 'IPV cerrado',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: Color(0xFF5B4B8A),
+                                ),
+                              ),
+                            ],
+                          ),
+                          onTap: () => _openDetail(report),
+                        ),
+                      );
+                    }),
+                ],
+              ),
+            ),
+    );
+  }
+}

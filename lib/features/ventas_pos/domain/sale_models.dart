@@ -26,16 +26,24 @@ class CreateSaleInput {
   const CreateSaleInput({
     required this.warehouseId,
     required this.cashierId,
+    this.terminalId,
+    this.terminalSessionId,
     required this.items,
     required this.payments,
+    this.discountCents = 0,
     this.allowNegativeStock = false,
+    this.saleOrigin = 'pos',
   });
 
   final String warehouseId;
   final String cashierId;
+  final String? terminalId;
+  final String? terminalSessionId;
   final List<SaleItemInput> items;
   final List<PaymentInput> payments;
+  final int discountCents;
   final bool allowNegativeStock;
+  final String saleOrigin;
 }
 
 class CreateSaleResult {

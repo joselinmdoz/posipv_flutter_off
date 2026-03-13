@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../../shared/widgets/app_scaffold.dart';
+import '../../tpv/presentation/tpv_providers.dart';
 import '../data/almacenes_local_datasource.dart';
 import 'almacenes_providers.dart';
 
@@ -227,7 +228,7 @@ class _AlmacenesPageState extends ConsumerState<AlmacenesPage> {
             await _loadWarehouses();
             if (mounted) {
               messenger.showSnackBar(
-                const SnackBar(content: Text('Almacén creado.')),
+                const SnackBar(content: Text('Registro creado correctamente.')),
               );
             }
           }
@@ -291,11 +292,15 @@ class _WarehouseFormPageState extends ConsumerState<_WarehouseFormPage> {
     setState(() => _saving = true);
 
     try {
-      final ds = ref.read(almacenesLocalDataSourceProvider);
-      await ds.createWarehouse(
-        name: name,
-        warehouseType: _selectedType,
-      );
+      if (_selectedType == 'TPV') {
+        await ref.read(tpvLocalDataSourceProvider).createTerminal(name: name);
+      } else {
+        final ds = ref.read(almacenesLocalDataSourceProvider);
+        await ds.createWarehouse(
+          name: name,
+          warehouseType: _selectedType,
+        );
+      }
 
       if (!mounted) {
         return;
