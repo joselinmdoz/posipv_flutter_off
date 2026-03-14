@@ -1297,6 +1297,9 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
     required String selected,
     required ValueChanged<String> onChanged,
   }) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final bool isDark = theme.brightness == Brightness.dark;
     final String selectedValue =
         options.contains(selected) ? selected : options.first;
 
@@ -1311,19 +1314,24 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
       child: DropdownButtonFormField<String>(
         initialValue: selectedValue,
         isExpanded: true,
+        dropdownColor:
+            isDark ? const Color(0xFF241F33) : const Color(0xFFF4EFFB),
+        style: TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w600),
         icon: const Icon(Icons.keyboard_arrow_down_rounded),
         decoration: InputDecoration(
           filled: true,
-          fillColor: const Color(0xFFF7F4FC),
+          fillColor: isDark ? const Color(0xFF211D2D) : const Color(0xFFF7F4FC),
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFFD8D0EB)),
+            borderSide: BorderSide(
+              color: isDark ? const Color(0xFF342E46) : const Color(0xFFD8D0EB),
+            ),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFF5B4B8A), width: 1.2),
+            borderSide: BorderSide(color: scheme.primary, width: 1.2),
           ),
         ),
         items: options
