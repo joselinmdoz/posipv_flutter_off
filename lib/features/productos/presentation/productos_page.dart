@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../../core/licensing/license_providers.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../../shared/widgets/code_scanner_page.dart';
 import '../data/productos_local_datasource.dart';
@@ -357,14 +358,17 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
 
   @override
   Widget build(BuildContext context) {
+    final license = ref.watch(currentLicenseStatusProvider);
     return AppScaffold(
       title: 'Productos',
       currentRoute: '/productos',
       onRefresh: _loadProducts,
-      floatingActionButton: FloatingActionButton.small(
-        onPressed: () => _openProductForm(),
-        child: const Icon(Icons.add_rounded),
-      ),
+      floatingActionButton: license.canWrite
+          ? FloatingActionButton.small(
+              onPressed: () => _openProductForm(),
+              child: const Icon(Icons.add_rounded),
+            )
+          : null,
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../../core/licensing/license_providers.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../tpv/presentation/tpv_providers.dart';
 import '../data/almacenes_local_datasource.dart';
@@ -217,32 +218,37 @@ class _AlmacenesPageState extends ConsumerState<AlmacenesPage> {
 
   @override
   Widget build(BuildContext context) {
+    final license = ref.watch(currentLicenseStatusProvider);
     return AppScaffold(
       title: 'Almacenes',
       currentRoute: '/almacenes',
       onRefresh: _loadWarehouses,
-      floatingActionButton: FloatingActionButton.small(
-        onPressed: () async {
-          final NavigatorState navigator = Navigator.of(context);
-          final ScaffoldMessengerState messenger =
-              ScaffoldMessenger.of(context);
-          final bool? created = await navigator.push<bool>(
-            MaterialPageRoute<bool>(
-              builder: (_) => const _WarehouseFormPage(),
-              fullscreenDialog: true,
-            ),
-          );
-          if (created == true) {
-            await _loadWarehouses();
-            if (mounted) {
-              messenger.showSnackBar(
-                const SnackBar(content: Text('Registro creado correctamente.')),
-              );
-            }
-          }
-        },
-        child: const Icon(Icons.add_rounded),
-      ),
+      floatingActionButton: license.canWrite
+          ? FloatingActionButton.small(
+              onPressed: () async {
+                final NavigatorState navigator = Navigator.of(context);
+                final ScaffoldMessengerState messenger =
+                    ScaffoldMessenger.of(context);
+                final bool? created = await navigator.push<bool>(
+                  MaterialPageRoute<bool>(
+                    builder: (_) => const _WarehouseFormPage(),
+                    fullscreenDialog: true,
+                  ),
+                );
+                if (created == true) {
+                  await _loadWarehouses();
+                  if (mounted) {
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text('Registro creado correctamente.'),
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Icon(Icons.add_rounded),
+            )
+          : null,
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(

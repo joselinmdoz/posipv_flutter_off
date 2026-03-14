@@ -4,16 +4,24 @@ import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../../core/licensing/license_service.dart';
 import '../../../core/utils/app_result.dart';
 import '../domain/sale_models.dart';
 
 class SaleService {
-  SaleService(this._db, {Uuid? uuid}) : _uuid = uuid ?? const Uuid();
+  SaleService(
+    this._db, {
+    required OfflineLicenseService licenseService,
+    Uuid? uuid,
+  })  : _licenseService = licenseService,
+        _uuid = uuid ?? const Uuid();
 
   final AppDatabase _db;
+  final OfflineLicenseService _licenseService;
   final Uuid _uuid;
 
   Future<AppResult<CreateSaleResult>> createSale(CreateSaleInput input) async {
+    await _licenseService.requireSalesAccess();
     if (input.items.isEmpty) {
       return const AppFailure<CreateSaleResult>(
         'La venta debe tener al menos un producto.',

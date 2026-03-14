@@ -2,6 +2,7 @@ import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../../core/licensing/license_service.dart';
 
 enum ProductCatalogKind { type, category, unit }
 
@@ -58,10 +59,15 @@ class ProductFormInput {
 }
 
 class ProductosLocalDataSource {
-  ProductosLocalDataSource(this._db, {Uuid? uuid})
-      : _uuid = uuid ?? const Uuid();
+  ProductosLocalDataSource(
+    this._db, {
+    required OfflineLicenseService licenseService,
+    Uuid? uuid,
+  })  : _licenseService = licenseService,
+        _uuid = uuid ?? const Uuid();
 
   final AppDatabase _db;
+  final OfflineLicenseService _licenseService;
   final Uuid _uuid;
 
   Future<List<Product>> listActiveProducts() {
@@ -214,6 +220,7 @@ class ProductosLocalDataSource {
     required ProductCatalogKind kind,
     required String value,
   }) async {
+    await _licenseService.requireWriteAccess();
     final String cleaned = _normalizeCatalogValue(value);
     if (cleaned.isEmpty) {
       throw Exception('El valor no puede estar vacio.');
@@ -256,6 +263,7 @@ class ProductosLocalDataSource {
   }
 
   Future<void> createProduct(ProductFormInput input) async {
+    await _licenseService.requireWriteAccess();
     await _db.into(_db.products).insert(
           ProductsCompanion.insert(
             id: _uuid.v4(),
@@ -277,8 +285,9 @@ class ProductosLocalDataSource {
   Future<void> updateProduct({
     required String productId,
     required ProductFormInput input,
-  }) {
-    return (_db.update(_db.products)..where((tbl) => tbl.id.equals(productId)))
+  }) async {
+    await _licenseService.requireWriteAccess();
+    await (_db.update(_db.products)..where((tbl) => tbl.id.equals(productId)))
         .write(
       ProductsCompanion(
         sku: Value(input.code),
@@ -297,8 +306,9 @@ class ProductosLocalDataSource {
     );
   }
 
-  Future<void> deactivateProduct(String productId) {
-    return (_db.update(_db.products)..where((tbl) => tbl.id.equals(productId)))
+  Future<void> deactivateProduct(String productId) async {
+    await _licenseService.requireWriteAccess();
+    await (_db.update(_db.products)..where((tbl) => tbl.id.equals(productId)))
         .write(
       ProductsCompanion(
         isActive: const Value(false),
@@ -311,8 +321,9 @@ class ProductosLocalDataSource {
     required String productId,
     required int priceCents,
     required int taxRateBps,
-  }) {
-    return (_db.update(_db.products)..where((tbl) => tbl.id.equals(productId)))
+  }) async {
+    await _licenseService.requireWriteAccess();
+    await (_db.update(_db.products)..where((tbl) => tbl.id.equals(productId)))
         .write(
       ProductsCompanion(
         priceCents: Value(priceCents),

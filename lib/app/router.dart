@@ -6,6 +6,7 @@ import '../features/configuracion/presentation/configuracion_page.dart';
 import '../features/home/presentation/home_page.dart';
 import '../features/inventario/presentation/inventario_page.dart';
 import '../features/inventario/presentation/movimientos_inventario_page.dart';
+import '../features/licencia/presentation/licencia_page.dart';
 import '../features/productos/presentation/productos_page.dart';
 import '../features/reportes/presentation/reportes_page.dart';
 import '../features/reportes/presentation/ipv_reportes_page.dart';
@@ -69,6 +70,10 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/configuracion',
       builder: (context, state) => const ConfiguracionPage(),
+    ),
+    GoRoute(
+      path: '/licencia',
+      builder: (context, state) => const LicenciaPage(),
     ),
   ],
 );

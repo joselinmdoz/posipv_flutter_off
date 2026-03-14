@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../../core/licensing/license_providers.dart';
 import '../../../shared/models/user_session.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../almacenes/presentation/almacenes_providers.dart';
@@ -866,15 +867,18 @@ class _MovimientosInventarioPageState
   Widget build(BuildContext context) {
     final List<_MovementDateGroup> groups = _groupByDate(_movements);
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final license = ref.watch(currentLicenseStatusProvider);
 
     return AppScaffold(
       title: 'Movimientos Inventario',
       currentRoute: '/inventario-movimientos',
       onRefresh: _bootstrap,
-      floatingActionButton: FloatingActionButton.small(
-        onPressed: _openMovementForm,
-        child: const Icon(Icons.add_rounded),
-      ),
+      floatingActionButton: license.canWrite
+          ? FloatingActionButton.small(
+              onPressed: _openMovementForm,
+              child: const Icon(Icons.add_rounded),
+            )
+          : null,
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : Padding(
@@ -923,7 +927,9 @@ class _MovimientosInventarioPageState
                               const SizedBox(width: 8),
                               IconButton.filledTonal(
                                 tooltip: 'Gestionar motivos',
-                                onPressed: _openReasonsManager,
+                                onPressed: license.canWrite
+                                    ? _openReasonsManager
+                                    : null,
                                 icon: const Icon(Icons.settings_outlined),
                               ),
                             ],

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/licensing/license_models.dart';
+import '../../core/licensing/license_providers.dart';
 import '../../features/auth/presentation/auth_providers.dart';
 
 class AppScaffold extends ConsumerWidget {
@@ -37,6 +39,7 @@ class AppScaffold extends ConsumerWidget {
     _NavItem('Almacenes', '/almacenes', Icons.warehouse_outlined),
     _NavItem('Reportes', '/reportes', Icons.bar_chart_rounded),
     _NavItem('IPV', '/ipv-reportes', Icons.table_chart_outlined),
+    _NavItem('Licencia', '/licencia', Icons.verified_user_outlined),
     _NavItem('Ajustes', '/configuracion', Icons.settings_outlined),
   ];
 
@@ -44,13 +47,16 @@ class AppScaffold extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final String activeRoute = currentRoute ?? _currentLocation(context);
     final ThemeData theme = Theme.of(context);
+    final LicenseStatus licenseStatus = ref.watch(currentLicenseStatusProvider);
     final bool isDark = theme.brightness == Brightness.dark;
     final List<Color> bodyGradient = isDark
         ? const <Color>[Color(0xFF16131E), Color(0xFF0F0D15)]
         : const <Color>[Color(0xFFF4F1FA), Color(0xFFECE8F4)];
+    final Widget? licenseBanner =
+        _buildLicenseBanner(context, licenseStatus, activeRoute);
 
     return Scaffold(
-      drawer: _buildDrawer(context, ref, activeRoute),
+      drawer: _buildDrawer(context, ref, activeRoute, licenseStatus),
       floatingActionButton: floatingActionButton,
       appBar: AppBar(
         title: Text(
@@ -98,7 +104,7 @@ class AppScaffold extends ConsumerWidget {
         bottom: showTopTabs
             ? PreferredSize(
                 preferredSize: const Size.fromHeight(56),
-                child: _buildTopTabs(context, activeRoute),
+                child: _buildTopTabs(context, activeRoute, licenseStatus),
               )
             : null,
       ),
@@ -110,12 +116,21 @@ class AppScaffold extends ConsumerWidget {
             colors: bodyGradient,
           ),
         ),
-        child: body,
+        child: Column(
+          children: <Widget>[
+            if (licenseBanner != null) licenseBanner,
+            Expanded(child: body),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildTopTabs(BuildContext context, String activeRoute) {
+  Widget _buildTopTabs(
+    BuildContext context,
+    String activeRoute,
+    LicenseStatus licenseStatus,
+  ) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final bool isDark = theme.brightness == Brightness.dark;
@@ -135,7 +150,12 @@ class AppScaffold extends ConsumerWidget {
               padding: const EdgeInsets.only(right: 8),
               child: InkWell(
                 borderRadius: BorderRadius.circular(14),
-                onTap: () => _go(context, item.route, activeRoute),
+                onTap: () => _go(
+                  context,
+                  item.route,
+                  activeRoute,
+                  licenseStatus,
+                ),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 160),
                   padding:
@@ -182,7 +202,12 @@ class AppScaffold extends ConsumerWidget {
     );
   }
 
-  Drawer _buildDrawer(BuildContext context, WidgetRef ref, String activeRoute) {
+  Drawer _buildDrawer(
+    BuildContext context,
+    WidgetRef ref,
+    String activeRoute,
+    LicenseStatus licenseStatus,
+  ) {
     bool isTravelMode = false;
     final ThemeData theme = Theme.of(context);
     final bool isDark = theme.brightness == Brightness.dark;
@@ -242,7 +267,7 @@ class AppScaffold extends ConsumerWidget {
                       ),
                       onTap: () {
                         Navigator.of(context).pop();
-                        _go(context, item.route, activeRoute);
+                        _go(context, item.route, activeRoute, licenseStatus);
                       },
                     ),
                   const SizedBox(height: 8),
@@ -324,8 +349,21 @@ class AppScaffold extends ConsumerWidget {
     context.go('/login');
   }
 
-  void _go(BuildContext context, String route, String activeRoute) {
+  void _go(
+    BuildContext context,
+    String route,
+    String activeRoute,
+    LicenseStatus licenseStatus,
+  ) {
     if (activeRoute != route) {
+      if (_isSalesRoute(route) && !licenseStatus.canSell) {
+        _showSoon(
+          context,
+          'La licencia no permite usar el modulo de ventas.',
+        );
+        context.go('/configuracion');
+        return;
+      }
       context.go(route);
     }
   }
@@ -338,6 +376,65 @@ class AppScaffold extends ConsumerWidget {
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Widget? _buildLicenseBanner(
+    BuildContext context,
+    LicenseStatus status,
+    String activeRoute,
+  ) {
+    if (status.isLoading) {
+      return null;
+    }
+
+    final int? daysRemaining = status.daysRemaining;
+    final bool showTrialWarning =
+        status.isTrial && daysRemaining != null && daysRemaining <= 3;
+    if (!status.isBlocked && !showTrialWarning) {
+      return null;
+    }
+
+    final ThemeData theme = Theme.of(context);
+    final bool isBlocked = status.isBlocked;
+    final Color background = isBlocked
+        ? theme.colorScheme.errorContainer
+        : theme.colorScheme.secondaryContainer;
+    final Color foreground = isBlocked
+        ? theme.colorScheme.onErrorContainer
+        : theme.colorScheme.onSecondaryContainer;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 10, 12, 10),
+      color: background,
+      child: Row(
+        children: <Widget>[
+          Icon(
+            isBlocked ? Icons.lock_outline_rounded : Icons.timer_outlined,
+            color: foreground,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              status.message,
+              style: theme.textTheme.bodyMedium?.copyWith(color: foreground),
+            ),
+          ),
+          if (activeRoute != '/configuracion')
+            TextButton(
+              onPressed: () => context.go('/configuracion'),
+              child: Text(
+                'Activar',
+                style: TextStyle(color: foreground),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  bool _isSalesRoute(String route) {
+    return route == '/ventas-pos' || route == '/ventas-directas';
   }
 }
 

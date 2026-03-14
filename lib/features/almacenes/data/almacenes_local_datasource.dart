@@ -2,6 +2,7 @@ import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../../core/licensing/license_service.dart';
 
 const List<String> kWarehouseTypes = <String>['Central', 'TPV'];
 
@@ -18,10 +19,15 @@ class WarehouseWithStock {
 }
 
 class AlmacenesLocalDataSource {
-  AlmacenesLocalDataSource(this._db, {Uuid? uuid})
-      : _uuid = uuid ?? const Uuid();
+  AlmacenesLocalDataSource(
+    this._db, {
+    required OfflineLicenseService licenseService,
+    Uuid? uuid,
+  })  : _licenseService = licenseService,
+        _uuid = uuid ?? const Uuid();
 
   final AppDatabase _db;
+  final OfflineLicenseService _licenseService;
   final Uuid _uuid;
 
   Future<void> ensureDefaultWarehouse({String name = 'Principal'}) async {
@@ -121,8 +127,9 @@ class AlmacenesLocalDataSource {
   Future<void> createWarehouse({
     required String name,
     String warehouseType = 'Central',
-  }) {
-    return _db.into(_db.warehouses).insert(
+  }) async {
+    await _licenseService.requireWriteAccess();
+    await _db.into(_db.warehouses).insert(
           WarehousesCompanion.insert(
             id: _uuid.v4(),
             name: name,
@@ -136,6 +143,7 @@ class AlmacenesLocalDataSource {
     required String name,
     required String warehouseType,
   }) async {
+    await _licenseService.requireWriteAccess();
     await (_db.update(_db.warehouses)
           ..where((Warehouses tbl) => tbl.id.equals(id)))
         .write(
@@ -147,6 +155,7 @@ class AlmacenesLocalDataSource {
   }
 
   Future<void> deactivateWarehouse(String id) async {
+    await _licenseService.requireWriteAccess();
     await (_db.update(_db.warehouses)
           ..where((Warehouses tbl) => tbl.id.equals(id)))
         .write(

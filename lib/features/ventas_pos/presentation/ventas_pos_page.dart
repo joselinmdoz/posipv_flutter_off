@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../../core/licensing/license_providers.dart';
 import '../../../core/utils/app_result.dart';
 import '../../../shared/models/user_session.dart';
 import '../../../shared/widgets/app_scaffold.dart';
@@ -2493,68 +2494,112 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
 
   @override
   Widget build(BuildContext context) {
+    final license = ref.watch(currentLicenseStatusProvider);
     return AppScaffold(
       title: 'Ventas POS',
       currentRoute: '/ventas-pos',
       onRefresh: _bootstrap,
-      floatingActionButton: _floatingButtons(),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : SafeArea(
-              child: CustomScrollView(
-                keyboardDismissBehavior:
-                    ScrollViewKeyboardDismissBehavior.onDrag,
-                slivers: <Widget>[
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-                    sliver: SliverToBoxAdapter(
-                      child: Column(
-                        children: <Widget>[
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+      floatingActionButton: license.canSell ? _floatingButtons() : null,
+      body: license.canSell
+          ? (_loading
+              ? const Center(child: CircularProgressIndicator())
+              : SafeArea(
+                  child: CustomScrollView(
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    slivers: <Widget>[
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                        sliver: SliverToBoxAdapter(
+                          child: Column(
                             children: <Widget>[
-                              Expanded(child: _terminalHeader()),
-                              const SizedBox(width: 8),
-                              IconButton.filledTonal(
-                                tooltip: 'Entrada / salida',
-                                onPressed: _posting || _closingSession
-                                    ? null
-                                    : _openQuickStockDialog,
-                                icon: const Icon(Icons.inventory_2_outlined),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  Expanded(child: _terminalHeader()),
+                                  const SizedBox(width: 8),
+                                  IconButton.filledTonal(
+                                    tooltip: 'Entrada / salida',
+                                    onPressed: _posting || _closingSession
+                                        ? null
+                                        : _openQuickStockDialog,
+                                    icon: const Icon(
+                                      Icons.inventory_2_outlined,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  IconButton.filledTonal(
+                                    tooltip: 'Ver IPV',
+                                    onPressed: _posting ||
+                                            _closingSession ||
+                                            _openSessionId == null
+                                        ? null
+                                        : _openCurrentIpvFromPos,
+                                    icon: const Icon(
+                                      Icons.table_chart_outlined,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  IconButton.filledTonal(
+                                    tooltip: 'Cerrar turno',
+                                    onPressed: _posting ||
+                                            _closingSession ||
+                                            _openSessionId == null
+                                        ? null
+                                        : _closeSessionFromPos,
+                                    icon: const Icon(
+                                      Icons.lock_clock_outlined,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 6),
-                              IconButton.filledTonal(
-                                tooltip: 'Ver IPV',
-                                onPressed: _posting ||
-                                        _closingSession ||
-                                        _openSessionId == null
-                                    ? null
-                                    : _openCurrentIpvFromPos,
-                                icon: const Icon(Icons.table_chart_outlined),
-                              ),
-                              const SizedBox(width: 6),
-                              IconButton.filledTonal(
-                                tooltip: 'Cerrar turno',
-                                onPressed: _posting ||
-                                        _closingSession ||
-                                        _openSessionId == null
-                                    ? null
-                                    : _closeSessionFromPos,
-                                icon: const Icon(Icons.lock_clock_outlined),
-                              ),
+                              const SizedBox(height: 10),
+                              _productFilterField(),
+                              const SizedBox(height: 8),
                             ],
                           ),
-                          const SizedBox(height: 10),
-                          _productFilterField(),
-                          const SizedBox(height: 8),
-                        ],
+                        ),
                       ),
+                      _productsGridSliver(),
+                    ],
+                  ),
+                ))
+          : _buildLicenseBlockedBody(license.message),
+    );
+  }
+
+  Widget _buildLicenseBlockedBody(String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  const Icon(Icons.lock_outline_rounded, size: 40),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Ventas bloqueadas',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                  _productsGridSliver(),
+                  const SizedBox(height: 8),
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                  ),
                 ],
               ),
             ),
+          ),
+        ),
+      ),
     );
   }
 }

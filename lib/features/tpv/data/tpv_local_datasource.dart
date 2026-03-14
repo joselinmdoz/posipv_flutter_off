@@ -5,6 +5,7 @@ import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../../core/licensing/license_service.dart';
 
 class TpvSessionWithUser {
   const TpvSessionWithUser({
@@ -100,9 +101,15 @@ class TpvSessionCashBreakdown {
 }
 
 class TpvLocalDataSource {
-  TpvLocalDataSource(this._db, {Uuid? uuid}) : _uuid = uuid ?? const Uuid();
+  TpvLocalDataSource(
+    this._db, {
+    required OfflineLicenseService licenseService,
+    Uuid? uuid,
+  })  : _licenseService = licenseService,
+        _uuid = uuid ?? const Uuid();
 
   final AppDatabase _db;
+  final OfflineLicenseService _licenseService;
   final Uuid _uuid;
 
   static const List<String> kAllowedPaymentMethods = <String>[
@@ -242,6 +249,7 @@ class TpvLocalDataSource {
     String? code,
     TpvTerminalConfig? config,
   }) async {
+    await _licenseService.requireWriteAccess();
     final String cleanName = name.trim();
     if (cleanName.isEmpty) {
       throw Exception('El nombre del TPV es obligatorio.');
@@ -293,6 +301,7 @@ class TpvLocalDataSource {
     required String code,
     TpvTerminalConfig? config,
   }) async {
+    await _licenseService.requireWriteAccess();
     final String cleanName = name.trim();
     if (cleanName.isEmpty) {
       throw Exception('El nombre del TPV es obligatorio.');
@@ -342,6 +351,7 @@ class TpvLocalDataSource {
   }
 
   Future<void> deactivateTerminal(String terminalId) async {
+    await _licenseService.requireWriteAccess();
     final PosTerminal? terminal = await (_db.select(_db.posTerminals)
           ..where((PosTerminals tbl) => tbl.id.equals(terminalId)))
         .getSingleOrNull();
@@ -513,6 +523,7 @@ class TpvLocalDataSource {
     String? imagePath,
     String? associatedUserId,
   }) async {
+    await _licenseService.requireWriteAccess();
     final String cleanName = _normalizeEmployeeName(name);
     if (cleanName.isEmpty) {
       throw Exception('El nombre del empleado es obligatorio.');
@@ -559,6 +570,7 @@ class TpvLocalDataSource {
     String? imagePath,
     String? associatedUserId,
   }) async {
+    await _licenseService.requireWriteAccess();
     final Employee? existing = await (_db.select(_db.employees)
           ..where((Employees tbl) => tbl.id.equals(employeeId)))
         .getSingleOrNull();
@@ -604,6 +616,7 @@ class TpvLocalDataSource {
   }
 
   Future<void> deactivateEmployee(String employeeId) async {
+    await _licenseService.requireWriteAccess();
     final Employee? existing = await (_db.select(_db.employees)
           ..where((Employees tbl) => tbl.id.equals(employeeId)))
         .getSingleOrNull();
@@ -688,6 +701,7 @@ class TpvLocalDataSource {
     int openingFloatCents = 0,
     String? note,
   }) async {
+    await _licenseService.requireSalesAccess();
     final PosTerminal? terminal = await (_db.select(_db.posTerminals)
           ..where((PosTerminals tbl) => tbl.id.equals(terminalId)))
         .getSingleOrNull();
@@ -800,6 +814,7 @@ class TpvLocalDataSource {
     String? closedByUserId,
     Map<int, int>? cashCountByDenomination,
   }) async {
+    await _licenseService.requireSalesAccess();
     final PosSession? session = await (_db.select(_db.posSessions)
           ..where((PosSessions tbl) => tbl.id.equals(sessionId)))
         .getSingleOrNull();

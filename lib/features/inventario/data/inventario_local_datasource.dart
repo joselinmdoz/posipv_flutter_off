@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../../core/licensing/license_service.dart';
 
 class InventoryView {
   const InventoryView({
@@ -114,10 +115,15 @@ class InventoryMovementView {
 }
 
 class InventarioLocalDataSource {
-  InventarioLocalDataSource(this._db, {Uuid? uuid})
-      : _uuid = uuid ?? const Uuid();
+  InventarioLocalDataSource(
+    this._db, {
+    required OfflineLicenseService licenseService,
+    Uuid? uuid,
+  })  : _licenseService = licenseService,
+        _uuid = uuid ?? const Uuid();
 
   final AppDatabase _db;
+  final OfflineLicenseService _licenseService;
   final Uuid _uuid;
 
   static const String _movementReasonsKey = 'inventory_movement_reasons_v1';
@@ -274,6 +280,7 @@ class InventarioLocalDataSource {
     required String label,
     required String appliesTo,
   }) async {
+    await _licenseService.requireWriteAccess();
     final String cleanLabel = label.trim();
     if (cleanLabel.isEmpty) {
       throw Exception('El motivo es obligatorio.');
@@ -315,6 +322,7 @@ class InventarioLocalDataSource {
     required String label,
     required String appliesTo,
   }) async {
+    await _licenseService.requireWriteAccess();
     final String cleanCode = _sanitizeReasonCode(code);
     if (cleanCode.isEmpty) {
       throw Exception('Motivo invalido.');
@@ -348,6 +356,7 @@ class InventarioLocalDataSource {
   }
 
   Future<void> deleteMovementReason(String code) async {
+    await _licenseService.requireWriteAccess();
     final String cleanCode = _sanitizeReasonCode(code);
     if (cleanCode.isEmpty) {
       throw Exception('Motivo invalido.');
@@ -507,6 +516,7 @@ class InventarioLocalDataSource {
     required String userId,
     String? note,
   }) async {
+    await _licenseService.requireWriteAccess();
     final String safeType = _sanitizeMovementType(type);
     if (qty <= 0) {
       throw Exception('La cantidad debe ser mayor que 0.');

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../../core/licensing/license_providers.dart';
 import '../../../shared/models/user_session.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../auth/presentation/auth_providers.dart';
@@ -1193,28 +1194,31 @@ class _TpvPageState extends ConsumerState<TpvPage> {
 
   @override
   Widget build(BuildContext context) {
+    final license = ref.watch(currentLicenseStatusProvider);
     return AppScaffold(
       title: 'Terminales TPV',
       currentRoute: '/tpv',
       onRefresh: _load,
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          FloatingActionButton.small(
-            heroTag: 'tpv-employees-fab',
-            tooltip: 'Gestionar empleados',
-            onPressed: _openEmployeesManager,
-            child: const Icon(Icons.badge_outlined),
-          ),
-          const SizedBox(height: 10),
-          FloatingActionButton.small(
-            heroTag: 'tpv-create-fab',
-            tooltip: 'Nuevo TPV',
-            onPressed: () => _openForm(),
-            child: const Icon(Icons.add_rounded),
-          ),
-        ],
-      ),
+      floatingActionButton: license.canWrite
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                FloatingActionButton.small(
+                  heroTag: 'tpv-employees-fab',
+                  tooltip: 'Gestionar empleados',
+                  onPressed: _openEmployeesManager,
+                  child: const Icon(Icons.badge_outlined),
+                ),
+                const SizedBox(height: 10),
+                FloatingActionButton.small(
+                  heroTag: 'tpv-create-fab',
+                  tooltip: 'Nuevo TPV',
+                  onPressed: () => _openForm(),
+                  child: const Icon(Icons.add_rounded),
+                ),
+              ],
+            )
+          : null,
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
@@ -1351,15 +1355,18 @@ class _TpvEmployeesPageState extends ConsumerState<TpvEmployeesPage> {
 
   @override
   Widget build(BuildContext context) {
+    final license = ref.watch(currentLicenseStatusProvider);
     return AppScaffold(
       title: 'Empleados TPV',
       currentRoute: '/tpv-empleados',
       onRefresh: _load,
-      floatingActionButton: FloatingActionButton.small(
-        tooltip: 'Nuevo empleado',
-        onPressed: () => _openForm(),
-        child: const Icon(Icons.person_add_alt_1_rounded),
-      ),
+      floatingActionButton: license.canWrite
+          ? FloatingActionButton.small(
+              tooltip: 'Nuevo empleado',
+              onPressed: () => _openForm(),
+              child: const Icon(Icons.person_add_alt_1_rounded),
+            )
+          : null,
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(

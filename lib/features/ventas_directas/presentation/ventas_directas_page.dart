@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../../core/licensing/license_providers.dart';
 import '../../../core/utils/app_result.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../../shared/widgets/code_scanner_page.dart';
@@ -1368,35 +1369,73 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
 
   @override
   Widget build(BuildContext context) {
+    final license = ref.watch(currentLicenseStatusProvider);
     return AppScaffold(
       title: 'Ventas Directas',
       currentRoute: '/ventas-directas',
       onRefresh: _bootstrap,
-      floatingActionButton: _floatingButtons(),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : SafeArea(
-              child: CustomScrollView(
-                keyboardDismissBehavior:
-                    ScrollViewKeyboardDismissBehavior.onDrag,
-                slivers: <Widget>[
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-                    sliver: SliverToBoxAdapter(
-                      child: Column(
-                        children: <Widget>[
-                          _warehouseHeader(),
-                          const SizedBox(height: 10),
-                          _productFilterField(),
-                          const SizedBox(height: 8),
-                        ],
+      floatingActionButton: license.canSell ? _floatingButtons() : null,
+      body: license.canSell
+          ? (_loading
+              ? const Center(child: CircularProgressIndicator())
+              : SafeArea(
+                  child: CustomScrollView(
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    slivers: <Widget>[
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                        sliver: SliverToBoxAdapter(
+                          child: Column(
+                            children: <Widget>[
+                              _warehouseHeader(),
+                              const SizedBox(height: 10),
+                              _productFilterField(),
+                              const SizedBox(height: 8),
+                            ],
+                          ),
+                        ),
                       ),
+                      _productsGridSliver(),
+                    ],
+                  ),
+                ))
+          : _buildLicenseBlockedBody(license.message),
+    );
+  }
+
+  Widget _buildLicenseBlockedBody(String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  const Icon(Icons.lock_outline_rounded, size: 40),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Ventas bloqueadas',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                  _productsGridSliver(),
+                  const SizedBox(height: 8),
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                  ),
                 ],
               ),
             ),
+          ),
+        ),
+      ),
     );
   }
 }

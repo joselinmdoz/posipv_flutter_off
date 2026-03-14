@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../core/licensing/license_models.dart';
+import '../../../core/licensing/license_providers.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../data/configuracion_local_datasource.dart';
 import 'configuracion_providers.dart';
@@ -45,6 +48,7 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
     try {
       final AppConfig config =
           await ref.read(appConfigControllerProvider.notifier).refresh();
+      await ref.read(licenseControllerProvider.notifier).refresh();
       if (!mounted) {
         return;
       }
@@ -112,6 +116,8 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
 
   @override
   Widget build(BuildContext context) {
+    final LicenseStatus license = ref.watch(currentLicenseStatusProvider);
+
     return AppScaffold(
       title: 'Configuracion',
       currentRoute: '/configuracion',
@@ -209,9 +215,56 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          const Text(
+                            'Licencia y seguridad',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: <Widget>[
+                              Chip(label: Text(license.statusLabel)),
+                              if (license.expiresAt != null)
+                                Chip(
+                                  label: Text(
+                                    'Vence: ${_formatDateTime(license.expiresAt!)}',
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(license.message),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: () => context.go('/licencia'),
+                              icon: const Icon(Icons.verified_user_outlined),
+                              label: const Text('Abrir centro de licencia'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
     );
+  }
+
+  String _formatDateTime(DateTime value) {
+    final DateTime local = value.toLocal();
+    String two(int number) => number.toString().padLeft(2, '0');
+    return '${two(local.day)}/${two(local.month)}/${local.year} '
+        '${two(local.hour)}:${two(local.minute)}';
   }
 }
