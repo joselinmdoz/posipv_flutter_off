@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../../core/utils/perf_trace.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../configuracion/data/configuracion_local_datasource.dart';
 import '../../configuracion/presentation/configuracion_providers.dart';
@@ -32,10 +33,16 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
   @override
   void initState() {
     super.initState();
-    _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _load();
+    });
   }
 
   Future<void> _load() async {
+    final PerfTrace trace = PerfTrace('reportes.load');
     if (mounted) {
       setState(() => _loading = true);
     }
@@ -61,12 +68,14 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
 
     try {
       dashboard = await dashboardFuture;
+      trace.mark('dashboard cargado');
     } catch (e) {
       warningMessage = 'Reportes: $e';
     }
 
     try {
       currencySymbol = (await configFuture).currencySymbol;
+      trace.mark('config cargada');
     } catch (e) {
       final String message = 'Configuracion: $e';
       warningMessage =
@@ -74,6 +83,7 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
     }
 
     if (!mounted) {
+      trace.end('unmounted');
       return;
     }
 
@@ -82,6 +92,7 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
       _currencySymbol = currencySymbol;
       _loading = false;
     });
+    trace.end('ok');
 
     if (warningMessage != null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -103,13 +114,14 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
       final Future<List<PosTerminal>> terminalFuture = loadTerminalOptions
           ? ds.listIpvTerminalOptions()
           : Future<List<PosTerminal>>.value(_ipvTerminalOptions);
-      List<PosTerminal> terminals = await terminalFuture;
-      List<IpvReportSummaryStat> rows = await ds.listIpvReports(
+      final Future<List<IpvReportSummaryStat>> rowsFuture = ds.listIpvReports(
         terminalId: _ipvTerminalId,
         fromDate: _ipvFromDate,
         toDate: _ipvToDate,
         limit: 120,
       );
+      List<PosTerminal> terminals = await terminalFuture;
+      List<IpvReportSummaryStat> rows = await rowsFuture;
       if (_ipvTerminalId != null &&
           terminals.every((PosTerminal row) => row.id != _ipvTerminalId)) {
         _ipvTerminalId = null;
@@ -423,12 +435,20 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
                           _ipvReports.isEmpty
                               ? const Text('No hay reportes IPV en el filtro.')
                               : ListView.builder(
+                                  key: const PageStorageKey<String>(
+                                    'reportes-ipv-summary-list',
+                                  ),
                                   shrinkWrap: true,
                                   physics: const NeverScrollableScrollPhysics(),
                                   itemCount: _ipvReports.length,
                                   itemBuilder:
                                       (BuildContext context, int index) {
-                                    return _ipvReportCard(_ipvReports[index]);
+                                    final IpvReportSummaryStat report =
+                                        _ipvReports[index];
+                                    return KeyedSubtree(
+                                      key: ValueKey<String>(report.reportId),
+                                      child: _ipvReportCard(report),
+                                    );
                                   },
                                 ),
                         ],

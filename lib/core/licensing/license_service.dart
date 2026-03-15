@@ -36,9 +36,11 @@ class OfflineLicenseService {
     final DeviceIdentity identity = await _deviceIdentityService.getIdentity();
     final StoredTrialState trialState = await _ensureTrialState(now);
     final DateTime? lastSeenAt = await _localDataSource.readLastSeenAt();
-    final runtimeSecurity = await _runtimeSecurityService.inspect(
-      forceRefresh: forceRefresh,
-    );
+    final RuntimeSecurityStatus runtimeSecurity = kDebugMode
+        ? const RuntimeSecurityStatus.unsupported()
+        : await _runtimeSecurityService.inspect(
+            forceRefresh: forceRefresh,
+          );
 
     if (runtimeSecurity.shouldBlock) {
       return _cache(

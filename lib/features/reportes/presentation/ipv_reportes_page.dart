@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../../core/utils/perf_trace.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../data/reportes_local_datasource.dart';
 import 'reportes_providers.dart';
@@ -26,10 +27,16 @@ class _IpvReportesPageState extends ConsumerState<IpvReportesPage> {
   @override
   void initState() {
     super.initState();
-    _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _load();
+    });
   }
 
   Future<void> _load() async {
+    final PerfTrace trace = PerfTrace('ipv_reportes.load');
     if (mounted) {
       setState(() => _loading = true);
     }
@@ -44,7 +51,9 @@ class _IpvReportesPageState extends ConsumerState<IpvReportesPage> {
         toDate: _toDate,
         limit: 200,
       );
+      trace.mark('reportes cargados');
       final List<PosTerminal> terminals = await terminalsFuture;
+      trace.mark('terminales cargados');
       if (_terminalId != null &&
           terminals.every((PosTerminal row) => row.id != _terminalId)) {
         _terminalId = null;
@@ -56,6 +65,7 @@ class _IpvReportesPageState extends ConsumerState<IpvReportesPage> {
         );
       }
       if (!mounted) {
+        trace.end('unmounted');
         return;
       }
       setState(() {
@@ -63,6 +73,7 @@ class _IpvReportesPageState extends ConsumerState<IpvReportesPage> {
         _reports = reports;
         _loading = false;
       });
+      trace.end('ok');
     } catch (e, st) {
       debugPrint('IPV export failed (reportes/ipv_reportes_page). $e');
       debugPrintStack(stackTrace: st);
@@ -70,6 +81,7 @@ class _IpvReportesPageState extends ConsumerState<IpvReportesPage> {
         return;
       }
       setState(() => _loading = false);
+      trace.end('error');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('No se pudo cargar IPV: $e')),
       );
@@ -468,11 +480,16 @@ class _IpvReportesPageState extends ConsumerState<IpvReportesPage> {
                     )
                   else
                     ListView.builder(
+                      key: const PageStorageKey<String>('ipv-reportes-list'),
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: _reports.length,
                       itemBuilder: (BuildContext context, int index) {
-                        return _reportCard(_reports[index]);
+                        final IpvReportSummaryStat report = _reports[index];
+                        return KeyedSubtree(
+                          key: ValueKey<String>(report.reportId),
+                          child: _reportCard(report),
+                        );
                       },
                     ),
                 ],

@@ -270,31 +270,31 @@ class AppScaffold extends ConsumerWidget {
                         _go(context, item.route, activeRoute, licenseStatus);
                       },
                     ),
-                  const SizedBox(height: 8),
-                  Divider(height: 1, color: theme.dividerColor),
-                  const SizedBox(height: 8),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    child: Text(
-                      'Sincronizacion rapida',
-                      style:
-                          TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  StatefulBuilder(
-                    builder: (BuildContext context, StateSetter setState) {
-                      return SwitchListTile(
-                        value: isTravelMode,
-                        onChanged: (bool value) {
-                          isTravelMode = value;
-                          setState(() {});
-                          _showSoon(context, 'Modo viaje aun no implementado.');
-                        },
-                        title: const Text('Modo viaje'),
-                        secondary: const Icon(Icons.flight_takeoff_rounded),
-                      );
-                    },
-                  ),
+                  // const SizedBox(height: 8),
+                  // Divider(height: 1, color: theme.dividerColor),
+                  // const SizedBox(height: 8),
+                  // const Padding(
+                  //   padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  //   child: Text(
+                  //     'Sincronizacion rapida',
+                  //     style:
+                  //         TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                  //   ),
+                  // ),
+                  // StatefulBuilder(
+                  //   builder: (BuildContext context, StateSetter setState) {
+                  //     return SwitchListTile(
+                  //       value: isTravelMode,
+                  //       onChanged: (bool value) {
+                  //         isTravelMode = value;
+                  //         setState(() {});
+                  //         _showSoon(context, 'Modo viaje aun no implementado.');
+                  //       },
+                  //       title: const Text('Modo viaje'),
+                  //       secondary: const Icon(Icons.flight_takeoff_rounded),
+                  //     );
+                  //   },
+                  // ),
                 ],
               ),
             ),

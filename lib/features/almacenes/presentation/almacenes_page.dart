@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_providers.dart';
+import '../../../core/utils/perf_trace.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../tpv/presentation/tpv_providers.dart';
 import '../data/almacenes_local_datasource.dart';
@@ -22,29 +23,39 @@ class _AlmacenesPageState extends ConsumerState<AlmacenesPage> {
   @override
   void initState() {
     super.initState();
-    _loadWarehouses();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _loadWarehouses();
+    });
   }
 
   Future<void> _loadWarehouses() async {
+    final PerfTrace trace = PerfTrace('almacenes.load');
     setState(() => _loading = true);
 
     try {
       final ds = ref.read(almacenesLocalDataSourceProvider);
       await ds.ensureDefaultWarehouse();
       final List<WarehouseWithStock> data = await ds.listWarehousesWithStock();
+      trace.mark('consulta completada');
 
       if (!mounted) {
+        trace.end('unmounted');
         return;
       }
       setState(() {
         _warehouses = data;
         _loading = false;
       });
+      trace.end('ok');
     } catch (e) {
       if (!mounted) {
         return;
       }
       setState(() => _loading = false);
+      trace.end('error');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('No se pudo cargar almacenes: $e')),
       );
@@ -263,11 +274,17 @@ class _AlmacenesPageState extends ConsumerState<AlmacenesPage> {
                       ],
                     )
                   : ListView.builder(
+                      key: const PageStorageKey<String>('almacenes-list'),
+                      cacheExtent: 420,
                       padding: const EdgeInsets.fromLTRB(12, 14, 12, 90),
                       physics: const AlwaysScrollableScrollPhysics(),
                       itemCount: _warehouses.length,
                       itemBuilder: (BuildContext context, int index) {
-                        return _buildWarehouseCard(_warehouses[index]);
+                        final WarehouseWithStock warehouse = _warehouses[index];
+                        return KeyedSubtree(
+                          key: ValueKey<String>(warehouse.warehouse.id),
+                          child: _buildWarehouseCard(warehouse),
+                        );
                       },
                     ),
             ),
@@ -822,33 +839,61 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
                     )
                   else
                     ListView.separated(
+                      key: const PageStorageKey<String>('almacen-detail-stock'),
                       shrinkWrap: true,
+                      cacheExtent: 280,
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: _stock.length > 10 ? 10 : _stock.length,
                       separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (BuildContext context, int index) {
                         final item = _stock[index];
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          child: Row(
-                            children: <Widget>[
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                        return KeyedSubtree(
+                          key: ValueKey<String>(item.product.id),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            child: Row(
+                              children: <Widget>[
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: <Widget>[
+                                      Text(
+                                        item.product.name,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 14,
+                                          color: Color(0xFF272238),
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'SKU: ${item.product.sku}',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Color(0xFF8B83A8),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
                                   children: <Widget>[
                                     Text(
-                                      item.product.name,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 14,
-                                        color: Color(0xFF272238),
+                                      item.stockBalance.qty.toStringAsFixed(0),
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 16,
+                                        color: item.stockBalance.qty > 0
+                                            ? const Color(0xFF148A65)
+                                            : const Color(0xFFE1487D),
                                       ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
                                     ),
-                                    const SizedBox(height: 2),
                                     Text(
-                                      'SKU: ${item.product.sku}',
+                                      _formatCurrency(item.product.priceCents),
                                       style: const TextStyle(
                                         fontSize: 12,
                                         color: Color(0xFF8B83A8),
@@ -856,30 +901,8 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
                                     ),
                                   ],
                                 ),
-                              ),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: <Widget>[
-                                  Text(
-                                    item.stockBalance.qty.toStringAsFixed(0),
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 16,
-                                      color: item.stockBalance.qty > 0
-                                          ? const Color(0xFF148A65)
-                                          : const Color(0xFFE1487D),
-                                    ),
-                                  ),
-                                  Text(
-                                    _formatCurrency(item.product.priceCents),
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFF8B83A8),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         );
                       },

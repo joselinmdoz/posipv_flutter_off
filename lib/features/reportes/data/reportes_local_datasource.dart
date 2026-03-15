@@ -177,10 +177,126 @@ class ReportesDashboard {
   final List<IpvReportSummaryStat> recentIpvReports;
 }
 
+class StockAlertStat {
+  const StockAlertStat({
+    required this.productId,
+    required this.productName,
+    required this.sku,
+    required this.qty,
+  });
+
+  final String productId;
+  final String productName;
+  final String sku;
+  final double qty;
+}
+
+class HomeOperationalInsight {
+  const HomeOperationalInsight({
+    required this.activeTerminals,
+    required this.openSessions,
+    required this.openIpvReports,
+    required this.zeroStockProducts,
+    required this.lowStockProducts,
+    required this.movementsToday,
+    required this.lastMovementAt,
+    required this.lowStockPreview,
+  });
+
+  const HomeOperationalInsight.empty()
+      : activeTerminals = 0,
+        openSessions = 0,
+        openIpvReports = 0,
+        zeroStockProducts = 0,
+        lowStockProducts = 0,
+        movementsToday = 0,
+        lastMovementAt = null,
+        lowStockPreview = const <StockAlertStat>[];
+
+  final int activeTerminals;
+  final int openSessions;
+  final int openIpvReports;
+  final int zeroStockProducts;
+  final int lowStockProducts;
+  final int movementsToday;
+  final DateTime? lastMovementAt;
+  final List<StockAlertStat> lowStockPreview;
+}
+
 class ReportesLocalDataSource {
   ReportesLocalDataSource(this._db);
 
   final AppDatabase _db;
+
+  Future<HomeOperationalInsight> loadHomeOperationalInsight({
+    double lowStockThreshold = 5,
+    int previewLimit = 5,
+  }) async {
+    final DateTime now = DateTime.now();
+    final DateTime startToday = _startOfDay(now);
+    final double safeLowStockThreshold =
+        lowStockThreshold <= 0 ? 1 : lowStockThreshold;
+    final int safePreviewLimit = previewLimit < 1 ? 1 : previewLimit;
+
+    final Future<int> activeTerminalsFuture = _countScalar(
+      '''
+      SELECT COUNT(*) AS value
+      FROM pos_terminals
+      WHERE is_active = 1
+      ''',
+    );
+    final Future<int> openSessionsFuture = _countScalar(
+      '''
+      SELECT COUNT(*) AS value
+      FROM pos_sessions
+      WHERE status = 'open'
+      ''',
+    );
+    final Future<int> openIpvFuture = _countScalar(
+      '''
+      SELECT COUNT(*) AS value
+      FROM ipv_reports
+      WHERE status = 'open'
+      ''',
+    );
+    final Future<int> movementsTodayFuture = _countScalar(
+      '''
+      SELECT COUNT(*) AS value
+      FROM stock_movements
+      WHERE created_at >= ?
+      ''',
+      variables: <Variable<Object>>[Variable<DateTime>(startToday)],
+    );
+    final Future<DateTime?> lastMovementFuture = _lastMovementAt();
+    final Future<int> zeroStockFuture = _countStockByCondition(
+      '''
+      HAVING total_qty <= 0
+      ''',
+    );
+    final Future<int> lowStockFuture = _countStockByCondition(
+      '''
+      HAVING total_qty > 0
+         AND total_qty <= ?
+      ''',
+      variables: <Variable<Object>>[Variable<double>(safeLowStockThreshold)],
+    );
+    final Future<List<StockAlertStat>> lowStockPreviewFuture =
+        _loadLowStockPreview(
+      safeLowStockThreshold,
+      safePreviewLimit,
+    );
+
+    return HomeOperationalInsight(
+      activeTerminals: await activeTerminalsFuture,
+      openSessions: await openSessionsFuture,
+      openIpvReports: await openIpvFuture,
+      zeroStockProducts: await zeroStockFuture,
+      lowStockProducts: await lowStockFuture,
+      movementsToday: await movementsTodayFuture,
+      lastMovementAt: await lastMovementFuture,
+      lowStockPreview: await lowStockPreviewFuture,
+    );
+  }
 
   Future<ReportesDashboard> loadDashboard({
     int lastDays = 7,
@@ -1651,6 +1767,100 @@ class ReportesLocalDataSource {
   Future<List<IpvReportLineStat>> listIpvReportLines(String reportId) async {
     final IpvReportDetailStat? detail = await loadIpvReportDetail(reportId);
     return detail?.lines ?? <IpvReportLineStat>[];
+  }
+
+  Future<int> _countScalar(
+    String sql, {
+    List<Variable<Object>> variables = const <Variable<Object>>[],
+  }) async {
+    final QueryRow? row = await _db
+        .customSelect(
+          sql,
+          variables: variables,
+        )
+        .getSingleOrNull();
+    if (row == null) {
+      return 0;
+    }
+    return (row.data['value'] as num?)?.toInt() ?? 0;
+  }
+
+  Future<int> _countStockByCondition(
+    String havingClause, {
+    List<Variable<Object>> variables = const <Variable<Object>>[],
+  }) async {
+    final QueryRow? row = await _db.customSelect(
+      '''
+      SELECT COUNT(*) AS value
+      FROM (
+        SELECT
+          p.id AS product_id,
+          COALESCE(SUM(sb.qty), 0) AS total_qty
+        FROM products p
+        LEFT JOIN stock_balances sb
+          ON sb.product_id = p.id
+        WHERE p.is_active = 1
+        GROUP BY p.id
+        $havingClause
+      ) x
+      ''',
+      variables: variables,
+    ).getSingleOrNull();
+    if (row == null) {
+      return 0;
+    }
+    return (row.data['value'] as num?)?.toInt() ?? 0;
+  }
+
+  Future<DateTime?> _lastMovementAt() async {
+    final QueryRow? row = await _db.customSelect(
+      '''
+      SELECT MAX(created_at) AS value
+      FROM stock_movements
+      ''',
+    ).getSingleOrNull();
+    final Object? value = row?.data['value'];
+    if (value is DateTime) {
+      return value;
+    }
+    return null;
+  }
+
+  Future<List<StockAlertStat>> _loadLowStockPreview(
+    double threshold,
+    int limit,
+  ) async {
+    final List<QueryRow> rows = await _db.customSelect(
+      '''
+      SELECT
+        p.id AS product_id,
+        p.name AS product_name,
+        p.sku AS sku,
+        COALESCE(SUM(sb.qty), 0) AS total_qty
+      FROM products p
+      LEFT JOIN stock_balances sb
+        ON sb.product_id = p.id
+      WHERE p.is_active = 1
+      GROUP BY p.id, p.name, p.sku
+      HAVING total_qty > 0
+         AND total_qty <= ?
+      ORDER BY total_qty ASC, p.name ASC
+      LIMIT ?
+      ''',
+      variables: <Variable<Object>>[
+        Variable<double>(threshold),
+        Variable<int>(limit),
+      ],
+    ).get();
+
+    return rows.map((QueryRow row) {
+      return StockAlertStat(
+        productId: (row.readNullable<String>('product_id') ?? '').trim(),
+        productName: (row.readNullable<String>('product_name') ?? '-').trim(),
+        sku: (row.readNullable<String>('sku') ?? '-').trim(),
+        qty: (row.data['total_qty'] as num?)?.toDouble() ?? 0,
+      );
+    }).toList();
   }
 
   SalesSummary _buildTodaySummary(List<Sale> sales) {

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../core/licensing/license_providers.dart';
 import '../features/configuracion/presentation/configuracion_providers.dart';
 import 'router.dart';
 import 'theme/app_theme.dart';
@@ -11,8 +10,6 @@ class PosiPvApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    ref.watch(licenseControllerProvider);
-    ref.watch(runtimeSecurityControllerProvider);
     final ThemeMode themeMode = ref.watch(appThemeModeProvider);
 
     return MaterialApp.router(

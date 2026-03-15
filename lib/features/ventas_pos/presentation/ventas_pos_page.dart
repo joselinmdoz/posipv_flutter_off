@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_providers.dart';
 import '../../../core/utils/app_result.dart';
+import '../../../core/utils/perf_trace.dart';
 import '../../../shared/models/user_session.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../../shared/widgets/code_scanner_page.dart';
@@ -35,7 +36,7 @@ class VentasPosPage extends ConsumerStatefulWidget {
 class _VentasPosPageState extends ConsumerState<VentasPosPage> {
   List<Product> _products = <Product>[];
   List<Product> _visibleProducts = <Product>[];
-  List<Product> _quickAdjustProducts = <Product>[];
+  final Map<String, Product> _productsById = <String, Product>{};
   final Set<String> _warehouseProductIds = <String>{};
   final Map<String, double> _qtyByProductId = <String, double>{};
   final Map<String, double> _stockByProductId = <String, double>{};
@@ -60,7 +61,12 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
   void initState() {
     super.initState();
     _searchCtrl.addListener(_onSearchChanged);
-    _bootstrap();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _bootstrap();
+    });
   }
 
   @override
@@ -84,6 +90,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
   }
 
   Future<void> _bootstrap() async {
+    final PerfTrace trace = PerfTrace('ventas_pos.bootstrap');
     if (mounted) {
       setState(() => _loading = true);
     }
@@ -92,6 +99,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       final UserSession? session = ref.read(currentSessionProvider);
       final Future<AppConfig> configFuture =
           ref.read(configuracionLocalDataSourceProvider).loadConfig();
+      trace.mark('session + config future');
 
       if (session == null || session.activeTerminalId == null) {
         AppConfig config = AppConfig.defaults;
@@ -108,6 +116,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
           );
           _loading = false;
         });
+        trace.end('sin sesion activa');
         _redirectToTpv('Abre un turno en un TPV para usar el POS.');
         return;
       }
@@ -120,6 +129,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
         config = await configFuture;
       } catch (_) {}
       final TpvTerminalView? terminalView = await terminalFuture;
+      trace.mark('terminal + config listos');
       if (terminalView == null ||
           !terminalView.terminal.isActive ||
           !terminalView.warehouse.isActive) {
@@ -133,6 +143,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
           );
           _loading = false;
         });
+        trace.end('tpv invalido');
         _redirectToTpv('El TPV activo no es valido. Abre un turno nuevamente.');
         return;
       }
@@ -147,48 +158,31 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       final Future<List<InventoryView>> stockedFuture = ref
           .read(inventarioLocalDataSourceProvider)
           .listStocked(warehouseId: terminalView.warehouse.id);
-      final Future<List<InventoryView>> warehouseRowsFuture = ref
-          .read(inventarioLocalDataSourceProvider)
-          .listByWarehouse(terminalView.warehouse.id);
 
       final PosSession? openSession = await openSessionFuture;
       final List<InventoryView> stockedRows = await stockedFuture;
-      final List<InventoryView> warehouseRows = await warehouseRowsFuture;
+      trace.mark('session + stock cargados');
 
       final Set<String> warehouseProductIds =
           stockedRows.map((InventoryView row) => row.productId).toSet();
-      final Set<String> quickAdjustIds =
-          warehouseRows.map((InventoryView row) => row.productId).toSet();
       final Map<String, double> stockByProductId = <String, double>{
         for (final InventoryView row in stockedRows) row.productId: row.qty,
       };
       final List<Product> products = await ref
           .read(productosLocalDataSourceProvider)
           .listActiveProductsByIds(warehouseProductIds);
-      final List<Product> quickAdjustProducts = quickAdjustIds
-              .difference(
-                warehouseProductIds,
-              )
-              .isEmpty
-          ? products
-          : await ref
-              .read(productosLocalDataSourceProvider)
-              .listActiveProductsByIds(quickAdjustIds);
+      trace.mark('productos cargados');
 
       if (!mounted) {
         return;
       }
 
       setState(() {
-        _products = products;
-        _visibleProducts = _filterProducts(products, _searchCtrl.text);
-        _quickAdjustProducts = quickAdjustProducts;
-        _warehouseProductIds
-          ..clear()
-          ..addAll(warehouseProductIds);
-        _stockByProductId
-          ..clear()
-          ..addAll(stockByProductId);
+        _applyStockedProducts(
+          products: products,
+          warehouseProductIds: warehouseProductIds,
+          stockByProductId: stockByProductId,
+        );
         _warehouseId = terminalView.warehouse.id;
         _warehouseName = terminalView.warehouse.name;
         _terminalId = terminalView.terminal.id;
@@ -197,9 +191,9 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
         _terminalConfig = terminalConfig;
         _currencySymbol = terminalConfig.currencySymbol;
         _allowNegativeStock = config.allowNegativeStock;
-        _sanitizeCartForWarehouseStock();
         _loading = false;
       });
+      trace.end('ok');
 
       if (openSession == null) {
         _redirectToTpv('No hay un turno abierto para este usuario en el TPV.');
@@ -209,6 +203,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
         return;
       }
       setState(() => _loading = false);
+      trace.end('error');
       _show('No se pudo cargar Ventas POS: $e');
     }
   }
@@ -219,7 +214,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
   }) {
     _products = <Product>[];
     _visibleProducts = <Product>[];
-    _quickAdjustProducts = <Product>[];
+    _productsById.clear();
     _warehouseProductIds.clear();
     _qtyByProductId.clear();
     _stockByProductId.clear();
@@ -231,6 +226,65 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     _terminalConfig = TpvTerminalConfig.defaults;
     _currencySymbol = currencySymbol;
     _allowNegativeStock = allowNegativeStock;
+  }
+
+  void _applyStockedProducts({
+    required List<Product> products,
+    required Set<String> warehouseProductIds,
+    required Map<String, double> stockByProductId,
+  }) {
+    _products = products;
+    _visibleProducts = _filterProducts(products, _searchCtrl.text);
+    _productsById
+      ..clear()
+      ..addEntries(
+        products.map(
+          (Product product) => MapEntry<String, Product>(product.id, product),
+        ),
+      );
+    _warehouseProductIds
+      ..clear()
+      ..addAll(warehouseProductIds);
+    _stockByProductId
+      ..clear()
+      ..addAll(stockByProductId);
+    _sanitizeCartForWarehouseStock();
+  }
+
+  Future<void> _reloadPosInventory() async {
+    final PerfTrace trace = PerfTrace('ventas_pos.reload_inventory');
+    final String? warehouseId = _warehouseId;
+    if (warehouseId == null || warehouseId.trim().isEmpty) {
+      trace.end('sin almacen');
+      return;
+    }
+
+    final List<InventoryView> stockedRows = await ref
+        .read(inventarioLocalDataSourceProvider)
+        .listStocked(warehouseId: warehouseId);
+    trace.mark('stock cargado');
+    final Set<String> warehouseProductIds =
+        stockedRows.map((InventoryView row) => row.productId).toSet();
+    final Map<String, double> stockByProductId = <String, double>{
+      for (final InventoryView row in stockedRows) row.productId: row.qty,
+    };
+    final List<Product> products = await ref
+        .read(productosLocalDataSourceProvider)
+        .listActiveProductsByIds(warehouseProductIds);
+    trace.mark('productos cargados');
+
+    if (!mounted) {
+      trace.end('unmounted');
+      return;
+    }
+    setState(() {
+      _applyStockedProducts(
+        products: products,
+        warehouseProductIds: warehouseProductIds,
+        stockByProductId: stockByProductId,
+      );
+    });
+    trace.end('ok');
   }
 
   void _redirectToTpv(String message) {
@@ -262,21 +316,28 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
   }
 
   List<_CartLine> get _cartLines {
-    return _products
-        .where((Product p) => (_qtyByProductId[p.id] ?? 0) > 0)
-        .map(
-          (Product p) => _CartLine(
-            product: p,
-            qty: _qtyByProductId[p.id] ?? 0,
-          ),
-        )
+    return _qtyByProductId.entries
+        .where((MapEntry<String, double> entry) => entry.value > 0)
+        .map((MapEntry<String, double> entry) {
+          final Product? product = _productsById[entry.key];
+          if (product == null) {
+            return null;
+          }
+          return _CartLine(
+            product: product,
+            qty: entry.value,
+          );
+        })
+        .whereType<_CartLine>()
         .toList();
   }
 
   int get _cartUnits {
     double total = 0;
-    for (final _CartLine line in _cartLines) {
-      total += line.qty;
+    for (final double qty in _qtyByProductId.values) {
+      if (qty > 0) {
+        total += qty;
+      }
     }
     return total.round();
   }
@@ -1043,7 +1104,12 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
         setState(() {
           _qtyByProductId.clear();
         });
-        await _bootstrap();
+        try {
+          await _reloadPosInventory();
+        } catch (e) {
+          _show(
+              'Venta registrada, pero no se pudo refrescar el inventario: $e');
+        }
         if (!mounted) {
           return;
         }
@@ -1132,13 +1198,14 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       _show('Debes iniciar sesion.');
       return;
     }
-    final List<Product> adjustProducts = _quickAdjustProducts;
-    if (adjustProducts.isEmpty) {
+    final InventarioLocalDataSource inventarioDs =
+        ref.read(inventarioLocalDataSourceProvider);
+    final List<InventoryView> adjustRows =
+        await inventarioDs.listByWarehouse(_warehouseId!);
+    if (adjustRows.isEmpty) {
       _show('No hay productos para ajustar.');
       return;
     }
-    final InventarioLocalDataSource inventarioDs =
-        ref.read(inventarioLocalDataSourceProvider);
     final List<InventoryMovementReason> entryReasons =
         await inventarioDs.listManualMovementReasons(movementType: 'in');
     final List<InventoryMovementReason> outputReasons =
@@ -1151,14 +1218,13 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       return;
     }
 
-    final Map<String, Product> productById = <String, Product>{
-      for (final Product product in adjustProducts) product.id: product,
+    final Map<String, InventoryView> rowByProductId = <String, InventoryView>{
+      for (final InventoryView row in adjustRows) row.productId: row,
     };
-    final List<Product> stockedAdjustProducts = adjustProducts
-        .where((Product product) => (_stockByProductId[product.id] ?? 0) > 0)
-        .toList();
+    final List<InventoryView> stockedAdjustRows =
+        adjustRows.where((InventoryView row) => row.qty > 0).toList();
 
-    String? selectedProductId = adjustProducts.first.id;
+    String? selectedProductId = adjustRows.first.productId;
     bool isEntry = entryReasons.isNotEmpty || outputReasons.isEmpty;
     String? selectedReasonCode = isEntry
         ? (entryReasons.isNotEmpty ? entryReasons.first.code : null)
@@ -1174,16 +1240,14 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
             final bool isDark = Theme.of(context).brightness == Brightness.dark;
             final Color secondaryText =
                 Theme.of(context).colorScheme.onSurfaceVariant;
-            final List<Product> selectableProducts =
-                isEntry ? adjustProducts : stockedAdjustProducts;
+            final List<InventoryView> selectableProducts =
+                isEntry ? adjustRows : stockedAdjustRows;
             final List<InventoryMovementReason> selectableReasons =
                 isEntry ? entryReasons : outputReasons;
-            final Product? selectedProduct = selectedProductId == null
+            final InventoryView? selectedProduct = selectedProductId == null
                 ? null
-                : productById[selectedProductId];
-            final double selectedStock = selectedProduct == null
-                ? 0
-                : (_stockByProductId[selectedProduct.id] ?? 0);
+                : rowByProductId[selectedProductId];
+            final double selectedStock = selectedProduct?.qty ?? 0;
             return AlertDialog(
               title: const Text('Entrada / Salida'),
               content: SizedBox(
@@ -1199,9 +1263,9 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
                             const InputDecoration(labelText: 'Producto'),
                         items: selectableProducts
                             .map(
-                              (Product p) => DropdownMenuItem<String?>(
-                                value: p.id,
-                                child: Text('${p.sku} - ${p.name}'),
+                              (InventoryView row) => DropdownMenuItem<String?>(
+                                value: row.productId,
+                                child: Text('${row.sku} - ${row.productName}'),
                               ),
                             )
                             .toList(),
@@ -1239,12 +1303,17 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: <Widget>[
                                   Text(
-                                    selectedProduct.name,
+                                    selectedProduct.productName,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w700,
                                     ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'SKU: ${selectedProduct.sku}',
+                                    style: const TextStyle(fontSize: 12),
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
@@ -1281,20 +1350,21 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
                                 nextIsEntry ? entryReasons : outputReasons;
                             isEntry = nextIsEntry;
                             if (!nextIsEntry) {
-                              if (stockedAdjustProducts.isEmpty) {
+                              if (stockedAdjustRows.isEmpty) {
                                 selectedProductId = null;
                               } else if (selectedProductId == null ||
-                                  !_stockByProductId.containsKey(
+                                  !rowByProductId.containsKey(
                                     selectedProductId,
                                   ) ||
-                                  (_stockByProductId[selectedProductId] ?? 0) <=
+                                  (rowByProductId[selectedProductId]?.qty ??
+                                          0) <=
                                       0) {
                                 selectedProductId =
-                                    stockedAdjustProducts.first.id;
+                                    stockedAdjustRows.first.productId;
                               }
                             } else if (selectedProductId == null &&
-                                adjustProducts.isNotEmpty) {
-                              selectedProductId = adjustProducts.first.id;
+                                adjustRows.isNotEmpty) {
+                              selectedProductId = adjustRows.first.productId;
                             }
                             if (nextReasons.isEmpty) {
                               selectedReasonCode = null;
@@ -1397,7 +1467,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       return;
     }
 
-    final double currentQty = _stockByProductId[safeProductId] ?? 0;
+    final double currentQty = rowByProductId[safeProductId]?.qty ?? 0;
     final double nextQty = isEntry ? currentQty + qty : currentQty - qty;
     if (!isEntry && currentQty <= 0) {
       _show('Solo puedes hacer salidas de productos con stock en el TPV.');
@@ -1428,7 +1498,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
             ? (isEntry ? 'Entrada rapida TPV' : 'Salida rapida TPV')
             : note,
       );
-      await _bootstrap();
+      await _reloadPosInventory();
       _show('Inventario actualizado desde TPV.');
     } catch (e) {
       _show('No se pudo ajustar inventario: $e');
@@ -1986,12 +2056,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
   }
 
   Product? _findProductById(String productId) {
-    for (final Product product in _products) {
-      if (product.id == productId) {
-        return product;
-      }
-    }
-    return null;
+    return _productsById[productId];
   }
 
   String _paymentMethodLabel(String method) {
@@ -2187,32 +2252,44 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
   Widget _productFilterField() {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return TextField(
-      controller: _searchCtrl,
-      decoration: InputDecoration(
-        hintText: 'Filtrar productos',
-        prefixIcon: const Icon(Icons.search_rounded),
-        suffixIcon: _searchCtrl.text.isEmpty
-            ? null
-            : IconButton(
-                onPressed: _searchCtrl.clear,
-                icon: const Icon(Icons.clear_rounded),
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: _searchCtrl,
+      builder: (
+        BuildContext context,
+        TextEditingValue value,
+        Widget? child,
+      ) {
+        return TextField(
+          controller: _searchCtrl,
+          decoration: InputDecoration(
+            hintText: 'Filtrar productos',
+            prefixIcon: const Icon(Icons.search_rounded),
+            suffixIcon: value.text.isEmpty
+                ? null
+                : IconButton(
+                    onPressed: _searchCtrl.clear,
+                    icon: const Icon(Icons.clear_rounded),
+                  ),
+            filled: true,
+            fillColor:
+                isDark ? const Color(0xFF211D2D) : const Color(0xFFF9F7FD),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(
+                color:
+                    isDark ? const Color(0xFF342E46) : const Color(0xFFE1D8F2),
               ),
-        filled: true,
-        fillColor: isDark ? const Color(0xFF211D2D) : const Color(0xFFF9F7FD),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(
-            color: isDark ? const Color(0xFF342E46) : const Color(0xFFE1D8F2),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(
+                color:
+                    isDark ? const Color(0xFF342E46) : const Color(0xFFE1D8F2),
+              ),
+            ),
           ),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(
-            color: isDark ? const Color(0xFF342E46) : const Color(0xFFE1D8F2),
-          ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -2454,7 +2531,13 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
           padding: const EdgeInsets.fromLTRB(12, 0, 12, 98),
           sliver: SliverGrid(
             delegate: SliverChildBuilderDelegate(
-              (_, int index) => _productCard(products[index]),
+              (_, int index) {
+                final Product product = products[index];
+                return KeyedSubtree(
+                  key: ValueKey<String>(product.id),
+                  child: _productCard(product),
+                );
+              },
               childCount: products.length,
             ),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(

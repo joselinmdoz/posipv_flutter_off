@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_providers.dart';
+import '../../../core/utils/perf_trace.dart';
 import '../../../shared/models/user_session.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../almacenes/presentation/almacenes_providers.dart';
@@ -34,10 +35,16 @@ class _MovimientosInventarioPageState
   @override
   void initState() {
     super.initState();
-    _bootstrap();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _bootstrap();
+    });
   }
 
   Future<void> _bootstrap() async {
+    final PerfTrace trace = PerfTrace('movimientos.bootstrap');
     setState(() => _loading = true);
     try {
       final Future<List<Warehouse>> warehousesFuture =
@@ -50,6 +57,7 @@ class _MovimientosInventarioPageState
       final List<Warehouse> warehouses = await warehousesFuture;
       final List<Product> products = await productsFuture;
       final List<InventoryMovementReason> reasons = await reasonsFuture;
+      trace.mark('catalogos cargados');
       final String selectedReason = _selectedReasonCode == 'all' ||
               reasons.any((InventoryMovementReason row) {
                 return row.code == _selectedReasonCode;
@@ -62,7 +70,9 @@ class _MovimientosInventarioPageState
                 movementType: _selectedType,
                 reasonCode: selectedReason,
               );
+      trace.mark('movimientos cargados');
       if (!mounted) {
+        trace.end('unmounted');
         return;
       }
       setState(() {
@@ -73,11 +83,13 @@ class _MovimientosInventarioPageState
         _movements = movements;
         _loading = false;
       });
+      trace.end('ok');
     } catch (e) {
       if (!mounted) {
         return;
       }
       setState(() => _loading = false);
+      trace.end('error');
       _show('No se pudieron cargar movimientos: $e');
     }
   }
@@ -396,86 +408,93 @@ class _MovimientosInventarioPageState
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxHeight: 420),
                   child: ListView.separated(
+                    key: const PageStorageKey<String>(
+                      'inventario-reasons-list',
+                    ),
                     itemCount: reasons.length,
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (_, int index) {
                       final InventoryMovementReason reason = reasons[index];
-                      return ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(reason.label),
-                        subtitle: Text(
-                          '${reason.code} • ${_appliesToLabel(reason.appliesTo)}',
-                        ),
-                        trailing: reason.isSystem
-                            ? const Icon(Icons.lock_outline_rounded, size: 18)
-                            : Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: <Widget>[
-                                  IconButton(
-                                    tooltip: 'Editar',
-                                    onPressed: () async {
-                                      final bool saved =
-                                          await _openReasonEditor(
-                                        reason: reason,
-                                      );
-                                      if (!saved) {
-                                        return;
-                                      }
-                                      await refreshReasons();
-                                    },
-                                    icon: const Icon(Icons.edit_outlined),
-                                  ),
-                                  IconButton(
-                                    tooltip: 'Eliminar',
-                                    onPressed: () async {
-                                      final bool? confirm =
-                                          await showDialog<bool>(
-                                        context: context,
-                                        builder: (BuildContext context) {
-                                          return AlertDialog(
-                                            title:
-                                                const Text('Eliminar motivo'),
-                                            content: Text(
-                                              'Se eliminara "${reason.label}".',
-                                            ),
-                                            actions: <Widget>[
-                                              TextButton(
-                                                onPressed: () => Navigator.of(
-                                                  context,
-                                                ).pop(false),
-                                                child: const Text('Cancelar'),
-                                              ),
-                                              FilledButton(
-                                                onPressed: () => Navigator.of(
-                                                  context,
-                                                ).pop(true),
-                                                child: const Text('Eliminar'),
-                                              ),
-                                            ],
-                                          );
-                                        },
-                                      );
-                                      if (confirm != true) {
-                                        return;
-                                      }
-                                      try {
-                                        await ds
-                                            .deleteMovementReason(reason.code);
-                                        await refreshReasons();
-                                      } catch (e) {
-                                        if (!mounted) {
+                      return KeyedSubtree(
+                        key: ValueKey<String>(reason.code),
+                        child: ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(reason.label),
+                          subtitle: Text(
+                            '${reason.code} • ${_appliesToLabel(reason.appliesTo)}',
+                          ),
+                          trailing: reason.isSystem
+                              ? const Icon(Icons.lock_outline_rounded, size: 18)
+                              : Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: <Widget>[
+                                    IconButton(
+                                      tooltip: 'Editar',
+                                      onPressed: () async {
+                                        final bool saved =
+                                            await _openReasonEditor(
+                                          reason: reason,
+                                        );
+                                        if (!saved) {
                                           return;
                                         }
-                                        _show('No se pudo eliminar: $e');
-                                      }
-                                    },
-                                    icon: const Icon(
-                                      Icons.delete_outline_rounded,
+                                        await refreshReasons();
+                                      },
+                                      icon: const Icon(Icons.edit_outlined),
                                     ),
-                                  ),
-                                ],
-                              ),
+                                    IconButton(
+                                      tooltip: 'Eliminar',
+                                      onPressed: () async {
+                                        final bool? confirm =
+                                            await showDialog<bool>(
+                                          context: context,
+                                          builder: (BuildContext context) {
+                                            return AlertDialog(
+                                              title:
+                                                  const Text('Eliminar motivo'),
+                                              content: Text(
+                                                'Se eliminara "${reason.label}".',
+                                              ),
+                                              actions: <Widget>[
+                                                TextButton(
+                                                  onPressed: () =>
+                                                      Navigator.of(context)
+                                                          .pop(false),
+                                                  child: const Text('Cancelar'),
+                                                ),
+                                                FilledButton(
+                                                  onPressed: () =>
+                                                      Navigator.of(context)
+                                                          .pop(true),
+                                                  child: const Text('Eliminar'),
+                                                ),
+                                              ],
+                                            );
+                                          },
+                                        );
+                                        if (confirm != true) {
+                                          return;
+                                        }
+                                        try {
+                                          await ds.deleteMovementReason(
+                                            reason.code,
+                                          );
+                                          await refreshReasons();
+                                        } catch (e) {
+                                          if (!mounted) {
+                                            return;
+                                          }
+                                          _show('No se pudo eliminar: $e');
+                                        }
+                                      },
+                                      icon: const Icon(
+                                        Icons.delete_outline_rounded,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                        ),
                       );
                     },
                   ),
@@ -1014,66 +1033,76 @@ class _MovimientosInventarioPageState
                               ],
                             )
                           : ListView.builder(
+                              key: const PageStorageKey<String>(
+                                'inventario-movimientos-groups',
+                              ),
+                              cacheExtent: 500,
                               itemCount: groups.length,
                               itemBuilder: (_, int index) {
                                 final _MovementDateGroup group = groups[index];
-                                return Padding(
-                                  padding: EdgeInsets.only(
-                                    bottom: index == groups.length - 1 ? 0 : 10,
+                                return KeyedSubtree(
+                                  key: ValueKey<int>(
+                                    group.date.millisecondsSinceEpoch,
                                   ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: <Widget>[
-                                      Container(
-                                        width: double.infinity,
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 8,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: isDark
-                                              ? const Color(0xFF28233A)
-                                              : const Color(0xFFEFEAF9),
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                        ),
-                                        child: Row(
-                                          children: <Widget>[
-                                            Expanded(
-                                              child: Text(
-                                                _formatDateGroup(group.date),
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.w800,
-                                                  color: Theme.of(context)
-                                                      .colorScheme
-                                                      .onSurface,
+                                  child: Padding(
+                                    padding: EdgeInsets.only(
+                                      bottom:
+                                          index == groups.length - 1 ? 0 : 10,
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        Container(
+                                          width: double.infinity,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 8,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: isDark
+                                                ? const Color(0xFF28233A)
+                                                : const Color(0xFFEFEAF9),
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                          ),
+                                          child: Row(
+                                            children: <Widget>[
+                                              Expanded(
+                                                child: Text(
+                                                  _formatDateGroup(group.date),
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.w800,
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .onSurface,
+                                                  ),
                                                 ),
                                               ),
-                                            ),
-                                            Text(
-                                              '${group.items.length} mov.',
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w700,
-                                                color: Theme.of(context)
-                                                    .colorScheme
-                                                    .onSurfaceVariant,
+                                              Text(
+                                                '${group.items.length} mov.',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w700,
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
+                                                ),
                                               ),
-                                            ),
-                                          ],
+                                            ],
+                                          ),
                                         ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      ...group.items.map(
-                                        (InventoryMovementView movement) {
-                                          return Padding(
-                                            padding: const EdgeInsets.only(
-                                                bottom: 8),
-                                            child: _movementCard(movement),
-                                          );
-                                        },
-                                      ),
-                                    ],
+                                        const SizedBox(height: 8),
+                                        ...group.items.map(
+                                          (InventoryMovementView movement) {
+                                            return Padding(
+                                              padding: const EdgeInsets.only(
+                                                  bottom: 8),
+                                              child: _movementCard(movement),
+                                            );
+                                          },
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 );
                               },

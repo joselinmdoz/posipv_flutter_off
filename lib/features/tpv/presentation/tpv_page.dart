@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_providers.dart';
+import '../../../core/utils/perf_trace.dart';
 import '../../../shared/models/user_session.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../auth/presentation/auth_providers.dart';
@@ -64,26 +65,36 @@ class _TpvPageState extends ConsumerState<TpvPage> {
   @override
   void initState() {
     super.initState();
-    _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _load();
+    });
   }
 
   Future<void> _load() async {
+    final PerfTrace trace = PerfTrace('tpv.load');
     setState(() => _loading = true);
     try {
       final List<TpvTerminalView> data =
           await ref.read(tpvLocalDataSourceProvider).listActiveTerminalViews();
+      trace.mark('consulta completada');
       if (!mounted) {
+        trace.end('unmounted');
         return;
       }
       setState(() {
         _terminals = data;
         _loading = false;
       });
+      trace.end('ok');
     } catch (e) {
       if (!mounted) {
         return;
       }
       setState(() => _loading = false);
+      trace.end('error');
       _show('No se pudo cargar TPV: $e');
     }
   }
@@ -667,7 +678,11 @@ class _TpvPageState extends ConsumerState<TpvPage> {
                     ConstrainedBox(
                       constraints: const BoxConstraints(maxHeight: 420),
                       child: ListView.separated(
+                        key: const PageStorageKey<String>(
+                          'tpv-history-sessions',
+                        ),
                         shrinkWrap: true,
+                        cacheExtent: 320,
                         itemCount: sessions.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
                         itemBuilder: (_, int index) {
@@ -680,107 +695,110 @@ class _TpvPageState extends ConsumerState<TpvPage> {
                             (int sum, TpvSessionCashBreakdown item) =>
                                 sum + item.subtotalCents,
                           );
-                          return Card(
-                            margin: EdgeInsets.zero,
-                            child: Padding(
-                              padding: const EdgeInsets.all(10),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: <Widget>[
-                                  Row(
-                                    children: <Widget>[
-                                      Expanded(
+                          return KeyedSubtree(
+                            key: ValueKey<String>(row.session.id),
+                            child: Card(
+                              margin: EdgeInsets.zero,
+                              child: Padding(
+                                padding: const EdgeInsets.all(10),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: <Widget>[
+                                    Row(
+                                      children: <Widget>[
+                                        Expanded(
+                                          child: Text(
+                                            row.user.username,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ),
+                                        Text(
+                                          row.session.status == 'open'
+                                              ? 'Abierta'
+                                              : 'Cerrada',
+                                          style: TextStyle(
+                                            color: row.session.status == 'open'
+                                                ? const Color(0xFF148A65)
+                                                : const Color(0xFF655D83),
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Apertura: ${_formatDateTime(row.session.openedAt)}',
+                                    ),
+                                    if (row.responsibleEmployees.isNotEmpty)
+                                      Text(
+                                        'Responsables: ${row.responsibleEmployees.map((TpvEmployee employee) => employee.name).join(', ')}',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Color(0xFF655D83),
+                                        ),
+                                      ),
+                                    if (row.session.closedAt != null)
+                                      Text(
+                                        'Cierre: ${_formatDateTime(row.session.closedAt!)}',
+                                      ),
+                                    if (row.session.closedAt != null)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 6),
                                         child: Text(
-                                          row.user.username,
+                                          'Efectivo cierre: ${_formatCentsWithSymbol(row.session.closingCashCents ?? 0, config.currencySymbol)}',
                                           style: const TextStyle(
                                             fontWeight: FontWeight.w700,
                                           ),
                                         ),
                                       ),
-                                      Text(
-                                        row.session.status == 'open'
-                                            ? 'Abierta'
-                                            : 'Cerrada',
+                                    if (breakdown.isNotEmpty) ...<Widget>[
+                                      const SizedBox(height: 6),
+                                      const Text(
+                                        'Desglose por denominacion',
                                         style: TextStyle(
-                                          color: row.session.status == 'open'
-                                              ? const Color(0xFF148A65)
-                                              : const Color(0xFF655D83),
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Apertura: ${_formatDateTime(row.session.openedAt)}',
-                                  ),
-                                  if (row.responsibleEmployees.isNotEmpty)
-                                    Text(
-                                      'Responsables: ${row.responsibleEmployees.map((TpvEmployee employee) => employee.name).join(', ')}',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Color(0xFF655D83),
-                                      ),
-                                    ),
-                                  if (row.session.closedAt != null)
-                                    Text(
-                                      'Cierre: ${_formatDateTime(row.session.closedAt!)}',
-                                    ),
-                                  if (row.session.closedAt != null)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 6),
-                                      child: Text(
-                                        'Efectivo cierre: ${_formatCentsWithSymbol(row.session.closingCashCents ?? 0, config.currencySymbol)}',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ),
-                                  if (breakdown.isNotEmpty) ...<Widget>[
-                                    const SizedBox(height: 6),
-                                    const Text(
-                                      'Desglose por denominacion',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    ...breakdown
-                                        .map((TpvSessionCashBreakdown line) {
-                                      return Row(
-                                        children: <Widget>[
-                                          Expanded(
-                                            child: Text(
-                                              '${_formatCentsWithSymbol(line.denominationCents, config.currencySymbol)} x ${line.unitCount}',
-                                              style:
-                                                  const TextStyle(fontSize: 12),
-                                            ),
-                                          ),
-                                          Text(
-                                            _formatCentsWithSymbol(
-                                              line.subtotalCents,
-                                              config.currencySymbol,
-                                            ),
-                                            style:
-                                                const TextStyle(fontSize: 12),
-                                          ),
-                                        ],
-                                      );
-                                    }),
-                                    const SizedBox(height: 2),
-                                    Align(
-                                      alignment: Alignment.centerRight,
-                                      child: Text(
-                                        'Total desglose: ${_formatCentsWithSymbol(breakdownTotal, config.currencySymbol)}',
-                                        style: const TextStyle(
                                           fontWeight: FontWeight.w700,
                                           fontSize: 12,
                                         ),
                                       ),
-                                    ),
+                                      const SizedBox(height: 4),
+                                      ...breakdown
+                                          .map((TpvSessionCashBreakdown line) {
+                                        return Row(
+                                          children: <Widget>[
+                                            Expanded(
+                                              child: Text(
+                                                '${_formatCentsWithSymbol(line.denominationCents, config.currencySymbol)} x ${line.unitCount}',
+                                                style: const TextStyle(
+                                                    fontSize: 12),
+                                              ),
+                                            ),
+                                            Text(
+                                              _formatCentsWithSymbol(
+                                                line.subtotalCents,
+                                                config.currencySymbol,
+                                              ),
+                                              style:
+                                                  const TextStyle(fontSize: 12),
+                                            ),
+                                          ],
+                                        );
+                                      }),
+                                      const SizedBox(height: 2),
+                                      Align(
+                                        alignment: Alignment.centerRight,
+                                        child: Text(
+                                          'Total desglose: ${_formatCentsWithSymbol(breakdownTotal, config.currencySymbol)}',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ],
-                                ],
+                                ),
                               ),
                             ),
                           );
@@ -1234,10 +1252,16 @@ class _TpvPageState extends ConsumerState<TpvPage> {
                       ],
                     )
                   : ListView.builder(
+                      key: const PageStorageKey<String>('tpv-terminals-list'),
+                      cacheExtent: 420,
                       padding: const EdgeInsets.fromLTRB(12, 14, 12, 90),
                       itemCount: _terminals.length,
                       itemBuilder: (_, int index) {
-                        return _terminalCard(_terminals[index]);
+                        final TpvTerminalView terminal = _terminals[index];
+                        return KeyedSubtree(
+                          key: ValueKey<String>(terminal.terminal.id),
+                          child: _terminalCard(terminal),
+                        );
                       },
                     ),
             ),
@@ -1392,6 +1416,8 @@ class _TpvEmployeesPageState extends ConsumerState<TpvEmployeesPage> {
                       ],
                     )
                   : ListView.builder(
+                      key: const PageStorageKey<String>('tpv-employees-list'),
+                      cacheExtent: 360,
                       padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
                       itemCount: _employees.length,
                       itemBuilder: (_, int index) {
@@ -1405,52 +1431,55 @@ class _TpvEmployeesPageState extends ConsumerState<TpvEmployeesPage> {
                             'Usuario: ${employee.associatedUsername}',
                           employee.isActive ? 'Activo' : 'Inactivo',
                         ];
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: ListTile(
-                            leading: _employeeAvatar(
-                              imagePath: employee.imagePath,
-                              radius: 20,
-                              backgroundColor: employee.isActive
-                                  ? const Color(0xFFE3F5EE)
-                                  : const Color(0xFFE9E5F5),
-                              iconColor: employee.isActive
-                                  ? const Color(0xFF148A65)
-                                  : const Color(0xFF5A4D88),
+                        return KeyedSubtree(
+                          key: ValueKey<String>(employee.id),
+                          child: Card(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
                             ),
-                            title: Text(
-                              employee.name,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
+                            child: ListTile(
+                              leading: _employeeAvatar(
+                                imagePath: employee.imagePath,
+                                radius: 20,
+                                backgroundColor: employee.isActive
+                                    ? const Color(0xFFE3F5EE)
+                                    : const Color(0xFFE9E5F5),
+                                iconColor: employee.isActive
+                                    ? const Color(0xFF148A65)
+                                    : const Color(0xFF5A4D88),
                               ),
-                            ),
-                            subtitle: Text(
-                              info.join(' • '),
-                            ),
-                            trailing: Wrap(
-                              spacing: 4,
-                              children: <Widget>[
-                                IconButton(
-                                  tooltip: 'Editar',
-                                  onPressed: () =>
-                                      _openForm(employee: employee),
-                                  icon: const Icon(Icons.edit_outlined),
+                              title: Text(
+                                employee.name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
                                 ),
-                                IconButton(
-                                  tooltip: employee.isActive
-                                      ? 'Desactivar'
-                                      : 'Activar',
-                                  onPressed: () => _toggleEmployee(employee),
-                                  icon: Icon(
-                                    employee.isActive
-                                        ? Icons.person_off_outlined
-                                        : Icons.person_add_alt,
+                              ),
+                              subtitle: Text(
+                                info.join(' • '),
+                              ),
+                              trailing: Wrap(
+                                spacing: 4,
+                                children: <Widget>[
+                                  IconButton(
+                                    tooltip: 'Editar',
+                                    onPressed: () =>
+                                        _openForm(employee: employee),
+                                    icon: const Icon(Icons.edit_outlined),
                                   ),
-                                ),
-                              ],
+                                  IconButton(
+                                    tooltip: employee.isActive
+                                        ? 'Desactivar'
+                                        : 'Activar',
+                                    onPressed: () => _toggleEmployee(employee),
+                                    icon: Icon(
+                                      employee.isActive
+                                          ? Icons.person_off_outlined
+                                          : Icons.person_add_alt,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         );

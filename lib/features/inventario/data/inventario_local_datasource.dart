@@ -244,6 +244,87 @@ class InventarioLocalDataSource {
     }).toList();
   }
 
+  Future<List<InventoryView>> listStockedPage({
+    String? warehouseId,
+    String? search,
+    int limit = 60,
+    int offset = 0,
+  }) async {
+    final int safeLimit = limit < 1 ? 1 : limit;
+    final int safeOffset = offset < 0 ? 0 : offset;
+    final String cleanedSearch = (search ?? '').trim().toLowerCase();
+    final StringBuffer sql = StringBuffer(
+      '''
+      SELECT
+        p.id,
+        p.name,
+        p.sku,
+        p.price_cents,
+        p.tax_rate_bps,
+        SUM(sb.qty) AS qty
+      FROM stock_balances sb
+      INNER JOIN products p
+        ON p.id = sb.product_id
+      WHERE p.is_active = 1
+        AND sb.qty > 0
+      ''',
+    );
+    final List<Variable<Object>> variables = <Variable<Object>>[];
+
+    if (warehouseId != null && warehouseId.trim().isNotEmpty) {
+      sql.write(' AND sb.warehouse_id = ?');
+      variables.add(Variable<String>(warehouseId.trim()));
+    }
+
+    if (cleanedSearch.isNotEmpty) {
+      sql.write(
+        '''
+         AND (
+           LOWER(p.name) LIKE ?
+           OR LOWER(p.sku) LIKE ?
+           OR LOWER(COALESCE(p.barcode, '')) LIKE ?
+         )
+        ''',
+      );
+      final String pattern = '%$cleanedSearch%';
+      variables.addAll(<Variable<Object>>[
+        Variable<String>(pattern),
+        Variable<String>(pattern),
+        Variable<String>(pattern),
+      ]);
+    }
+
+    sql.write(
+      '''
+      GROUP BY p.id, p.name, p.sku, p.price_cents, p.tax_rate_bps
+      ORDER BY p.name ASC
+      LIMIT ? OFFSET ?
+      ''',
+    );
+    variables.addAll(<Variable<Object>>[
+      Variable<int>(safeLimit),
+      Variable<int>(safeOffset),
+    ]);
+
+    final List<QueryRow> rows = await _db
+        .customSelect(
+          sql.toString(),
+          variables: variables,
+        )
+        .get();
+
+    return rows.map((QueryRow row) {
+      return InventoryView(
+        productId: row.read<String>('id'),
+        productName: row.read<String>('name'),
+        sku: row.read<String>('sku'),
+        qty: row.read<double>('qty'),
+        priceCents: row.read<int>('price_cents'),
+        taxRateBps: row.read<int>('tax_rate_bps'),
+      );
+    }).toList();
+  }
+
   Future<List<InventoryMovementReason>> listMovementReasons() async {
     final AppSetting? setting = await (_db.select(_db.appSettings)
           ..where((AppSettings tbl) => tbl.key.equals(_movementReasonsKey)))

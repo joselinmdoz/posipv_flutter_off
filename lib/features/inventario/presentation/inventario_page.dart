@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'dart:async';
 
 import '../../../core/db/app_database.dart';
+import '../../../core/utils/perf_trace.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../almacenes/presentation/almacenes_providers.dart';
 import '../data/inventario_local_datasource.dart';
@@ -17,20 +18,31 @@ class InventarioPage extends ConsumerStatefulWidget {
 }
 
 class _InventarioPageState extends ConsumerState<InventarioPage> {
+  static const int _pageSize = 60;
+
   final TextEditingController _searchCtrl = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   Timer? _debounceTimer;
 
   List<Warehouse> _warehouses = <Warehouse>[];
   List<InventoryView> _inventory = <InventoryView>[];
-  List<InventoryView> _visibleInventory = <InventoryView>[];
   String? _selectedWarehouseId;
   bool _loading = true;
+  bool _loadingMore = false;
+  bool _searching = false;
+  bool _hasMore = true;
 
   @override
   void initState() {
     super.initState();
     _searchCtrl.addListener(_onSearchChanged);
-    _bootstrap();
+    _scrollController.addListener(_onScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _bootstrap();
+    });
   }
 
   @override
@@ -38,22 +50,38 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
     _debounceTimer?.cancel();
     _searchCtrl.removeListener(_onSearchChanged);
     _searchCtrl.dispose();
+    _scrollController
+      ..removeListener(_onScroll)
+      ..dispose();
     super.dispose();
   }
 
   void _onSearchChanged() {
     _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
+    _debounceTimer = Timer(const Duration(milliseconds: 260), () {
       if (!mounted) {
         return;
       }
-      setState(() {
-        _visibleInventory = _filterInventory(_inventory, _searchCtrl.text);
-      });
+      _applySearch();
     });
   }
 
+  void _onScroll() {
+    if (!_scrollController.hasClients ||
+        _loading ||
+        _loadingMore ||
+        _searching ||
+        !_hasMore) {
+      return;
+    }
+    final ScrollPosition position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 240) {
+      _loadMoreInventory();
+    }
+  }
+
   Future<void> _bootstrap() async {
+    final PerfTrace trace = PerfTrace('inventario.bootstrap');
     setState(() => _loading = true);
 
     try {
@@ -65,56 +93,110 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
 
       final Future<List<Warehouse>> warehousesFuture =
           whDs.listActiveWarehouses();
-      final Future<List<InventoryView>> inventoryFuture =
-          invDs.listStocked(warehouseId: warehouseId);
+      final Future<List<InventoryView>> inventoryFuture = invDs.listStockedPage(
+        warehouseId: warehouseId,
+        search: _searchCtrl.text,
+        limit: _pageSize,
+      );
 
       final List<Warehouse> warehouses = await warehousesFuture;
       final List<InventoryView> inventory = await inventoryFuture;
+      trace.mark('datos cargados');
 
       if (!mounted) {
+        trace.end('unmounted');
         return;
       }
       setState(() {
         _warehouses = warehouses;
         _selectedWarehouseId = warehouseId;
         _inventory = inventory;
-        _visibleInventory = _filterInventory(inventory, _searchCtrl.text);
+        _hasMore = inventory.length == _pageSize;
+        _loadingMore = false;
+        _searching = false;
+        _loading = false;
+      });
+      trace.end('ok');
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _loading = false);
+      trace.end('error');
+      _show('No se pudo cargar Inventario: $e');
+    }
+  }
+
+  Future<void> _reloadInventory({bool showLoader = false}) async {
+    if (showLoader) {
+      setState(() => _loading = true);
+    }
+    try {
+      final List<InventoryView> inventory =
+          await ref.read(inventarioLocalDataSourceProvider).listStockedPage(
+                warehouseId: _selectedWarehouseId,
+                search: _searchCtrl.text,
+                limit: _pageSize,
+              );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _inventory = inventory;
+        _hasMore = inventory.length == _pageSize;
+        _loadingMore = false;
+        _searching = false;
         _loading = false;
       });
     } catch (e) {
       if (!mounted) {
         return;
       }
-      setState(() => _loading = false);
+      setState(() {
+        _loadingMore = false;
+        _searching = false;
+        _loading = false;
+      });
       _show('No se pudo cargar Inventario: $e');
     }
   }
 
-  Future<void> _reloadInventory() async {
-    final List<InventoryView> inventory = await ref
-        .read(inventarioLocalDataSourceProvider)
-        .listStocked(warehouseId: _selectedWarehouseId);
-    if (!mounted) {
+  Future<void> _applySearch() async {
+    if (_loading) {
       return;
     }
-    setState(() {
-      _inventory = inventory;
-      _visibleInventory = _filterInventory(inventory, _searchCtrl.text);
-    });
+    setState(() => _searching = true);
+    await _reloadInventory();
   }
 
-  List<InventoryView> _filterInventory(
-    List<InventoryView> inventory,
-    String queryText,
-  ) {
-    final String query = queryText.trim().toLowerCase();
-    if (query.isEmpty) {
-      return inventory;
+  Future<void> _loadMoreInventory() async {
+    if (_loading || _loadingMore || _searching || !_hasMore) {
+      return;
     }
-    return inventory.where((InventoryView row) {
-      return row.productName.toLowerCase().contains(query) ||
-          row.sku.toLowerCase().contains(query);
-    }).toList();
+    setState(() => _loadingMore = true);
+    try {
+      final List<InventoryView> nextRows =
+          await ref.read(inventarioLocalDataSourceProvider).listStockedPage(
+                warehouseId: _selectedWarehouseId,
+                search: _searchCtrl.text,
+                limit: _pageSize,
+                offset: _inventory.length,
+              );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _inventory = <InventoryView>[..._inventory, ...nextRows];
+        _hasMore = nextRows.length == _pageSize;
+        _loadingMore = false;
+      });
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _loadingMore = false);
+      _show('No se pudo cargar mas inventario: $e');
+    }
   }
 
   String _moneyFromCents(int cents) {
@@ -139,7 +221,7 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
 
   @override
   Widget build(BuildContext context) {
-    final List<InventoryView> rows = _visibleInventory;
+    final List<InventoryView> rows = _inventory;
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final bool isDark = theme.brightness == Brightness.dark;
@@ -180,7 +262,7 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
                           ],
                           onChanged: (String? value) async {
                             setState(() => _selectedWarehouseId = value);
-                            await _reloadInventory();
+                            await _reloadInventory(showLoader: true);
                           },
                         ),
                       ),
@@ -193,39 +275,52 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  TextField(
-                    controller: _searchCtrl,
-                    decoration: InputDecoration(
-                      hintText: 'Buscar por nombre o SKU',
-                      prefixIcon: const Icon(Icons.search_rounded),
-                      suffixIcon: _searchCtrl.text.isEmpty
-                          ? null
-                          : IconButton(
-                              onPressed: _searchCtrl.clear,
-                              icon: const Icon(Icons.clear_rounded),
+                  ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: _searchCtrl,
+                    builder: (
+                      BuildContext context,
+                      TextEditingValue value,
+                      Widget? child,
+                    ) {
+                      return TextField(
+                        controller: _searchCtrl,
+                        decoration: InputDecoration(
+                          hintText: 'Buscar por nombre o SKU',
+                          prefixIcon: const Icon(Icons.search_rounded),
+                          suffixIcon: value.text.isEmpty
+                              ? null
+                              : IconButton(
+                                  onPressed: _searchCtrl.clear,
+                                  icon: const Icon(Icons.clear_rounded),
+                                ),
+                          filled: true,
+                          fillColor: isDark
+                              ? const Color(0xFF211D2D)
+                              : const Color(0xFFF9F6FD),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide(
+                              color: isDark
+                                  ? const Color(0xFF342E46)
+                                  : const Color(0xFFE1D8F2),
                             ),
-                      filled: true,
-                      fillColor: isDark
-                          ? const Color(0xFF211D2D)
-                          : const Color(0xFFF9F6FD),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(
-                          color: isDark
-                              ? const Color(0xFF342E46)
-                              : const Color(0xFFE1D8F2),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide(
+                              color: isDark
+                                  ? const Color(0xFF342E46)
+                                  : const Color(0xFFE1D8F2),
+                            ),
+                          ),
                         ),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(
-                          color: isDark
-                              ? const Color(0xFF342E46)
-                              : const Color(0xFFE1D8F2),
-                        ),
-                      ),
-                    ),
+                      );
+                    },
                   ),
+                  if (_searching) ...<Widget>[
+                    const SizedBox(height: 8),
+                    const LinearProgressIndicator(minHeight: 2),
+                  ],
                   const SizedBox(height: 10),
                   Expanded(
                     child: RefreshIndicator(
@@ -241,98 +336,115 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
                                 ),
                               ],
                             )
-                          : ListView.separated(
-                              itemCount: rows.length,
-                              separatorBuilder: (_, __) =>
-                                  const SizedBox(height: 8),
+                          : ListView.builder(
+                              key: const PageStorageKey<String>(
+                                'inventario-list',
+                              ),
+                              controller: _scrollController,
+                              cacheExtent: 420,
+                              itemCount: rows.length + (_loadingMore ? 1 : 0),
                               itemBuilder: (_, int index) {
-                                final InventoryView row = rows[index];
-                                return Container(
-                                  decoration: BoxDecoration(
-                                    color: theme.cardColor,
-                                    borderRadius: BorderRadius.circular(14),
-                                    border: Border.all(
-                                      color: isDark
-                                          ? const Color(0xFF342E46)
-                                          : const Color(0xFFE1D8F2),
+                                if (index >= rows.length) {
+                                  return const Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 18),
+                                    child: Center(
+                                      child: CircularProgressIndicator(),
                                     ),
-                                    boxShadow: isDark
-                                        ? const <BoxShadow>[]
-                                        : const <BoxShadow>[
-                                            BoxShadow(
-                                              color: Color(0x10000000),
-                                              blurRadius: 8,
-                                              offset: Offset(0, 2),
-                                            ),
-                                          ],
+                                  );
+                                }
+                                final InventoryView row = rows[index];
+                                return Padding(
+                                  key: ValueKey<String>(row.productId),
+                                  padding: EdgeInsets.only(
+                                    bottom: index == rows.length - 1 ? 0 : 8,
                                   ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(10),
-                                    child: Row(
-                                      children: <Widget>[
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: <Widget>[
-                                              Text(
-                                                row.productName,
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.w800,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                'SKU: ${row.sku}',
-                                                style: TextStyle(
-                                                  color:
-                                                      scheme.onSurfaceVariant,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 6),
-                                              Wrap(
-                                                spacing: 6,
-                                                runSpacing: 6,
-                                                children: <Widget>[
-                                                  _infoChip(
-                                                    'Precio',
-                                                    _moneyFromCents(
-                                                      row.priceCents,
-                                                    ),
-                                                  ),
-                                                  _infoChip(
-                                                    'Impuesto',
-                                                    '${(row.taxRateBps / 100).toStringAsFixed(2)}%',
-                                                  ),
-                                                ],
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: theme.cardColor,
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(
+                                        color: isDark
+                                            ? const Color(0xFF342E46)
+                                            : const Color(0xFFE1D8F2),
+                                      ),
+                                      boxShadow: isDark
+                                          ? const <BoxShadow>[]
+                                          : const <BoxShadow>[
+                                              BoxShadow(
+                                                color: Color(0x10000000),
+                                                blurRadius: 8,
+                                                offset: Offset(0, 2),
                                               ),
                                             ],
-                                          ),
-                                        ),
-                                        const SizedBox(width: 10),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 10,
-                                            vertical: 8,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: isDark
-                                                ? const Color(0xFF233246)
-                                                : const Color(0xFFE6ECFA),
-                                            borderRadius:
-                                                BorderRadius.circular(20),
-                                          ),
-                                          child: Text(
-                                            _formatQty(row.qty),
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w800,
-                                              color: isDark
-                                                  ? const Color(0xFF9AC1FF)
-                                                  : const Color(0xFF2D4A86),
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(10),
+                                      child: Row(
+                                        children: <Widget>[
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: <Widget>[
+                                                Text(
+                                                  row.productName,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  'SKU: ${row.sku}',
+                                                  style: TextStyle(
+                                                    color:
+                                                        scheme.onSurfaceVariant,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 6),
+                                                Wrap(
+                                                  spacing: 6,
+                                                  runSpacing: 6,
+                                                  children: <Widget>[
+                                                    _infoChip(
+                                                      'Precio',
+                                                      _moneyFromCents(
+                                                        row.priceCents,
+                                                      ),
+                                                    ),
+                                                    _infoChip(
+                                                      'Impuesto',
+                                                      '${(row.taxRateBps / 100).toStringAsFixed(2)}%',
+                                                    ),
+                                                  ],
+                                                ),
+                                              ],
                                             ),
                                           ),
-                                        ),
-                                      ],
+                                          const SizedBox(width: 10),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 8,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: isDark
+                                                  ? const Color(0xFF233246)
+                                                  : const Color(0xFFE6ECFA),
+                                              borderRadius:
+                                                  BorderRadius.circular(20),
+                                            ),
+                                            child: Text(
+                                              _formatQty(row.qty),
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w800,
+                                                color: isDark
+                                                    ? const Color(0xFF9AC1FF)
+                                                    : const Color(0xFF2D4A86),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 );

@@ -80,6 +80,22 @@ class ProductosLocalDataSource {
         .get();
   }
 
+  Future<List<Product>> listActiveProductsPage({
+    int limit = 40,
+    int offset = 0,
+  }) {
+    final int safeLimit = limit < 1 ? 1 : limit;
+    final int safeOffset = offset < 0 ? 0 : offset;
+    return (_db.select(_db.products)
+          ..where((Products tbl) =>
+              tbl.isActive.equals(true) & _hasUsableProductFields(tbl))
+          ..orderBy(<OrderingTerm Function(Products)>[
+            (Products tbl) => OrderingTerm.asc(tbl.name),
+          ])
+          ..limit(safeLimit, offset: safeOffset))
+        .get();
+  }
+
   Future<List<Product>> listActiveProductsByIds(Set<String> productIds) {
     if (productIds.isEmpty) {
       return Future<List<Product>>.value(const <Product>[]);

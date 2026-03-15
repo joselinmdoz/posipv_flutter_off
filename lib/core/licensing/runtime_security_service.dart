@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'runtime_security_models.dart';
@@ -13,6 +14,9 @@ class RuntimeSecurityService {
   Future<RuntimeSecurityStatus> inspect({
     bool forceRefresh = false,
   }) async {
+    if (kDebugMode) {
+      return const RuntimeSecurityStatus.unsupported();
+    }
     final DateTime now = DateTime.now();
     if (!forceRefresh &&
         _cachedStatus != null &&

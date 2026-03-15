@@ -21,36 +21,59 @@ class DeviceIdentityService {
 
   final FlutterSecureStorage _secureStorage;
   final Uuid _uuid;
+  DeviceIdentity? _cachedIdentity;
+  Future<DeviceIdentity>? _identityInFlight;
 
-  Future<DeviceIdentity> getIdentity() async {
+  Future<DeviceIdentity> getIdentity() {
+    final DeviceIdentity? cached = _cachedIdentity;
+    if (cached != null) {
+      return Future<DeviceIdentity>.value(cached);
+    }
+
+    final Future<DeviceIdentity>? inFlight = _identityInFlight;
+    if (inFlight != null) {
+      return inFlight;
+    }
+
+    final Future<DeviceIdentity> future = _loadIdentity();
+    _identityInFlight = future;
+    return future;
+  }
+
+  Future<DeviceIdentity> _loadIdentity() async {
     Map<Object?, Object?>? response;
     try {
-      response = await _channel
-          .invokeMethod<Map<Object?, Object?>>('getDeviceIdentity');
-    } on MissingPluginException {
-      response = null;
+      try {
+        response = await _channel
+            .invokeMethod<Map<Object?, Object?>>('getDeviceIdentity');
+      } on MissingPluginException {
+        response = null;
+      }
+      final Map<String, Object?> nativeData = <String, Object?>{
+        for (final MapEntry<Object?, Object?> entry
+            in (response ?? <Object?, Object?>{}).entries)
+          entry.key.toString(): entry.value,
+      };
+
+      final String nativeHardwareId =
+          (nativeData['hardwareId'] ?? '').toString().trim();
+      final String displayName = _resolveDisplayName(nativeData);
+      final String fallbackInstallId = await _loadOrCreateInstallId();
+      final String rawId = nativeHardwareId.isNotEmpty
+          ? 'android:$nativeHardwareId'
+          : 'install:$fallbackInstallId';
+
+      final String fingerprintHash = _sha256Hex('posipv|license|$rawId');
+      final DeviceIdentity identity = DeviceIdentity(
+        rawId: rawId,
+        displayName: displayName,
+        fingerprintHash: fingerprintHash,
+      );
+      _cachedIdentity = identity;
+      return identity;
+    } finally {
+      _identityInFlight = null;
     }
-    final Map<String, Object?> nativeData = <String, Object?>{
-      for (final MapEntry<Object?, Object?> entry
-          in (response ?? <Object?, Object?>{}).entries)
-        entry.key.toString(): entry.value,
-    };
-
-    final String nativeHardwareId =
-        (nativeData['hardwareId'] ?? '').toString().trim();
-    final String displayName = _resolveDisplayName(nativeData);
-    final String fallbackInstallId = await _loadOrCreateInstallId();
-    final String rawId = nativeHardwareId.isNotEmpty
-        ? 'android:$nativeHardwareId'
-        : 'install:$fallbackInstallId';
-
-    final String fingerprintHash = _sha256Hex('posipv|license|$rawId');
-
-    return DeviceIdentity(
-      rawId: rawId,
-      displayName: displayName,
-      fingerprintHash: fingerprintHash,
-    );
   }
 
   String buildRequestCode(

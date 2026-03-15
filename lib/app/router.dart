@@ -21,59 +21,78 @@ final GoRouter appRouter = GoRouter(
       path: '/login',
       builder: (context, state) => const LoginPage(),
     ),
-    GoRoute(
-      path: '/home',
-      builder: (context, state) => const HomePage(),
-    ),
-    GoRoute(
-      path: '/productos',
-      builder: (context, state) => const ProductosPage(),
-    ),
-    GoRoute(
-      path: '/almacenes',
-      builder: (context, state) => const AlmacenesPage(),
-    ),
-    GoRoute(
-      path: '/inventario',
-      builder: (context, state) => const InventarioPage(),
-    ),
-    GoRoute(
-      path: '/inventario-movimientos',
-      builder: (context, state) => const MovimientosInventarioPage(),
-    ),
-    GoRoute(
-      path: '/ventas-pos',
-      builder: (context, state) => const VentasPosPage(),
-    ),
-    GoRoute(
-      path: '/ventas-directas',
-      builder: (context, state) => const VentasDirectasPage(),
-    ),
-    GoRoute(
-      path: '/tpv',
-      builder: (context, state) => const TpvPage(),
-    ),
-    GoRoute(
-      path: '/tpv-empleados',
-      builder: (context, state) => TpvEmployeesPage(
-        openCreateOnLoad: state.uri.queryParameters['new'] == '1',
-      ),
-    ),
-    GoRoute(
-      path: '/reportes',
-      builder: (context, state) => const ReportesPage(),
-    ),
-    GoRoute(
-      path: '/ipv-reportes',
-      builder: (context, state) => const IpvReportesPage(),
-    ),
-    GoRoute(
-      path: '/configuracion',
-      builder: (context, state) => const ConfiguracionPage(),
-    ),
-    GoRoute(
-      path: '/licencia',
-      builder: (context, state) => const LicenciaPage(),
+    StatefulShellRoute.indexedStack(
+      builder: (context, state, navigationShell) => navigationShell,
+      branches: <StatefulShellBranch>[
+        _branch(
+          path: '/home',
+          builder: (context, state) => const HomePage(),
+        ),
+        _branch(
+          path: '/productos',
+          builder: (context, state) => const ProductosPage(),
+        ),
+        _branch(
+          path: '/almacenes',
+          builder: (context, state) => const AlmacenesPage(),
+        ),
+        _branch(
+          path: '/inventario',
+          builder: (context, state) => const InventarioPage(),
+        ),
+        _branch(
+          path: '/inventario-movimientos',
+          builder: (context, state) => const MovimientosInventarioPage(),
+        ),
+        _branch(
+          path: '/ventas-pos',
+          builder: (context, state) => const VentasPosPage(),
+        ),
+        _branch(
+          path: '/ventas-directas',
+          builder: (context, state) => const VentasDirectasPage(),
+        ),
+        _branch(
+          path: '/tpv',
+          builder: (context, state) => const TpvPage(),
+        ),
+        _branch(
+          path: '/tpv-empleados',
+          builder: (context, state) => TpvEmployeesPage(
+            openCreateOnLoad: state.uri.queryParameters['new'] == '1',
+          ),
+        ),
+        _branch(
+          path: '/reportes',
+          builder: (context, state) => const ReportesPage(),
+        ),
+        _branch(
+          path: '/ipv-reportes',
+          builder: (context, state) => const IpvReportesPage(),
+        ),
+        _branch(
+          path: '/configuracion',
+          builder: (context, state) => const ConfiguracionPage(),
+        ),
+        _branch(
+          path: '/licencia',
+          builder: (context, state) => const LicenciaPage(),
+        ),
+      ],
     ),
   ],
 );
+
+StatefulShellBranch _branch({
+  required String path,
+  required GoRouterWidgetBuilder builder,
+}) {
+  return StatefulShellBranch(
+    routes: <RouteBase>[
+      GoRoute(
+        path: path,
+        builder: builder,
+      ),
+    ],
+  );
+}

@@ -2,12 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/db/database_provider.dart';
+import '../../../core/licensing/license_providers.dart';
 import '../data/configuracion_local_datasource.dart';
+import '../data/data_management_local_datasource.dart';
 
 final Provider<ConfiguracionLocalDataSource>
     configuracionLocalDataSourceProvider =
     Provider<ConfiguracionLocalDataSource>((ref) {
   return ConfiguracionLocalDataSource(ref.watch(appDatabaseProvider));
+});
+
+final Provider<DataManagementLocalDataSource>
+    dataManagementLocalDataSourceProvider =
+    Provider<DataManagementLocalDataSource>((ref) {
+  return DataManagementLocalDataSource(
+    ref.watch(appDatabaseProvider),
+    licenseService: ref.watch(offlineLicenseServiceProvider),
+  );
 });
 
 class AppConfigController extends AsyncNotifier<AppConfig> {

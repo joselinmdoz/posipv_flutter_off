@@ -7,6 +7,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_providers.dart';
+import '../../../core/utils/perf_trace.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../../shared/widgets/code_scanner_page.dart';
 import '../data/productos_local_datasource.dart';
@@ -23,35 +24,107 @@ class ProductosPage extends ConsumerStatefulWidget {
 }
 
 class _ProductosPageState extends ConsumerState<ProductosPage> {
+  static const int _pageSize = 40;
+
+  final ScrollController _scrollController = ScrollController();
   List<Product> _products = <Product>[];
   bool _loading = true;
+  bool _loadingMore = false;
+  bool _hasMore = true;
 
   @override
   void initState() {
     super.initState();
-    _loadProducts();
+    _scrollController.addListener(_onScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _loadProducts();
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController
+      ..removeListener(_onScroll)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients ||
+        _loading ||
+        _loadingMore ||
+        !_hasMore) {
+      return;
+    }
+    final ScrollPosition position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 280) {
+      _loadMoreProducts();
+    }
   }
 
   Future<void> _loadProducts() async {
+    final PerfTrace trace = PerfTrace('productos.load');
     setState(() => _loading = true);
     try {
-      final List<Product> data =
-          await ref.read(productosLocalDataSourceProvider).listActiveProducts();
+      final List<Product> data = await ref
+          .read(productosLocalDataSourceProvider)
+          .listActiveProductsPage(limit: _pageSize);
+      trace.mark('consulta completada');
+
+      if (!mounted) {
+        trace.end('unmounted');
+        return;
+      }
+
+      setState(() {
+        _products = data;
+        _hasMore = data.length == _pageSize;
+        _loadingMore = false;
+        _loading = false;
+      });
+      trace.end('ok');
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _loading = false);
+      trace.end('error');
+      _show('No se pudo cargar Productos: $e');
+    }
+  }
+
+  Future<void> _loadMoreProducts() async {
+    if (_loading || _loadingMore || !_hasMore) {
+      return;
+    }
+
+    setState(() => _loadingMore = true);
+    try {
+      final List<Product> data = await ref
+          .read(productosLocalDataSourceProvider)
+          .listActiveProductsPage(
+            limit: _pageSize,
+            offset: _products.length,
+          );
 
       if (!mounted) {
         return;
       }
 
       setState(() {
-        _products = data;
-        _loading = false;
+        _products = <Product>[..._products, ...data];
+        _hasMore = data.length == _pageSize;
+        _loadingMore = false;
       });
     } catch (e) {
       if (!mounted) {
         return;
       }
-      setState(() => _loading = false);
-      _show('No se pudo cargar Productos: $e');
+      setState(() => _loadingMore = false);
+      _show('No se pudo cargar mas productos: $e');
     }
   }
 
@@ -79,14 +152,6 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
 
   String _moneyByCurrency(int cents, String currencyCode) {
     return '$currencyCode ${(cents / 100).toStringAsFixed(2)}';
-  }
-
-  String _dateText(DateTime date) {
-    final DateTime local = date.toLocal();
-    final String y = local.year.toString().padLeft(4, '0');
-    final String m = local.month.toString().padLeft(2, '0');
-    final String d = local.day.toString().padLeft(2, '0');
-    return '$y-$m-$d';
   }
 
   Widget _buildImageContent(String? path) {
@@ -192,107 +257,6 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
     final ColorScheme scheme = theme.colorScheme;
     final bool isDark = theme.brightness == Brightness.dark;
     final String barcode = (product.barcode ?? '').trim();
-    final Widget imageThumb = Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: isDark ? const Color(0xFF342E46) : const Color(0xFFD8D0EB),
-        ),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: SizedBox(
-          width: 46,
-          height: 46,
-          child: _buildImageContent(product.imagePath),
-        ),
-      ),
-    );
-    final Widget infoBlock = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: <Widget>[
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: Text(
-                product.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 13.2,
-                ),
-              ),
-            ),
-            IconButton(
-              tooltip: 'Ver QR',
-              visualDensity: VisualDensity.compact,
-              constraints: const BoxConstraints.tightFor(
-                width: 28,
-                height: 28,
-              ),
-              padding: EdgeInsets.zero,
-              splashRadius: 16,
-              onPressed: () => _showProductQr(product),
-              icon: const Icon(
-                Icons.qr_code_2_rounded,
-                size: 18,
-              ),
-            ),
-          ],
-        ),
-        Text(
-          barcode.isEmpty
-              ? 'Cod: ${product.sku}'
-              : 'Cod: ${product.sku} • Bar: $barcode',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: scheme.onSurfaceVariant,
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        Text(
-          '${product.category} • ${product.productType} • ${product.unitMeasure} • ${_dateText(product.createdAt)}',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: scheme.onSurfaceVariant.withValues(alpha: 0.82),
-            fontSize: 9,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
-    );
-    final Widget priceBlock = Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: <Widget>[
-        Text(
-          _moneyByCurrency(product.priceCents, product.currencyCode),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            color: isDark ? const Color(0xFF57D0A6) : const Color(0xFF148A65),
-            fontSize: 11.8,
-          ),
-        ),
-        const SizedBox(height: 1),
-        Text(
-          'Costo ${_moneyByCurrency(product.costPriceCents, product.currencyCode)}',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: scheme.onSurfaceVariant,
-            fontSize: 8.8,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
-    );
 
     return Card(
       margin: EdgeInsets.zero,
@@ -306,45 +270,165 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
         borderRadius: BorderRadius.circular(16),
         onTap: () => _openProductForm(product: product),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-          child: LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) {
-              final bool compact = constraints.maxWidth < 182;
-              if (compact) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Row(
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isDark
+                            ? const Color(0xFF3A3450)
+                            : const Color(0xFFD9D2EC),
+                      ),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: SizedBox(
+                        width: 52,
+                        height: 52,
+                        child: _buildImageContent(product.imagePath),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
-                        imageThumb,
-                        const SizedBox(width: 8),
-                        Expanded(child: infoBlock),
+                        Text(
+                          product.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Cod: ${product.sku}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: scheme.onSurfaceVariant,
+                            fontSize: 10.6,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        if (barcode.isNotEmpty)
+                          Text(
+                            'Bar: $barcode',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: scheme.onSurfaceVariant,
+                              fontSize: 9.8,
+                            ),
+                          ),
                       ],
                     ),
-                    const SizedBox(height: 6),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: priceBlock,
+                  ),
+                  Material(
+                    color: isDark
+                        ? const Color(0xFF2B2540)
+                        : const Color(0xFFE8E1F8),
+                    borderRadius: BorderRadius.circular(10),
+                    child: IconButton(
+                      tooltip: 'Ver QR',
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 30,
+                        height: 30,
+                      ),
+                      padding: EdgeInsets.zero,
+                      splashRadius: 16,
+                      onPressed: () => _showProductQr(product),
+                      icon: const Icon(Icons.qr_code_2_rounded, size: 18),
                     ),
-                  ],
-                );
-              }
-
-              return Row(
-                children: <Widget>[
-                  imageThumb,
-                  const SizedBox(width: 8),
-                  Expanded(child: infoBlock),
-                  const SizedBox(width: 6),
-                  SizedBox(
-                    width: 108,
-                    child: priceBlock,
                   ),
                 ],
-              );
-            },
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: <Widget>[
+                  _metaPill(product.category),
+                  _metaPill(product.productType),
+                  _metaPill(product.unitMeasure),
+                ],
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.fromLTRB(8, 7, 8, 7),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? const Color(0xFF221D31)
+                      : const Color(0xFFF2EDF9),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isDark
+                        ? const Color(0xFF37304C)
+                        : const Color(0xFFDDD5EE),
+                  ),
+                ),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        _moneyByCurrency(
+                            product.priceCents, product.currencyCode),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: isDark
+                              ? const Color(0xFF57D0A6)
+                              : const Color(0xFF0F8A60),
+                          fontSize: 13.2,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      'Costo ${_moneyByCurrency(product.costPriceCents, product.currencyCode)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _metaPill(String text) {
+    final ThemeData theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF2A243C) : const Color(0xFFEAE4F7),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 9.2,
+          color: theme.colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
@@ -383,6 +467,8 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
                       ],
                     )
                   : GridView.builder(
+                      key: const PageStorageKey<String>('productos-grid'),
+                      controller: _scrollController,
                       cacheExtent: 200,
                       padding: const EdgeInsets.fromLTRB(8, 10, 8, 90),
                       physics: const AlwaysScrollableScrollPhysics(),
@@ -392,10 +478,14 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
                         crossAxisCount: 2,
                         mainAxisSpacing: 8,
                         crossAxisSpacing: 8,
-                        childAspectRatio: 1.5,
+                        mainAxisExtent: 176,
                       ),
                       itemBuilder: (_, int index) {
-                        return _buildProductCard(_products[index]);
+                        final Product product = _products[index];
+                        return KeyedSubtree(
+                          key: ValueKey<String>(product.id),
+                          child: _buildProductCard(product),
+                        );
                       },
                     ),
             ),
@@ -501,12 +591,16 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
     final ProductosLocalDataSource ds =
         ref.read(productosLocalDataSourceProvider);
     try {
-      final List<String> types =
-          await ds.listCatalogValues(ProductCatalogKind.type);
-      final List<String> categories =
-          await ds.listCatalogValues(ProductCatalogKind.category);
-      final List<String> units =
-          await ds.listCatalogValues(ProductCatalogKind.unit);
+      final List<List<String>> catalogs = await Future.wait<List<String>>(
+        <Future<List<String>>>[
+          ds.listCatalogValues(ProductCatalogKind.type),
+          ds.listCatalogValues(ProductCatalogKind.category),
+          ds.listCatalogValues(ProductCatalogKind.unit),
+        ],
+      );
+      final List<String> types = catalogs[0];
+      final List<String> categories = catalogs[1];
+      final List<String> units = catalogs[2];
 
       if (!mounted) {
         return;
@@ -1181,60 +1275,76 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
   }) {
     final ThemeData theme = Theme.of(context);
     final bool isDark = theme.brightness == Brightness.dark;
-    return Row(
-      children: <Widget>[
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    final Widget field = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF241F33) : const Color(0xFFEDE8F7),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isDark ? const Color(0xFF342E46) : const Color(0xFFDDD5EE),
+        ),
+      ),
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 34,
+            height: 34,
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF241F33) : const Color(0xFFEDE8F7),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color:
-                    isDark ? const Color(0xFF342E46) : const Color(0xFFDDD5EE),
+              color: iconColor,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: Colors.white, size: 18),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              onChanged: onChanged,
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                hintText: '0.00',
+                labelText: label,
+                filled: false,
+                labelStyle: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
               ),
             ),
-            child: Row(
-              children: <Widget>[
-                Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: iconColor,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(icon, color: Colors.white, size: 18),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: TextField(
-                    controller: controller,
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
-                    onChanged: onChanged,
-                    decoration: InputDecoration(
-                      border: InputBorder.none,
-                      hintText: '0.00',
-                      labelText: label,
-                      filled: false,
-                      labelStyle: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
-            ),
           ),
-        ),
-        const SizedBox(width: 10),
-        _buildCurrencySelector(),
-      ],
+        ],
+      ),
+    );
+
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (constraints.maxWidth < 360) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              field,
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: _buildCurrencySelector(),
+              ),
+            ],
+          );
+        }
+        return Row(
+          children: <Widget>[
+            Expanded(child: field),
+            const SizedBox(width: 10),
+            _buildCurrencySelector(),
+          ],
+        );
+      },
     );
   }
 

@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_providers.dart';
 import '../../../core/utils/app_result.dart';
+import '../../../core/utils/perf_trace.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../../shared/widgets/code_scanner_page.dart';
 import '../../almacenes/presentation/almacenes_providers.dart';
@@ -34,6 +35,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
   List<Warehouse> _warehouses = <Warehouse>[];
   List<Product> _products = <Product>[];
   List<Product> _visibleProducts = <Product>[];
+  final Map<String, Product> _productsById = <String, Product>{};
   String? _selectedWarehouseId;
   String _currencySymbol = AppConfig.defaultCurrencySymbol;
   bool _allowNegativeStock = false;
@@ -55,7 +57,12 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
   void initState() {
     super.initState();
     _searchCtrl.addListener(_onSearchChanged);
-    _bootstrap();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _bootstrap();
+    });
   }
 
   @override
@@ -79,6 +86,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
   }
 
   Future<void> _bootstrap() async {
+    final PerfTrace trace = PerfTrace('ventas_directas.bootstrap');
     if (mounted) {
       setState(() => _loading = true);
     }
@@ -89,6 +97,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
           return;
         }
         setState(() => _loading = false);
+        trace.end('sin sesion');
         _show('Debes iniciar sesion.');
         return;
       }
@@ -115,43 +124,36 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
         warehouseId = warehouses.isEmpty ? null : warehouses.first.id;
       }
 
-      final List<InventoryView> inventoryRows = warehouseId == null
-          ? <InventoryView>[]
-          : await ref
-              .read(inventarioLocalDataSourceProvider)
-              .listStocked(warehouseId: warehouseId);
-      final Map<String, double> stockByProductId = <String, double>{
-        for (final InventoryView row in inventoryRows) row.productId: row.qty,
-      };
-      final Set<String> availableIds = stockByProductId.keys.toSet();
-      final List<Product> products = await ref
-          .read(productosLocalDataSourceProvider)
-          .listActiveProductsByIds(availableIds);
+      final ({
+        List<Product> products,
+        Map<String, double> stockByProductId,
+        Set<String> availableIds
+      }) warehouseData = await _loadProductsForWarehouse(warehouseId);
+      trace.mark('almacen + productos cargados');
 
       if (!mounted) {
+        trace.end('unmounted');
         return;
       }
       setState(() {
         _warehouses = warehouses;
         _selectedWarehouseId = warehouseId;
-        _products = products;
-        _visibleProducts = _filterProducts(products, _searchCtrl.text);
-        _stockByProductId
-          ..clear()
-          ..addAll(stockByProductId);
-        _warehouseProductIds
-          ..clear()
-          ..addAll(availableIds);
+        _applyProductsForWarehouse(
+          products: warehouseData.products,
+          stockByProductId: warehouseData.stockByProductId,
+          availableIds: warehouseData.availableIds,
+        );
         _currencySymbol = config.currencySymbol;
         _allowNegativeStock = config.allowNegativeStock;
-        _sanitizeCart();
         _loading = false;
       });
+      trace.end('ok');
     } catch (e) {
       if (!mounted) {
         return;
       }
       setState(() => _loading = false);
+      trace.end('error');
       _show('No se pudo cargar Ventas Directas: $e');
     }
   }
@@ -161,12 +163,97 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
       return;
     }
     if (mounted) {
-      setState(() {
-        _selectedWarehouseId = warehouseId;
-        _loading = true;
-      });
+      setState(() => _selectedWarehouseId = warehouseId);
     }
-    await _bootstrap();
+    await _reloadWarehouseInventory(showLoader: true);
+  }
+
+  Future<
+      ({
+        List<Product> products,
+        Map<String, double> stockByProductId,
+        Set<String> availableIds
+      })> _loadProductsForWarehouse(String? warehouseId) async {
+    if (warehouseId == null || warehouseId.trim().isEmpty) {
+      return (
+        products: <Product>[],
+        stockByProductId: <String, double>{},
+        availableIds: <String>{},
+      );
+    }
+    final List<InventoryView> inventoryRows = await ref
+        .read(inventarioLocalDataSourceProvider)
+        .listStocked(warehouseId: warehouseId);
+    final Map<String, double> stockByProductId = <String, double>{
+      for (final InventoryView row in inventoryRows) row.productId: row.qty,
+    };
+    final Set<String> availableIds = stockByProductId.keys.toSet();
+    final List<Product> products = await ref
+        .read(productosLocalDataSourceProvider)
+        .listActiveProductsByIds(availableIds);
+    return (
+      products: products,
+      stockByProductId: stockByProductId,
+      availableIds: availableIds,
+    );
+  }
+
+  void _applyProductsForWarehouse({
+    required List<Product> products,
+    required Map<String, double> stockByProductId,
+    required Set<String> availableIds,
+  }) {
+    _products = products;
+    _visibleProducts = _filterProducts(products, _searchCtrl.text);
+    _productsById
+      ..clear()
+      ..addEntries(
+        products.map(
+          (Product product) => MapEntry<String, Product>(product.id, product),
+        ),
+      );
+    _stockByProductId
+      ..clear()
+      ..addAll(stockByProductId);
+    _warehouseProductIds
+      ..clear()
+      ..addAll(availableIds);
+    _sanitizeCart();
+  }
+
+  Future<void> _reloadWarehouseInventory({bool showLoader = false}) async {
+    final PerfTrace trace = PerfTrace('ventas_directas.reload_inventory');
+    if (showLoader && mounted) {
+      setState(() => _loading = true);
+    }
+    try {
+      final ({
+        List<Product> products,
+        Map<String, double> stockByProductId,
+        Set<String> availableIds
+      }) warehouseData = await _loadProductsForWarehouse(_selectedWarehouseId);
+      trace.mark('productos recargados');
+      if (!mounted) {
+        trace.end('unmounted');
+        return;
+      }
+      setState(() {
+        _applyProductsForWarehouse(
+          products: warehouseData.products,
+          stockByProductId: warehouseData.stockByProductId,
+          availableIds: warehouseData.availableIds,
+        );
+        _loading = false;
+      });
+      trace.end('ok');
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _loading = false);
+      trace.end('error');
+      _show('No se pudo recargar inventario del almacen: $e');
+    }
   }
 
   List<Product> _filterProducts(List<Product> products, String queryText) {
@@ -182,21 +269,28 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
   }
 
   List<_DirectCartLine> get _cartLines {
-    return _products
-        .where((Product p) => (_qtyByProductId[p.id] ?? 0) > 0)
-        .map(
-          (Product p) => _DirectCartLine(
-            product: p,
-            qty: _qtyByProductId[p.id] ?? 0,
-          ),
-        )
+    return _qtyByProductId.entries
+        .where((MapEntry<String, double> entry) => entry.value > 0)
+        .map((MapEntry<String, double> entry) {
+          final Product? product = _productsById[entry.key];
+          if (product == null) {
+            return null;
+          }
+          return _DirectCartLine(
+            product: product,
+            qty: entry.value,
+          );
+        })
+        .whereType<_DirectCartLine>()
         .toList();
   }
 
   int get _cartUnits {
     double total = 0;
-    for (final _DirectCartLine line in _cartLines) {
-      total += line.qty;
+    for (final double qty in _qtyByProductId.values) {
+      if (qty > 0) {
+        total += qty;
+      }
     }
     return total.round();
   }
@@ -255,12 +349,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
   }
 
   Product? _findProduct(String productId) {
-    for (final Product product in _products) {
-      if (product.id == productId) {
-        return product;
-      }
-    }
-    return null;
+    return _productsById[productId];
   }
 
   Future<void> _scanAndAddProduct() async {
@@ -890,7 +979,12 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
     switch (result) {
       case AppSuccess<CreateSaleResult>(:final data):
         setState(() => _qtyByProductId.clear());
-        await _bootstrap();
+        try {
+          await _reloadWarehouseInventory();
+        } catch (e) {
+          _show(
+              'Venta registrada, pero no se pudo refrescar el inventario: $e');
+        }
         if (!mounted) {
           return;
         }
@@ -1066,32 +1160,44 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
   Widget _productFilterField() {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return TextField(
-      controller: _searchCtrl,
-      decoration: InputDecoration(
-        hintText: 'Filtrar productos',
-        prefixIcon: const Icon(Icons.search_rounded),
-        suffixIcon: _searchCtrl.text.isEmpty
-            ? null
-            : IconButton(
-                onPressed: _searchCtrl.clear,
-                icon: const Icon(Icons.clear_rounded),
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: _searchCtrl,
+      builder: (
+        BuildContext context,
+        TextEditingValue value,
+        Widget? child,
+      ) {
+        return TextField(
+          controller: _searchCtrl,
+          decoration: InputDecoration(
+            hintText: 'Filtrar productos',
+            prefixIcon: const Icon(Icons.search_rounded),
+            suffixIcon: value.text.isEmpty
+                ? null
+                : IconButton(
+                    onPressed: _searchCtrl.clear,
+                    icon: const Icon(Icons.clear_rounded),
+                  ),
+            filled: true,
+            fillColor:
+                isDark ? const Color(0xFF211D2D) : const Color(0xFFF9F7FD),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(
+                color:
+                    isDark ? const Color(0xFF342E46) : const Color(0xFFE1D8F2),
               ),
-        filled: true,
-        fillColor: isDark ? const Color(0xFF211D2D) : const Color(0xFFF9F7FD),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(
-            color: isDark ? const Color(0xFF342E46) : const Color(0xFFE1D8F2),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(
+                color:
+                    isDark ? const Color(0xFF342E46) : const Color(0xFFE1D8F2),
+              ),
+            ),
           ),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(
-            color: isDark ? const Color(0xFF342E46) : const Color(0xFFE1D8F2),
-          ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -1329,7 +1435,13 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
           padding: const EdgeInsets.fromLTRB(12, 0, 12, 98),
           sliver: SliverGrid(
             delegate: SliverChildBuilderDelegate(
-              (_, int index) => _productCard(products[index]),
+              (_, int index) {
+                final Product product = products[index];
+                return KeyedSubtree(
+                  key: ValueKey<String>(product.id),
+                  child: _productCard(product),
+                );
+              },
               childCount: products.length,
             ),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
