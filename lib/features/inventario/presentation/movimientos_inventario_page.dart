@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_providers.dart';
@@ -22,6 +23,9 @@ class MovimientosInventarioPage extends ConsumerStatefulWidget {
 
 class _MovimientosInventarioPageState
     extends ConsumerState<MovimientosInventarioPage> {
+  final TextEditingController _searchCtrl = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+
   List<Warehouse> _warehouses = <Warehouse>[];
   List<Product> _products = <Product>[];
   List<InventoryMovementReason> _reasons = <InventoryMovementReason>[];
@@ -41,6 +45,13 @@ class _MovimientosInventarioPageState
       }
       _bootstrap();
     });
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
   }
 
   Future<void> _bootstrap() async {
@@ -515,6 +526,123 @@ class _MovimientosInventarioPageState
     await _bootstrap();
   }
 
+  Future<void> _openQuickFilters() async {
+    String? draftWarehouse = _selectedWarehouseId;
+    String draftReason = _selectedReasonCode;
+    final license = ref.read(currentLicenseStatusProvider);
+
+    final bool? apply = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: StatefulBuilder(
+            builder: (BuildContext context, StateSetter setModalState) {
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    DropdownButtonFormField<String?>(
+                      initialValue: draftWarehouse,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: 'Almacén'),
+                      items: <DropdownMenuItem<String?>>[
+                        const DropdownMenuItem<String?>(
+                          value: null,
+                          child: Text('Todos'),
+                        ),
+                        ..._warehouses.map(
+                          (Warehouse w) => DropdownMenuItem<String?>(
+                            value: w.id,
+                            child: Text(
+                              w.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                      ],
+                      onChanged: (String? value) {
+                        setModalState(() => draftWarehouse = value);
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      initialValue: draftReason,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: 'Motivo'),
+                      items: <DropdownMenuItem<String>>[
+                        const DropdownMenuItem<String>(
+                          value: 'all',
+                          child: Text('Todos'),
+                        ),
+                        ..._reasons.map(
+                          (InventoryMovementReason row) =>
+                              DropdownMenuItem<String>(
+                            value: row.code,
+                            child: Text(row.label),
+                          ),
+                        ),
+                      ],
+                      onChanged: (String? value) {
+                        if (value == null) {
+                          return;
+                        }
+                        setModalState(() => draftReason = value);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.of(context).pop(false),
+                            child: const Text('Cancelar'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () => Navigator.of(context).pop(true),
+                            child: const Text('Aplicar'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    if (license.canWrite)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: () async {
+                            Navigator.of(context).pop(false);
+                            await _openReasonsManager();
+                          },
+                          icon: const Icon(Icons.settings_outlined),
+                          label: const Text('Gestionar motivos'),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+
+    if (apply != true || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _selectedWarehouseId = draftWarehouse;
+      _selectedReasonCode = draftReason;
+    });
+    await _reloadMovements();
+  }
+
   Future<bool> _openReasonEditor({InventoryMovementReason? reason}) async {
     final bool isEdit = reason != null;
     String labelText = reason?.label ?? '';
@@ -628,23 +756,6 @@ class _MovimientosInventarioPageState
     }
   }
 
-  String _movementTypeLabel(String type) {
-    return type == 'in' ? 'Entrada' : 'Salida';
-  }
-
-  String _movementSourceLabel(String source) {
-    switch (source) {
-      case 'pos':
-        return 'POS';
-      case 'direct_sale':
-        return 'Venta directa';
-      case 'manual':
-        return 'Manual';
-      default:
-        return source;
-    }
-  }
-
   String _formatQty(double qty) {
     if (qty == qty.roundToDouble()) {
       return qty.toStringAsFixed(0);
@@ -663,33 +774,57 @@ class _MovimientosInventarioPageState
   }
 
   String _formatDateGroup(DateTime date) {
-    const List<String> weekdays = <String>[
-      'LUN',
+    const List<String> monthShort = <String>[
+      'ENE',
+      'FEB',
       'MAR',
-      'MIE',
-      'JUE',
-      'VIE',
-      'SAB',
-      'DOM',
-    ];
-    const List<String> months = <String>[
-      'enero',
-      'febrero',
-      'marzo',
-      'abril',
-      'mayo',
-      'junio',
-      'julio',
-      'agosto',
-      'septiembre',
-      'octubre',
-      'noviembre',
-      'diciembre',
+      'ABR',
+      'MAY',
+      'JUN',
+      'JUL',
+      'AGO',
+      'SEP',
+      'OCT',
+      'NOV',
+      'DIC',
     ];
     final DateTime local = date.toLocal();
-    final String dayName = weekdays[local.weekday - 1];
-    final String monthName = months[local.month - 1];
-    return '$dayName ${local.day} de $monthName de ${local.year}';
+    final DateTime now = DateTime.now();
+    final DateTime today = DateTime(now.year, now.month, now.day);
+    final DateTime movementDay = DateTime(local.year, local.month, local.day);
+    if (movementDay == today) {
+      return 'HOY, ${monthShort[local.month - 1]} ${local.day}';
+    }
+    if (movementDay == today.subtract(const Duration(days: 1))) {
+      return 'AYER, ${monthShort[local.month - 1]} ${local.day}';
+    }
+    return '${monthShort[local.month - 1]} ${local.day}, ${local.year}';
+  }
+
+  String _formatTimeShort(DateTime date) {
+    final DateTime local = date.toLocal();
+    final int hour12 = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final String mm = local.minute.toString().padLeft(2, '0');
+    final String period = local.hour >= 12 ? 'PM' : 'AM';
+    return '$hour12:$mm $period';
+  }
+
+  bool _isNeutralMovement(InventoryMovementView movement) {
+    final String reason = movement.reasonCode.toLowerCase();
+    final String label = movement.reasonLabel.toLowerCase();
+    return reason.contains('transfer') || label.contains('transfer');
+  }
+
+  bool _matchesSearch(InventoryMovementView movement, String query) {
+    if (query.isEmpty) {
+      return true;
+    }
+    final String q = query.toLowerCase();
+    return movement.productName.toLowerCase().contains(q) ||
+        movement.sku.toLowerCase().contains(q) ||
+        (movement.refId ?? '').toLowerCase().contains(q) ||
+        _formatDateTime(movement.createdAt).toLowerCase().contains(q) ||
+        movement.reasonLabel.toLowerCase().contains(q);
   }
 
   List<_MovementDateGroup> _groupByDate(List<InventoryMovementView> rows) {
@@ -724,159 +859,150 @@ class _MovimientosInventarioPageState
 
   Widget _movementCard(InventoryMovementView movement) {
     final ThemeData theme = Theme.of(context);
-    final ColorScheme scheme = theme.colorScheme;
-    final bool isDark = theme.brightness == Brightness.dark;
     final bool isIn = movement.movementType == 'in';
-    final Color tone = isIn
-        ? (isDark ? const Color(0xFF1F3A34) : const Color(0xFFE3F5EE))
-        : (isDark ? const Color(0xFF472733) : const Color(0xFFFCE9EE));
-    final Color ink = isIn ? const Color(0xFF57D0A6) : const Color(0xFFFF8EB4);
-    final IconData icon =
-        isIn ? Icons.south_west_rounded : Icons.north_east_rounded;
+    final bool neutral = _isNeutralMovement(movement);
+    final Color tone = neutral
+        ? (theme.brightness == Brightness.dark
+            ? const Color(0xFF334155)
+            : const Color(0xFFF1F5F9))
+        : isIn
+            ? (theme.brightness == Brightness.dark
+                ? const Color(0xFF14532D)
+                : const Color(0xFFDCFCE7))
+            : (theme.brightness == Brightness.dark
+                ? const Color(0xFF7F1D1D)
+                : const Color(0xFFFEE2E2));
+    final Color ink = neutral
+        ? theme.colorScheme.onSurfaceVariant
+        : isIn
+            ? const Color(0xFF16A34A)
+            : const Color(0xFFDC2626);
+    final IconData icon = neutral
+        ? Icons.swap_horiz_rounded
+        : isIn
+            ? Icons.south_west_rounded
+            : Icons.north_east_rounded;
+
+    final String amountText = neutral
+        ? _formatQty(movement.qty)
+        : isIn
+            ? '+${_formatQty(movement.qty)}'
+            : '-${_formatQty(movement.qty)}';
+    final String skuRef = (movement.refId ?? '').trim().isEmpty
+        ? 'SKU: ${movement.sku}'
+        : 'SKU: ${movement.sku} • Ref: ${movement.refId!.trim()}';
 
     return Container(
       decoration: BoxDecoration(
         color: theme.cardColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isDark ? const Color(0xFF342E46) : const Color(0xFFE2D9F3),
+        border: Border(
+          bottom: BorderSide(
+            color: theme.colorScheme.outline.withValues(alpha: 0.45),
+          ),
         ),
-        boxShadow: isDark
-            ? const <BoxShadow>[]
-            : const <BoxShadow>[
-                BoxShadow(
-                  color: Color(0x12000000),
-                  blurRadius: 10,
-                  offset: Offset(0, 3),
-                ),
-              ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+        child: Row(
           children: <Widget>[
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: Text(
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: tone,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: ink, size: 24),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
                     movement.productName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
                     ),
                   ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
+                  const SizedBox(height: 2),
+                  Text(
+                    skuRef,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontSize: 12,
+                    ),
                   ),
-                  decoration: BoxDecoration(
-                    color: tone,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Icon(icon, size: 14, color: ink),
-                      const SizedBox(width: 4),
-                      Text(
-                        _movementTypeLabel(movement.movementType),
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: ink,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'SKU: ${movement.sku}',
-              style: TextStyle(color: scheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color:
-                    isDark ? const Color(0xFF28233A) : const Color(0xFFF2ECFA),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                'Cantidad: ${_formatQty(movement.qty)}',
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: scheme.onSurface,
-                ),
+                ],
               ),
             ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: <Widget>[
-                _metaPill('Motivo', movement.reasonLabel),
-                _metaPill(
-                    'Origen', _movementSourceLabel(movement.movementSource)),
-                _metaPill('Almacen', movement.warehouseName),
-                _metaPill('Usuario', movement.username),
+                Text(
+                  amountText,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                    color: ink,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _formatTimeShort(movement.createdAt),
+                  style: TextStyle(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              _formatDateTime(movement.createdAt),
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-            if ((movement.note ?? '').trim().isNotEmpty) ...<Widget>[
-              const SizedBox(height: 6),
-              Container(
-                width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? const Color(0xFF211D2D)
-                      : const Color(0xFFF8F5FE),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  movement.note!.trim(),
-                  style: TextStyle(color: scheme.onSurface),
-                ),
-              ),
-            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _metaPill(String label, String value) {
-    final ThemeData theme = Theme.of(context);
-    final bool isDark = theme.brightness == Brightness.dark;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF28233A) : const Color(0xFFEDE7FA),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Text(
-        '$label: $value',
-        style: TextStyle(
-          fontSize: 11.5,
-          color: theme.colorScheme.onSurface,
-          fontWeight: FontWeight.w600,
+  Widget _buildTypeTab({
+    required String label,
+    required String value,
+    required ThemeData theme,
+  }) {
+    final bool selected = _selectedType == value;
+    return InkWell(
+      onTap: () async {
+        if (_selectedType == value) {
+          return;
+        }
+        setState(() => _selectedType = value);
+        await _reloadMovements();
+      },
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(0, 8, 0, 12),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: selected ? const Color(0xFF1152D4) : Colors.transparent,
+              width: 2,
+            ),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected
+                ? const Color(0xFF1152D4)
+                : theme.colorScheme.onSurfaceVariant,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            fontSize: 14,
+          ),
         ),
       ),
     );
@@ -884,230 +1010,185 @@ class _MovimientosInventarioPageState
 
   @override
   Widget build(BuildContext context) {
-    final List<_MovementDateGroup> groups = _groupByDate(_movements);
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final ThemeData theme = Theme.of(context);
+    final String query = _searchCtrl.text.trim().toLowerCase();
+    final List<InventoryMovementView> filteredMovements = query.isEmpty
+        ? _movements
+        : _movements.where((InventoryMovementView movement) {
+            return _matchesSearch(movement, query);
+          }).toList();
+    final List<_MovementDateGroup> groups = _groupByDate(filteredMovements);
     final license = ref.watch(currentLicenseStatusProvider);
 
     return AppScaffold(
-      title: 'Movimientos Inventario',
+      title: 'Movimientos',
       currentRoute: '/inventario-movimientos',
       onRefresh: _bootstrap,
+      showTopTabs: false,
+      useDefaultActions: false,
+      showDrawer: false,
+      appBarLeading: IconButton(
+        onPressed: () => context.go('/inventario'),
+        icon: const Icon(Icons.arrow_back_rounded),
+      ),
+      appBarActions: <Widget>[
+        IconButton(
+          tooltip: 'Buscar',
+          onPressed: () => _searchFocusNode.requestFocus(),
+          icon: const Icon(Icons.search_rounded),
+        ),
+        IconButton(
+          tooltip: 'Filtros',
+          onPressed: _openQuickFilters,
+          icon: const Icon(
+            Icons.filter_list_rounded,
+            color: Color(0xFF1152D4),
+          ),
+        ),
+      ],
       floatingActionButton: license.canWrite
-          ? FloatingActionButton.small(
+          ? FloatingActionButton(
               onPressed: _openMovementForm,
-              child: const Icon(Icons.add_rounded),
+              backgroundColor: const Color(0xFF1152D4),
+              child: const Icon(Icons.add_rounded, color: Colors.white),
             )
           : null,
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                children: <Widget>[
-                  Card(
-                    margin: EdgeInsets.zero,
+          : RefreshIndicator(
+              onRefresh: _reloadMovements,
+              child: CustomScrollView(
+                key: const PageStorageKey<String>(
+                  'inventario-movimientos-groups',
+                ),
+                slivers: <Widget>[
+                  SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        children: <Widget>[
-                          Row(
-                            children: <Widget>[
-                              Expanded(
-                                child: DropdownButtonFormField<String?>(
-                                  initialValue: _selectedWarehouseId,
-                                  isExpanded: true,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Almacen',
-                                  ),
-                                  items: <DropdownMenuItem<String?>>[
-                                    const DropdownMenuItem<String?>(
-                                      value: null,
-                                      child: Text('Todos'),
-                                    ),
-                                    ..._warehouses.map(
-                                      (Warehouse w) =>
-                                          DropdownMenuItem<String?>(
-                                        value: w.id,
-                                        child: Text(
-                                          w.name,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                  onChanged: (String? value) async {
-                                    setState(
-                                        () => _selectedWarehouseId = value);
-                                    await _reloadMovements();
-                                  },
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              IconButton.filledTonal(
-                                tooltip: 'Gestionar motivos',
-                                onPressed: license.canWrite
-                                    ? _openReasonsManager
-                                    : null,
-                                icon: const Icon(Icons.settings_outlined),
-                              ),
-                            ],
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: TextField(
+                        controller: _searchCtrl,
+                        focusNode: _searchFocusNode,
+                        decoration: InputDecoration(
+                          hintText: 'Buscar SKU, Referencia o Fecha',
+                          prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                          filled: true,
+                          fillColor: theme.cardColor,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
                           ),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: <Widget>[
-                              Expanded(
-                                child: DropdownButtonFormField<String>(
-                                  initialValue: _selectedType,
-                                  decoration:
-                                      const InputDecoration(labelText: 'Tipo'),
-                                  items: const <DropdownMenuItem<String>>[
-                                    DropdownMenuItem<String>(
-                                      value: 'all',
-                                      child: Text('Todos'),
-                                    ),
-                                    DropdownMenuItem<String>(
-                                      value: 'in',
-                                      child: Text('Entrada'),
-                                    ),
-                                    DropdownMenuItem<String>(
-                                      value: 'out',
-                                      child: Text('Salida'),
-                                    ),
-                                  ],
-                                  onChanged: (String? value) async {
-                                    if (value == null) {
-                                      return;
-                                    }
-                                    setState(() => _selectedType = value);
-                                    await _reloadMovements();
-                                  },
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: DropdownButtonFormField<String>(
-                                  initialValue: _selectedReasonCode,
-                                  isExpanded: true,
-                                  decoration: const InputDecoration(
-                                      labelText: 'Motivo'),
-                                  items: <DropdownMenuItem<String>>[
-                                    const DropdownMenuItem<String>(
-                                      value: 'all',
-                                      child: Text('Todos'),
-                                    ),
-                                    ..._reasons.map(
-                                      (InventoryMovementReason row) =>
-                                          DropdownMenuItem<String>(
-                                        value: row.code,
-                                        child: Text(row.label),
-                                      ),
-                                    ),
-                                  ],
-                                  onChanged: (String? value) async {
-                                    if (value == null) {
-                                      return;
-                                    }
-                                    setState(() => _selectedReasonCode = value);
-                                    await _reloadMovements();
-                                  },
-                                ),
-                              ),
-                            ],
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide.none,
                           ),
-                        ],
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide.none,
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(
+                              color: theme.colorScheme.primary.withValues(alpha: 0.2),
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                        onChanged: (_) => setState(() {}),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: RefreshIndicator(
-                      onRefresh: _reloadMovements,
-                      child: _movements.isEmpty
-                          ? ListView(
-                              children: const <Widget>[
-                                SizedBox(height: 48),
-                                Center(
-                                  child: Text('Sin movimientos para mostrar.'),
-                                ),
-                              ],
-                            )
-                          : ListView.builder(
-                              key: const PageStorageKey<String>(
-                                'inventario-movimientos-groups',
-                              ),
-                              cacheExtent: 500,
-                              itemCount: groups.length,
-                              itemBuilder: (_, int index) {
-                                final _MovementDateGroup group = groups[index];
-                                return KeyedSubtree(
-                                  key: ValueKey<int>(
-                                    group.date.millisecondsSinceEpoch,
-                                  ),
-                                  child: Padding(
-                                    padding: EdgeInsets.only(
-                                      bottom:
-                                          index == groups.length - 1 ? 0 : 10,
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: <Widget>[
-                                        Container(
-                                          width: double.infinity,
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 8,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: isDark
-                                                ? const Color(0xFF28233A)
-                                                : const Color(0xFFEFEAF9),
-                                            borderRadius:
-                                                BorderRadius.circular(12),
-                                          ),
-                                          child: Row(
-                                            children: <Widget>[
-                                              Expanded(
-                                                child: Text(
-                                                  _formatDateGroup(group.date),
-                                                  style: TextStyle(
-                                                    fontWeight: FontWeight.w800,
-                                                    color: Theme.of(context)
-                                                        .colorScheme
-                                                        .onSurface,
-                                                  ),
-                                                ),
-                                              ),
-                                              Text(
-                                                '${group.items.length} mov.',
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.w700,
-                                                  color: Theme.of(context)
-                                                      .colorScheme
-                                                      .onSurfaceVariant,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        const SizedBox(height: 8),
-                                        ...group.items.map(
-                                          (InventoryMovementView movement) {
-                                            return Padding(
-                                              padding: const EdgeInsets.only(
-                                                  bottom: 8),
-                                              child: _movementCard(movement),
-                                            );
-                                          },
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              },
+                  SliverToBoxAdapter(
+                    child: Container(
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface,
+                        border: Border(
+                          bottom: BorderSide(
+                            color: theme.colorScheme.outline.withValues(alpha: 0.4),
+                          ),
+                        ),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                        child: Row(
+                          children: <Widget>[
+                            _buildTypeTab(
+                              label: 'Todos',
+                              value: 'all',
+                              theme: theme,
                             ),
+                            const SizedBox(width: 24),
+                            _buildTypeTab(
+                              label: 'Entradas',
+                              value: 'in',
+                              theme: theme,
+                            ),
+                            const SizedBox(width: 24),
+                            _buildTypeTab(
+                              label: 'Salidas',
+                              value: 'out',
+                              theme: theme,
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
+                  ),
+                  if (groups.isEmpty)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(
+                        child: Text(
+                          'Sin movimientos para mostrar.',
+                          style: TextStyle(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (BuildContext context, int index) {
+                          int itemIndex = 0;
+                          for (final _MovementDateGroup group in groups) {
+                            if (index == itemIndex) {
+                              return Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  16,
+                                  16,
+                                  8,
+                                ),
+                                child: Text(
+                                  _formatDateGroup(group.date),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.8,
+                                    fontSize: 12,
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              );
+                            }
+                            itemIndex++;
+                            for (final movement in group.items) {
+                              if (index == itemIndex) {
+                                return _movementCard(movement);
+                              }
+                              itemIndex++;
+                            }
+                          }
+                          return null;
+                        },
+                        childCount: groups.fold<int>(
+                          0,
+                          (int sum, _MovementDateGroup g) => sum + 1 + g.items.length,
+                        ),
+                      ),
+                    ),
+                  const SliverToBoxAdapter(
+                    child: SizedBox(height: 80),
                   ),
                 ],
               ),

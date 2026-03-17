@@ -61,6 +61,8 @@ class _TpvPageState extends ConsumerState<TpvPage> {
   List<TpvTerminalView> _terminals = <TpvTerminalView>[];
   bool _loading = true;
   bool _showingIpvSheet = false;
+  String _selectedFilter = 'all';
+  final TextEditingController _searchCtrl = TextEditingController();
 
   @override
   void initState() {
@@ -1015,6 +1017,52 @@ class _TpvPageState extends ConsumerState<TpvPage> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  List<TpvTerminalView> _getFilteredTerminals() {
+    final String query = _searchCtrl.text.trim().toLowerCase();
+    return _terminals.where((TpvTerminalView terminal) {
+      // Filter by tab
+      if (_selectedFilter == 'open' && terminal.openSession == null) return false;
+      if (_selectedFilter == 'closed' && terminal.openSession != null) return false;
+      // Filter by search
+      if (query.isEmpty) return true;
+      return terminal.terminal.name.toLowerCase().contains(query) ||
+          terminal.terminal.code.toLowerCase().contains(query) ||
+          terminal.warehouse.name.toLowerCase().contains(query);
+    }).toList();
+  }
+
+  Widget _buildFilterTab({
+    required String label,
+    required String value,
+    required ThemeData theme,
+  }) {
+    final bool selected = _selectedFilter == value;
+    return InkWell(
+      onTap: () => setState(() => _selectedFilter = value),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(0, 16, 0, 12),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: selected ? const Color(0xFF1152D4) : Colors.transparent,
+              width: 2,
+            ),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected
+                ? const Color(0xFF1152D4)
+                : theme.colorScheme.onSurfaceVariant,
+            fontWeight: FontWeight.w700,
+            fontSize: 14,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _terminalCard(TpvTerminalView terminal) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
@@ -1039,173 +1087,239 @@ class _TpvPageState extends ConsumerState<TpvPage> {
       }
     }).join(', ');
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: BorderSide(
-          color: isDark ? const Color(0xFF342E46) : const Color(0xFFDDD5EF),
+    // Get responsible employees names
+    final String employeesText = open != null && open.responsibleEmployees.isNotEmpty
+        ? open.responsibleEmployees.map((e) => e.name).join(', ')
+        : (isOpen ? open!.user.username : 'Sin usuario');
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: scheme.outline.withValues(alpha: 0.2),
         ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
+      child: Column(
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? const Color(0xFF312948)
-                        : const Color(0xFFE8E2F4),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    Icons.point_of_sale_rounded,
-                    color: scheme.primary,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        terminal.terminal.name,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 15,
-                        ),
+                // Header row
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            terminal.terminal.name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 20,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Almacén: ${terminal.warehouse.name} | Moneda: ${config.currencyCode}',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${terminal.terminal.code} • Almacen: ${terminal.warehouse.name}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isOpen
+                            ? const Color(0xFFDCFCE7)
+                            : (isDark
+                                ? const Color(0xFF312948)
+                                : const Color(0xFFF1F5F9)),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        isOpen ? 'ABIERTO' : 'CERRADO',
                         style: TextStyle(
                           fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: isOpen
+                              ? const Color(0xFF15803D)
+                              : scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                // Info row
+                Row(
+                  children: <Widget>[
+                    Icon(
+                      isOpen ? Icons.person_outline : Icons.person_off_outlined,
+                      size: 18,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        open != null && open.responsibleEmployees.isNotEmpty
+                            ? employeesText
+                            : (isOpen ? open!.user.username : 'Sin usuario'),
+                        style: TextStyle(
+                          fontSize: 14,
                           color: scheme.onSurfaceVariant,
                         ),
                       ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: isOpen
-                        ? (isDark
-                            ? const Color(0xFF1F3A34)
-                            : const Color(0xFFE3F5EE))
-                        : (isDark
-                            ? const Color(0xFF312948)
-                            : const Color(0xFFE9E5F5)),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    isOpen ? 'Turno abierto' : 'Sin turno',
-                    style: TextStyle(
-                      color: isOpen ? const Color(0xFF57D0A6) : scheme.primary,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 11.5,
                     ),
-                  ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: <Widget>[
+                    Icon(
+                      Icons.payments_outlined,
+                      size: 18,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      methods,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Moneda: ${config.currencyCode} (${config.currencySymbol}) • Pagos: $methods',
-              style: TextStyle(
-                fontSize: 12,
-                color: scheme.onSurfaceVariant,
-                fontWeight: FontWeight.w500,
+          ),
+          // Action buttons
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            decoration: BoxDecoration(
+              border: Border(
+                top: BorderSide(
+                  color: scheme.outline.withValues(alpha: 0.1),
+                ),
               ),
             ),
-            const SizedBox(height: 6),
-            if (open != null)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    'Usuario: ${open.user.username} • Apertura: ${_formatDateTime(open.session.openedAt)}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: scheme.onSurface,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  if (open.responsibleEmployees.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        'Responsables: ${open.responsibleEmployees.map((TpvEmployee row) => row.name).join(', ')}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: scheme.onSurface,
-                          fontWeight: FontWeight.w600,
+            child: Column(
+              children: <Widget>[
+                // Main action buttons
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: isOpen
+                            ? () => _goToPos(terminal)
+                            : () => _openSession(terminal),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF1152D4),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        ),
+                        icon: Icon(
+                          isOpen ? Icons.point_of_sale : Icons.lock_open_rounded,
+                          size: 18,
+                        ),
+                        label: Text(
+                          isOpen ? 'Ir al POS' : 'Abrir turno',
+                          style: const TextStyle(fontSize: 14),
                         ),
                       ),
                     ),
-                ],
-              )
-            else
-              Text(
-                'No hay sesion activa para este TPV.',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: scheme.onSurfaceVariant,
+                    if (isOpen) ...<Widget>[
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _closeSession(terminal),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          ),
+                          icon: const Icon(Icons.lock_clock_outlined, size: 18),
+                          label: const Text(
+                            'Cerrar',
+                            style: TextStyle(fontSize: 14),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-              ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: <Widget>[
-                if (isOpen)
-                  FilledButton.icon(
-                    onPressed: () => _goToPos(terminal),
-                    icon: const Icon(Icons.shopping_cart_checkout_rounded),
-                    label: const Text('Ir al POS'),
-                  ),
-                OutlinedButton.icon(
-                  onPressed: isOpen
-                      ? () => _closeSession(terminal)
-                      : () => _openSession(terminal),
-                  icon: Icon(isOpen
-                      ? Icons.lock_clock_outlined
-                      : Icons.lock_open_rounded),
-                  label: Text(isOpen ? 'Cerrar turno' : 'Abrir turno'),
-                ),
-                if (isOpen)
-                  OutlinedButton.icon(
-                    onPressed: () => _openCurrentSessionIpv(terminal),
-                    icon: const Icon(Icons.table_chart_outlined),
-                    label: const Text('Ver IPV'),
-                  ),
-                IconButton.filledTonal(
-                  tooltip: 'Historial',
-                  onPressed: () => _openHistory(terminal),
-                  icon: const Icon(Icons.history_rounded),
-                ),
-                IconButton.filledTonal(
-                  tooltip: 'Editar',
-                  onPressed: () => _openForm(terminal: terminal.terminal),
-                  icon: const Icon(Icons.edit_outlined),
-                ),
-                IconButton.filledTonal(
-                  tooltip: 'Desactivar',
-                  onPressed: () => _deactivate(terminal),
-                  icon: const Icon(Icons.delete_outline_rounded),
+                const SizedBox(height: 8),
+                // Secondary action buttons
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: <Widget>[
+                    if (isOpen)
+                      _actionButton(
+                        icon: Icons.analytics_outlined,
+                        tooltip: 'Ver IPV',
+                        onPressed: () => _openCurrentSessionIpv(terminal),
+                        theme: theme,
+                      ),
+                    _actionButton(
+                      icon: Icons.history_rounded,
+                      tooltip: 'Historial',
+                      onPressed: () => _openHistory(terminal),
+                      theme: theme,
+                    ),
+                    _actionButton(
+                      icon: Icons.edit_outlined,
+                      tooltip: 'Editar',
+                      onPressed: () => _openForm(terminal: terminal.terminal),
+                      theme: theme,
+                    ),
+                    _actionButton(
+                      icon: isOpen ? Icons.block_rounded : Icons.check_circle_outline,
+                      tooltip: isOpen ? 'Cerrar turno' : 'Activar',
+                      onPressed: isOpen
+                          ? () => _closeSession(terminal)
+                          : () => _openSession(terminal),
+                      theme: theme,
+                      isDelete: isOpen,
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _actionButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onPressed,
+    required ThemeData theme,
+    bool isDelete = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: IconButton(
+        tooltip: tooltip,
+        onPressed: onPressed,
+        style: IconButton.styleFrom(
+          backgroundColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          foregroundColor: isDelete
+              ? (theme.brightness == Brightness.dark
+                  ? Colors.red.shade300
+                  : Colors.red.shade600)
+              : theme.colorScheme.onSurfaceVariant,
         ),
+        icon: Icon(icon, size: 20),
       ),
     );
   }
@@ -1213,57 +1327,104 @@ class _TpvPageState extends ConsumerState<TpvPage> {
   @override
   Widget build(BuildContext context) {
     final license = ref.watch(currentLicenseStatusProvider);
+    final ThemeData theme = Theme.of(context);
+    final List<TpvTerminalView> filteredTerminals = _getFilteredTerminals();
+    
+    // Count terminals by status
+    final int totalCount = _terminals.length;
+    final int openCount = _terminals.where((t) => t.openSession != null).length;
+    final int closedCount = _terminals.where((t) => t.openSession == null).length;
+
     return AppScaffold(
-      title: 'Terminales TPV',
+      title: 'Terminales de Venta',
       currentRoute: '/tpv',
       onRefresh: _load,
+      useDefaultActions: false,
+      showDrawer: false,
+      appBarLeading: IconButton(
+        onPressed: () => context.go('/home'),
+        icon: const Icon(Icons.arrow_back_rounded),
+      ),
+      appBarActions: <Widget>[
+        IconButton(
+          tooltip: 'Buscar',
+          onPressed: () {},
+          icon: const Icon(Icons.search_rounded),
+        ),
+        IconButton(
+          tooltip: 'Filtrar',
+          onPressed: () {},
+          icon: const Icon(Icons.filter_list_rounded),
+        ),
+      ],
       floatingActionButton: license.canWrite
-          ? Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                FloatingActionButton.small(
-                  heroTag: 'tpv-employees-fab',
-                  tooltip: 'Gestionar empleados',
-                  onPressed: _openEmployeesManager,
-                  child: const Icon(Icons.badge_outlined),
-                ),
-                const SizedBox(height: 10),
-                FloatingActionButton.small(
-                  heroTag: 'tpv-create-fab',
-                  tooltip: 'Nuevo TPV',
-                  onPressed: () => _openForm(),
-                  child: const Icon(Icons.add_rounded),
-                ),
-              ],
+          ? FloatingActionButton(
+              onPressed: () => _openForm(),
+              backgroundColor: const Color(0xFF1152D4),
+              child: const Icon(Icons.add_rounded, color: Colors.white),
             )
           : null,
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: _terminals.isEmpty
-                  ? ListView(
-                      padding: const EdgeInsets.all(16),
-                      children: const <Widget>[
-                        SizedBox(height: 40),
-                        Center(
-                          child: Text('No hay TPVs creados. Usa + para crear.'),
+          : Column(
+              children: <Widget>[
+                Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface,
+                    border: Border(
+                      bottom: BorderSide(
+                        color: theme.colorScheme.outline.withValues(alpha: 0.4),
+                      ),
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                    child: Row(
+                      children: <Widget>[
+                        _buildFilterTab(
+                          label: 'Todos ($totalCount)',
+                          value: 'all',
+                          theme: theme,
+                        ),
+                        const SizedBox(width: 24),
+                        _buildFilterTab(
+                          label: 'Abiertos ($openCount)',
+                          value: 'open',
+                          theme: theme,
+                        ),
+                        const SizedBox(width: 24),
+                        _buildFilterTab(
+                          label: 'Cerrados ($closedCount)',
+                          value: 'closed',
+                          theme: theme,
                         ),
                       ],
-                    )
-                  : ListView.builder(
-                      key: const PageStorageKey<String>('tpv-terminals-list'),
-                      cacheExtent: 420,
-                      padding: const EdgeInsets.fromLTRB(12, 14, 12, 90),
-                      itemCount: _terminals.length,
-                      itemBuilder: (_, int index) {
-                        final TpvTerminalView terminal = _terminals[index];
-                        return KeyedSubtree(
-                          key: ValueKey<String>(terminal.terminal.id),
-                          child: _terminalCard(terminal),
-                        );
-                      },
                     ),
+                  ),
+                ),
+                Expanded(
+                  child: filteredTerminals.isEmpty
+                      ? Center(
+                          child: Text(
+                            'No hay TPVs.',
+                            style: TextStyle(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        )
+                      : ListView.builder(
+                          key: const PageStorageKey<String>('tpv-terminals-list'),
+                          cacheExtent: 420,
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+                          itemCount: filteredTerminals.length,
+                          itemBuilder: (_, int index) {
+                            final TpvTerminalView terminal = filteredTerminals[index];
+                            return _terminalCard(terminal);
+                          },
+                        ),
+                ),
+              ],
             ),
     );
   }
@@ -1284,6 +1445,8 @@ class TpvEmployeesPage extends ConsumerStatefulWidget {
 class _TpvEmployeesPageState extends ConsumerState<TpvEmployeesPage> {
   List<TpvEmployee> _employees = <TpvEmployee>[];
   bool _loading = true;
+  String _selectedFilter = 'all';
+  final TextEditingController _searchCtrl = TextEditingController();
 
   String _sexLabel(String sex) {
     switch (sex.trim().toUpperCase()) {
@@ -1377,115 +1540,341 @@ class _TpvEmployeesPageState extends ConsumerState<TpvEmployeesPage> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  List<TpvEmployee> _getFilteredEmployees() {
+    final String query = _searchCtrl.text.trim().toLowerCase();
+    return _employees.where((TpvEmployee emp) {
+      // Filter by tab
+      if (_selectedFilter == 'active' && !emp.isActive) return false;
+      if (_selectedFilter == 'inactive' && emp.isActive) return false;
+      // Filter by search
+      if (query.isEmpty) return true;
+      return emp.name.toLowerCase().contains(query) ||
+          (emp.code.toLowerCase().contains(query)) ||
+          ((emp.associatedUsername ?? '').toLowerCase().contains(query)) ||
+          ((emp.identityNumber ?? '').toLowerCase().contains(query));
+    }).toList();
+  }
+
+  Widget _buildFilterTab({
+    required String label,
+    required String value,
+    required ThemeData theme,
+  }) {
+    final bool selected = _selectedFilter == value;
+    return InkWell(
+      onTap: () => setState(() => _selectedFilter = value),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(0, 8, 0, 12),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: selected ? const Color(0xFF1152D4) : Colors.transparent,
+              width: 2,
+            ),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected
+                ? const Color(0xFF1152D4)
+                : theme.colorScheme.onSurfaceVariant,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            fontSize: 14,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final license = ref.watch(currentLicenseStatusProvider);
+    final ThemeData theme = Theme.of(context);
+    final List<TpvEmployee> filteredEmployees = _getFilteredEmployees();
     return AppScaffold(
-      title: 'Empleados TPV',
+      title: 'Gestión de Empleados',
       currentRoute: '/tpv-empleados',
       onRefresh: _load,
+      useDefaultActions: false,
+      showDrawer: false,
+      appBarLeading: IconButton(
+        onPressed: () => context.go('/tpv'),
+        icon: const Icon(Icons.arrow_back_rounded),
+      ),
+      appBarActions: <Widget>[
+        IconButton(
+          tooltip: 'Buscar',
+          onPressed: () {},
+          icon: const Icon(Icons.search_rounded),
+        ),
+        IconButton(
+          tooltip: 'Filtrar',
+          onPressed: () {},
+          icon: const Icon(Icons.filter_list_rounded, color: Color(0xFF1152D4)),
+        ),
+      ],
       floatingActionButton: license.canWrite
-          ? FloatingActionButton.small(
-              tooltip: 'Nuevo empleado',
+          ? FloatingActionButton(
               onPressed: () => _openForm(),
-              child: const Icon(Icons.person_add_alt_1_rounded),
+              backgroundColor: const Color(0xFF1152D4),
+              child: const Icon(Icons.add_rounded, color: Colors.white),
             )
           : null,
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: _employees.isEmpty
-                  ? ListView(
-                      padding: const EdgeInsets.all(16),
+          : Column(
+              children: <Widget>[
+                Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface,
+                    border: Border(
+                      bottom: BorderSide(
+                        color: theme.colorScheme.outline.withValues(alpha: 0.4),
+                      ),
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                    child: Row(
                       children: <Widget>[
-                        const SizedBox(height: 40),
-                        Center(
-                          child: Column(
-                            children: <Widget>[
-                              const Text('No hay empleados registrados.'),
-                              const SizedBox(height: 10),
-                              FilledButton.icon(
-                                onPressed: () => _openForm(),
-                                icon: const Icon(Icons.add_rounded),
-                                label: const Text('Crear empleado'),
-                              ),
-                            ],
-                          ),
+                        _buildFilterTab(
+                          label: 'Todos',
+                          value: 'all',
+                          theme: theme,
+                        ),
+                        const SizedBox(width: 24),
+                        _buildFilterTab(
+                          label: 'Activos',
+                          value: 'active',
+                          theme: theme,
+                        ),
+                        const SizedBox(width: 24),
+                        _buildFilterTab(
+                          label: 'Inactivos',
+                          value: 'inactive',
+                          theme: theme,
                         ),
                       ],
-                    )
-                  : ListView.builder(
-                      key: const PageStorageKey<String>('tpv-employees-list'),
-                      cacheExtent: 360,
-                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-                      itemCount: _employees.length,
-                      itemBuilder: (_, int index) {
-                        final TpvEmployee employee = _employees[index];
-                        final List<String> info = <String>[
-                          if ((employee.sex ?? '').isNotEmpty)
-                            'Sexo: ${_sexLabel(employee.sex!)}',
-                          if ((employee.identityNumber ?? '').isNotEmpty)
-                            'CI: ${employee.identityNumber}',
-                          if ((employee.associatedUsername ?? '').isNotEmpty)
-                            'Usuario: ${employee.associatedUsername}',
-                          employee.isActive ? 'Activo' : 'Inactivo',
-                        ];
-                        return KeyedSubtree(
-                          key: ValueKey<String>(employee.id),
-                          child: Card(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: ListTile(
-                              leading: _employeeAvatar(
-                                imagePath: employee.imagePath,
-                                radius: 20,
-                                backgroundColor: employee.isActive
-                                    ? const Color(0xFFE3F5EE)
-                                    : const Color(0xFFE9E5F5),
-                                iconColor: employee.isActive
-                                    ? const Color(0xFF148A65)
-                                    : const Color(0xFF5A4D88),
-                              ),
-                              title: Text(
-                                employee.name,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              subtitle: Text(
-                                info.join(' • '),
-                              ),
-                              trailing: Wrap(
-                                spacing: 4,
-                                children: <Widget>[
-                                  IconButton(
-                                    tooltip: 'Editar',
-                                    onPressed: () =>
-                                        _openForm(employee: employee),
-                                    icon: const Icon(Icons.edit_outlined),
-                                  ),
-                                  IconButton(
-                                    tooltip: employee.isActive
-                                        ? 'Desactivar'
-                                        : 'Activar',
-                                    onPressed: () => _toggleEmployee(employee),
-                                    icon: Icon(
-                                      employee.isActive
-                                          ? Icons.person_off_outlined
-                                          : Icons.person_add_alt,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: TextField(
+                    controller: _searchCtrl,
+                    decoration: InputDecoration(
+                      hintText: 'Buscar empleado...',
+                      prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                      filled: true,
+                      fillColor: theme.cardColor,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+                Expanded(
+                  child: filteredEmployees.isEmpty
+                      ? Center(
+                          child: Text(
+                            'No hay empleados.',
+                            style: TextStyle(
+                              color: theme.colorScheme.onSurfaceVariant,
                             ),
                           ),
-                        );
-                      },
-                    ),
+                        )
+                      : ListView.builder(
+                          key: const PageStorageKey<String>('tpv-employees-list'),
+                          cacheExtent: 360,
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+                          itemCount: filteredEmployees.length,
+                          itemBuilder: (_, int index) {
+                            final TpvEmployee employee = filteredEmployees[index];
+                            return _employeeCard(employee, theme);
+                          },
+                        ),
+                ),
+              ],
             ),
+    );
+  }
+
+  Widget _employeeCard(TpvEmployee employee, ThemeData theme) {
+    final bool isActive = employee.isActive;
+    final String genderLabel = employee.sex != null && employee.sex!.isNotEmpty
+        ? 'Género: ${_sexLabel(employee.sex!)}'
+        : '';
+    final String ciLabel = (employee.identityNumber ?? '').isNotEmpty
+        ? 'CI: ${employee.identityNumber}'
+        : '';
+    
+    final List<String> infoParts = <String>[];
+    if (genderLabel.isNotEmpty) infoParts.add(genderLabel);
+    if (ciLabel.isNotEmpty) infoParts.add(ciLabel);
+    final String infoText = infoParts.join(' • ');
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: theme.colorScheme.outline.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          // Avatar
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: isActive
+                  ? const Color(0xFF1152D4).withValues(alpha: 0.1)
+                  : theme.colorScheme.surfaceContainerHighest,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isActive
+                    ? const Color(0xFF1152D4).withValues(alpha: 0.2)
+                    : theme.colorScheme.outline.withValues(alpha: 0.3),
+              ),
+            ),
+            child: ClipOval(
+              child: _buildAvatarImage(employee),
+            ),
+          ),
+          const SizedBox(width: 16),
+          // Info
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        employee.name,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isActive
+                            ? const Color(0xFFDCFCE7)
+                            : theme.colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        isActive ? 'Activo' : 'Inactivo',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: isActive
+                              ? const Color(0xFF15803D)
+                              : theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (infoText.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 2),
+                  Text(
+                    infoText,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+                if ((employee.associatedUsername ?? '').isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 2),
+                  Text(
+                    '@${employee.associatedUsername}',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF1152D4),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Actions
+          Column(
+            children: <Widget>[
+              IconButton(
+                tooltip: 'Editar',
+                onPressed: () => _openForm(employee: employee),
+                icon: Icon(
+                  Icons.edit_outlined,
+                  color: theme.colorScheme.onSurfaceVariant,
+                  size: 20,
+                ),
+              ),
+              IconButton(
+                tooltip: isActive ? 'Desactivar' : 'Activar',
+                onPressed: () => _toggleEmployee(employee),
+                icon: Icon(
+                  isActive ? Icons.block_rounded : Icons.check_circle_outline,
+                  color: isActive
+                      ? theme.colorScheme.onSurfaceVariant
+                      : const Color(0xFF1152D4),
+                  size: 20,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAvatarImage(TpvEmployee employee) {
+    final String trimmedPath = (employee.imagePath ?? '').trim();
+    if (trimmedPath.isEmpty) {
+      return Icon(
+        Icons.badge_outlined,
+        color: employee.isActive
+            ? const Color(0xFF1152D4)
+            : Colors.grey,
+        size: 32,
+      );
+    }
+    return Image.file(
+      File(trimmedPath),
+      width: 64,
+      height: 64,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => Icon(
+        Icons.badge_outlined,
+        color: employee.isActive
+            ? const Color(0xFF1152D4)
+            : Colors.grey,
+        size: 32,
+      ),
     );
   }
 }

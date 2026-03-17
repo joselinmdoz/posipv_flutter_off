@@ -158,9 +158,9 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
     final ThemeData theme = Theme.of(context);
     final bool isDark = theme.brightness == Brightness.dark;
     final Color placeholder =
-        isDark ? const Color(0xFF2A243B) : const Color(0xFFDCD5F3);
+        isDark ? const Color(0xFF233044) : const Color(0xFFEAF0F7);
     final Color placeholderIcon =
-        isDark ? const Color(0xFFB9AEE2) : const Color(0xFF574A82);
+        isDark ? const Color(0xFF9FB0C8) : const Color(0xFF6D809A);
 
     if (path == null || path.isEmpty) {
       return Container(
@@ -203,7 +203,6 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
       isScrollControlled: true,
       builder: (BuildContext context) {
         final ThemeData theme = Theme.of(context);
-        final bool isDark = theme.brightness == Brightness.dark;
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -238,11 +237,7 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
                 Text(
                   'Este QR contiene: id, codigo, nombre, precio de venta y moneda.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: isDark
-                        ? const Color(0xFFB9B1CD)
-                        : const Color(0xFF59526E),
-                  ),
+                  style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
                 ),
               ],
             ),
@@ -257,13 +252,14 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
     final ColorScheme scheme = theme.colorScheme;
     final bool isDark = theme.brightness == Brightness.dark;
     final String barcode = (product.barcode ?? '').trim();
+    final Color accent = scheme.primary;
 
     return Card(
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-          color: isDark ? const Color(0xFF342E46) : const Color(0xFFDDD5EF),
+          color: scheme.outline.withValues(alpha: isDark ? 0.8 : 0.9),
         ),
       ),
       child: InkWell(
@@ -281,9 +277,7 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: isDark
-                            ? const Color(0xFF3A3450)
-                            : const Color(0xFFD9D2EC),
+                        color: scheme.outline.withValues(alpha: 0.85),
                       ),
                     ),
                     child: ClipRRect(
@@ -334,9 +328,7 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
                     ),
                   ),
                   Material(
-                    color: isDark
-                        ? const Color(0xFF2B2540)
-                        : const Color(0xFFE8E1F8),
+                    color: accent.withValues(alpha: isDark ? 0.28 : 0.12),
                     borderRadius: BorderRadius.circular(10),
                     child: IconButton(
                       tooltip: 'Ver QR',
@@ -367,14 +359,10 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
               Container(
                 padding: const EdgeInsets.fromLTRB(8, 7, 8, 7),
                 decoration: BoxDecoration(
-                  color: isDark
-                      ? const Color(0xFF221D31)
-                      : const Color(0xFFF2EDF9),
+                  color: accent.withValues(alpha: isDark ? 0.2 : 0.08),
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: isDark
-                        ? const Color(0xFF37304C)
-                        : const Color(0xFFDDD5EE),
+                    color: accent.withValues(alpha: isDark ? 0.45 : 0.28),
                   ),
                 ),
                 child: Row(
@@ -387,9 +375,7 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontWeight: FontWeight.w800,
-                          color: isDark
-                              ? const Color(0xFF57D0A6)
-                              : const Color(0xFF0F8A60),
+                          color: accent,
                           fontSize: 13.2,
                         ),
                       ),
@@ -416,11 +402,12 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
 
   Widget _metaPill(String text) {
     final ThemeData theme = Theme.of(context);
-    final bool isDark = theme.brightness == Brightness.dark;
+    final Color accent = theme.colorScheme.primary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF2A243C) : const Color(0xFFEAE4F7),
+        color: accent.withValues(
+            alpha: theme.brightness == Brightness.dark ? 0.22 : 0.1),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -534,6 +521,8 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
   bool _syncingPriceFields = false;
 
   bool get _isEditing => widget.product != null;
+
+  Color _accentColor(ThemeData theme) => theme.colorScheme.primary;
 
   @override
   void initState() {
@@ -735,83 +724,6 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
     setState(() {
       _barcodeCtrl.text = resolved;
     });
-  }
-
-  Future<void> _addCatalogValue(ProductCatalogKind kind) async {
-    final TextEditingController input = TextEditingController();
-    final String title = switch (kind) {
-      ProductCatalogKind.type => 'Nuevo tipo de producto',
-      ProductCatalogKind.category => 'Nueva categoria',
-      ProductCatalogKind.unit => 'Nueva unidad de medida',
-    };
-
-    final String? value = await showDialog<String>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text(title),
-          content: TextField(
-            controller: input,
-            autofocus: true,
-            decoration: const InputDecoration(hintText: 'Escribe un valor'),
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(input.text.trim()),
-              child: const Text('Guardar'),
-            ),
-          ],
-        );
-      },
-    );
-
-    final String cleaned = (value ?? '').trim();
-    if (cleaned.isEmpty) {
-      return;
-    }
-
-    try {
-      await ref.read(productosLocalDataSourceProvider).addCatalogValue(
-            kind: kind,
-            value: cleaned,
-          );
-      await _loadCatalogs();
-
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        if (kind == ProductCatalogKind.type) {
-          _selectedType =
-              _firstExactOrCurrent(_typeOptions, cleaned, _selectedType);
-        }
-        if (kind == ProductCatalogKind.category) {
-          _selectedCategory = _firstExactOrCurrent(
-              _categoryOptions, cleaned, _selectedCategory);
-        }
-        if (kind == ProductCatalogKind.unit) {
-          _selectedUnit =
-              _firstExactOrCurrent(_unitOptions, cleaned, _selectedUnit);
-        }
-      });
-    } catch (e) {
-      _show('No se pudo guardar: $e');
-    }
-  }
-
-  String _firstExactOrCurrent(
-      List<String> options, String value, String current) {
-    for (final String option in options) {
-      if (option.toLowerCase() == value.toLowerCase()) {
-        return option;
-      }
-    }
-    return current;
   }
 
   Future<_ImagePickAction?> _showImageOptions(
@@ -1069,30 +981,15 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
     return (cents / 100).toStringAsFixed(2);
   }
 
-  String _dateText(DateTime date) {
-    final DateTime local = date.toLocal();
-    final String y = local.year.toString().padLeft(4, '0');
-    final String m = local.month.toString().padLeft(2, '0');
-    final String d = local.day.toString().padLeft(2, '0');
-    return '$y-$m-$d';
-  }
-
-  String _timeText(DateTime date) {
-    final DateTime local = date.toLocal();
-    final String h = local.hour.toString().padLeft(2, '0');
-    final String m = local.minute.toString().padLeft(2, '0');
-    return '$h:$m';
-  }
-
   Widget _buildImageContent(String? path) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
     if (path == null || path.isEmpty) {
       return Container(
-        color: isDark ? const Color(0xFF28233A) : const Color(0xFFE7E1F6),
+        color: isDark ? const Color(0xFF1A2334) : const Color(0xFFEAF0F7),
         child: Icon(
           Icons.image_not_supported_outlined,
           size: 30,
-          color: isDark ? const Color(0xFFB8A9F1) : const Color(0xFF5A4D88),
+          color: isDark ? const Color(0xFF9FB0C8) : const Color(0xFF798CA7),
         ),
       );
     }
@@ -1103,7 +1000,7 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
         fit: BoxFit.cover,
         cacheWidth: 640,
         errorBuilder: (_, __, ___) => Container(
-          color: isDark ? const Color(0xFF28233A) : const Color(0xFFDCD5F3),
+          color: isDark ? const Color(0xFF1A2334) : const Color(0xFFEAF0F7),
           child: const Icon(Icons.broken_image_outlined),
         ),
       );
@@ -1114,52 +1011,94 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
       fit: BoxFit.cover,
       cacheWidth: 640,
       errorBuilder: (_, __, ___) => Container(
-        color: isDark ? const Color(0xFF28233A) : const Color(0xFFDCD5F3),
+        color: isDark ? const Color(0xFF1A2334) : const Color(0xFFEAF0F7),
         child: const Icon(Icons.broken_image_outlined),
       ),
     );
   }
 
   Widget _buildImagePickerThumb() {
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final ThemeData theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
+    final Color accent = _accentColor(theme);
+    final Color dashColor =
+        isDark ? const Color(0xFF3A475E) : const Color(0xFFC4CFDF);
+    final Color boxColor =
+        isDark ? const Color(0xFF1A2334) : const Color(0xFFEFF3F8);
+
     return InkWell(
       onTap: _saving ? null : _pickImage,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(16),
       child: Stack(
-        clipBehavior: Clip.none,
         children: <Widget>[
           Container(
-            width: 92,
-            height: 92,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                color:
-                    isDark ? const Color(0xFF342E46) : const Color(0xFFD8D0EC),
+            width: double.infinity,
+            height: 230,
+            padding: const EdgeInsets.all(3),
+            child: CustomPaint(
+              painter: _DashedRoundedRectPainter(
+                color: dashColor,
+                radius: 14,
+                strokeWidth: 1.2,
+              ),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: boxColor,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: _selectedImagePath == null
+                    ? Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: <Widget>[
+                          Icon(
+                            Icons.image,
+                            size: 44,
+                            color: theme.colorScheme.onSurfaceVariant
+                                .withValues(alpha: 0.7),
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            'Pulsa para añadir imagen',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w500,
+                              color: theme.colorScheme.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'PNG, JPG hasta 10MB',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      )
+                    : _buildImageContent(_selectedImagePath),
               ),
             ),
-            clipBehavior: Clip.antiAlias,
-            child: _buildImageContent(_selectedImagePath),
           ),
           Positioned(
-            right: -4,
-            bottom: -4,
+            right: 14,
+            bottom: 14,
             child: Container(
-              width: 28,
-              height: 28,
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
-                color: const Color(0xFF5B4B8A),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: isDark
-                      ? const Color(0xFF16131E)
-                      : const Color(0xFFF2EEF9),
-                  width: 2,
-                ),
+                color: accent,
+                borderRadius: BorderRadius.circular(22),
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: accent.withValues(alpha: 0.28),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
               child: const Icon(
                 Icons.photo_camera_rounded,
-                size: 14,
+                size: 20,
                 color: Colors.white,
               ),
             ),
@@ -1169,300 +1108,282 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
     );
   }
 
-  Widget _buildLabeledBlock({
-    required IconData icon,
-    required String label,
-    required Widget child,
-    Widget? trailing,
+  Widget _buildSectionTitle(String title) {
+    final ThemeData theme = Theme.of(context);
+    final Color accent = _accentColor(theme);
+    return Row(
+      children: <Widget>[
+        Container(
+          width: 4,
+          height: 20,
+          decoration: BoxDecoration(
+            color: accent,
+            borderRadius: BorderRadius.circular(6),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.8,
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFieldLabel(String text) {
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontWeight: FontWeight.w500,
+          color: theme.colorScheme.onSurface,
+          fontSize: 15,
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _fieldDecoration({
+    required String hintText,
+    String? prefixText,
+    String? suffixText,
+    Widget? suffixIcon,
+    bool emphasize = false,
   }) {
     final ThemeData theme = Theme.of(context);
     final bool isDark = theme.brightness == Brightness.dark;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF241F33) : const Color(0xFFEDE8F7),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isDark ? const Color(0xFF342E46) : const Color(0xFFDCD3EE),
-        ),
+    final Color accent = _accentColor(theme);
+    final Color borderColor = emphasize
+        ? accent.withValues(alpha: 0.65)
+        : (isDark ? const Color(0xFF3C4A60) : const Color(0xFFCAD4E2));
+    final Color fillColor = isDark ? const Color(0xFF1A2333) : Colors.white;
+    return InputDecoration(
+      hintText: hintText,
+      prefixText: prefixText,
+      suffixText: suffixText,
+      suffixIcon: suffixIcon,
+      prefixStyle: TextStyle(
+        fontWeight: FontWeight.w700,
+        color: emphasize ? accent : theme.colorScheme.onSurfaceVariant,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? const Color(0xFF312948)
-                      : const Color(0xFFDCD3F1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  icon,
-                  size: 16,
-                  color: isDark
-                      ? const Color(0xFFB8A9F1)
-                      : const Color(0xFF564781),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: theme.colorScheme.onSurface,
-                  ),
-                ),
-              ),
-              if (trailing != null) trailing,
-            ],
-          ),
-          const SizedBox(height: 8),
-          child,
-        ],
+      suffixStyle: TextStyle(
+        fontWeight: FontWeight.w700,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+      hintStyle: TextStyle(
+        fontSize: 15,
+        color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.9),
+      ),
+      filled: true,
+      fillColor: fillColor,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: borderColor, width: 1),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: accent, width: 1.5),
       ),
     );
   }
 
-  Widget _buildCurrencySelector() {
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: const Color(0xFF5A4D89),
-        borderRadius: BorderRadius.circular(22),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: _selectedCurrency,
-          dropdownColor:
-              isDark ? const Color(0xFF241F33) : const Color(0xFFF4EFFB),
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w700,
-          ),
-          iconEnabledColor: Colors.white,
-          onChanged: (String? value) {
-            if (value == null) {
-              return;
-            }
-            setState(() => _selectedCurrency = value);
-          },
-          items: _kCurrencies
-              .map(
-                (String currency) => DropdownMenuItem<String>(
-                  value: currency,
-                  child: Text(currency),
-                ),
-              )
-              .toList(),
-        ),
-      ),
-    );
+  String _currencySymbolFor(String code) {
+    switch (code.toUpperCase()) {
+      case 'USD':
+        return r'$';
+      case 'CUP':
+        return '₱';
+      case 'EUR':
+        return '€';
+      default:
+        return r'$';
+    }
   }
 
-  Widget _buildPriceField({
-    required String label,
-    required TextEditingController controller,
-    required IconData icon,
-    required Color iconColor,
-    required ValueChanged<String> onChanged,
-  }) {
-    final ThemeData theme = Theme.of(context);
-    final bool isDark = theme.brightness == Brightness.dark;
-    final Widget field = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF241F33) : const Color(0xFFEDE8F7),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: isDark ? const Color(0xFF342E46) : const Color(0xFFDDD5EE),
-        ),
-      ),
-      child: Row(
-        children: <Widget>[
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: iconColor,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: Colors.white, size: 18),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: TextField(
-              controller: controller,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              onChanged: onChanged,
-              decoration: InputDecoration(
-                border: InputBorder.none,
-                hintText: '0.00',
-                labelText: label,
-                filled: false,
-                labelStyle: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        if (constraints.maxWidth < 360) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              field,
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerRight,
-                child: _buildCurrencySelector(),
-              ),
-            ],
-          );
-        }
-        return Row(
-          children: <Widget>[
-            Expanded(child: field),
-            const SizedBox(width: 10),
-            _buildCurrencySelector(),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildProfitField() {
-    final ThemeData theme = Theme.of(context);
-    final bool isDark = theme.brightness == Brightness.dark;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF241F33) : const Color(0xFFEDE8F7),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: isDark ? const Color(0xFF342E46) : const Color(0xFFDDD5EE),
-        ),
-      ),
-      child: Row(
-        children: <Widget>[
-          const Icon(Icons.trending_up_rounded, color: Color(0xFF51457D)),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '% de ganancia',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: theme.colorScheme.onSurface,
-              ),
-            ),
-          ),
-          SizedBox(
-            width: 88,
-            child: TextField(
-              controller: _profitCtrl,
-              onChanged: _onProfitChanged,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              textAlign: TextAlign.right,
-              decoration: const InputDecoration(
-                border: InputBorder.none,
-                hintText: '30',
-                filled: false,
-              ),
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-            ),
-          ),
-          const SizedBox(width: 4),
-          const Text(
-            '%',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF4D4276),
-            ),
-          ),
-        ],
-      ),
-    );
+  IconData _typeIcon(String option) {
+    final String normalized = option.trim().toLowerCase();
+    if (normalized.contains('digital')) {
+      return Icons.computer_rounded;
+    }
+    if (normalized.contains('serv')) {
+      return Icons.handyman_rounded;
+    }
+    return Icons.inventory_2_rounded;
   }
 
   Widget _catalogDropdownField({
-    required ProductCatalogKind kind,
-    required IconData icon,
     required String label,
     required List<String> options,
     required String selected,
     required ValueChanged<String> onChanged,
   }) {
     final ThemeData theme = Theme.of(context);
-    final ColorScheme scheme = theme.colorScheme;
     final bool isDark = theme.brightness == Brightness.dark;
     final String selectedValue =
         options.contains(selected) ? selected : options.first;
-
-    return _buildLabeledBlock(
-      icon: icon,
-      label: label,
-      trailing: IconButton.filledTonal(
-        tooltip: 'Anadir',
-        onPressed: _saving ? null : () => _addCatalogValue(kind),
-        icon: const Icon(Icons.add_rounded),
-      ),
-      child: DropdownButtonFormField<String>(
-        initialValue: selectedValue,
-        isExpanded: true,
-        dropdownColor:
-            isDark ? const Color(0xFF241F33) : const Color(0xFFF4EFFB),
-        style: TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w600),
-        icon: const Icon(Icons.keyboard_arrow_down_rounded),
-        decoration: InputDecoration(
-          filled: true,
-          fillColor: isDark ? const Color(0xFF211D2D) : const Color(0xFFF7F4FC),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(
-              color: isDark ? const Color(0xFF342E46) : const Color(0xFFD8D0EB),
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        _buildFieldLabel(label),
+        DropdownButtonFormField<String>(
+          initialValue: selectedValue,
+          isExpanded: true,
+          dropdownColor:
+              isDark ? const Color(0xFF1E2739) : const Color(0xFFF8FAFD),
+          decoration: _fieldDecoration(hintText: 'Seleccionar'),
+          icon: Icon(
+            Icons.expand_more_rounded,
+            color: isDark ? const Color(0xFF9BA9BE) : const Color(0xFF7F8FA7),
           ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: scheme.primary, width: 1.2),
+          items: options
+              .map(
+                (String option) => DropdownMenuItem<String>(
+                  value: option,
+                  child: Text(option),
+                ),
+              )
+              .toList(),
+          onChanged: (String? value) {
+            if (value == null) {
+              return;
+            }
+            onChanged(value);
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTypeSelector() {
+    final ThemeData theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
+    final Color accent = _accentColor(theme);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double width = (constraints.maxWidth - 12) / 2;
+        final String physical = _typeOptions.firstWhere(
+          (String item) => item.toLowerCase().contains('fis'),
+          orElse: () => _typeOptions.isNotEmpty ? _typeOptions.first : 'Fisico',
+        );
+        final String digital = _typeOptions.firstWhere(
+          (String item) => item.toLowerCase().contains('dig'),
+          orElse: () => 'Digital',
+        );
+        final List<String> options = <String>[
+          physical,
+          if (digital != physical) digital,
+        ];
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            _buildFieldLabel('Tipo de Producto'),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: options.map((String option) {
+                final bool selected = _selectedType == option;
+                return InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: _saving
+                      ? null
+                      : () => setState(() => _selectedType = option),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 140),
+                    width: width,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? accent.withValues(
+                              alpha: isDark ? 0.25 : 0.12,
+                            )
+                          : (isDark ? const Color(0xFF1A2333) : Colors.white),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: selected
+                            ? accent
+                            : (isDark
+                                ? const Color(0xFF3C4A60)
+                                : const Color(0xFFCAD4E2)),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: <Widget>[
+                        Icon(
+                          _typeIcon(option),
+                          size: 20,
+                          color: selected
+                              ? accent
+                              : theme.colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          option,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: selected
+                                ? accent
+                                : theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildPricingFields() {
+    final String symbol = _currencySymbolFor(_selectedCurrency);
+    return Column(
+      children: <Widget>[
+        _buildFieldLabel('Precio Coste'),
+        TextField(
+          controller: _costCtrl,
+          onChanged: _onCostChanged,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: _fieldDecoration(
+            hintText: '0.00',
+            prefixText: '$symbol ',
           ),
         ),
-        items: options
-            .map(
-              (String option) => DropdownMenuItem<String>(
-                value: option,
-                child: Text(option),
-              ),
-            )
-            .toList(),
-        onChanged: (String? value) {
-          if (value == null) {
-            return;
-          }
-          onChanged(value);
-        },
-      ),
+        const SizedBox(height: 12),
+        _buildFieldLabel('Margen (%)'),
+        TextField(
+          controller: _profitCtrl,
+          onChanged: _onProfitChanged,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: _fieldDecoration(
+            hintText: '30',
+            suffixText: '%',
+          ),
+        ),
+        const SizedBox(height: 12),
+        _buildFieldLabel('Precio Venta'),
+        TextField(
+          controller: _saleCtrl,
+          onChanged: _onSaleChanged,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: _fieldDecoration(
+            hintText: '0.00',
+            prefixText: '$symbol ',
+            emphasize: true,
+          ),
+        ),
+      ],
     );
   }
 
@@ -1474,177 +1395,123 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
 
   @override
   Widget build(BuildContext context) {
-    final DateTime now = DateTime.now();
     final ThemeData theme = Theme.of(context);
     final bool isDark = theme.brightness == Brightness.dark;
+    final Color accent = _accentColor(theme);
+    final Color pageColor = isDark ? const Color(0xFF0F1624) : Colors.white;
 
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
+      backgroundColor: pageColor,
       appBar: AppBar(
-        backgroundColor: theme.scaffoldBackgroundColor,
+        backgroundColor: pageColor,
         title: Text(
-          _isEditing ? 'Editar' : 'Anadir',
+          _isEditing ? 'Editar Producto' : 'Añadir Producto',
           style: const TextStyle(fontWeight: FontWeight.w700),
         ),
-        centerTitle: true,
+        centerTitle: false,
         leading: IconButton(
           onPressed: _saving ? null : () => Navigator.maybePop(context),
           icon: const Icon(Icons.arrow_back_rounded),
         ),
+        actions: <Widget>[
+          IconButton(
+            tooltip: 'Opciones',
+            onPressed: () {},
+            icon: const Icon(Icons.more_vert_rounded),
+          ),
+        ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(
+            height: 1,
+            color: isDark ? const Color(0xFF2A364A) : const Color(0xFFD8E0EB),
+          ),
+        ),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 104),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Expanded(
-                  child: TextField(
-                    controller: _nameCtrl,
-                    decoration: const InputDecoration(
-                      hintText: 'Nombre del producto',
-                      border: InputBorder.none,
-                      filled: false,
-                    ),
-                    style: const TextStyle(
-                      fontSize: 25,
-                      fontWeight: FontWeight.w400,
-                      height: 1.1,
-                    ),
-                    maxLines: 1,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                _buildImagePickerThumb(),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Wrap(
-              spacing: 14,
-              runSpacing: 6,
-              children: <Widget>[
-                Text(
-                  _dateText(now),
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                Text(
-                  _timeText(now),
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            _buildLabeledBlock(
-              icon: Icons.tag_rounded,
-              label: 'Codigo personalizado',
-              child: TextField(
-                controller: _codeCtrl,
-                decoration: const InputDecoration(
-                  border: InputBorder.none,
-                  isDense: true,
-                  hintText: 'Ej: A-001',
-                  filled: false,
-                ),
+            _buildImagePickerThumb(),
+            const SizedBox(height: 18),
+            _buildSectionTitle('INFORMACIÓN BÁSICA'),
+            const SizedBox(height: 12),
+            _buildFieldLabel('Nombre del Producto'),
+            TextField(
+              controller: _nameCtrl,
+              decoration: _fieldDecoration(
+                hintText: 'Ej. Camiseta de Algodón Premium',
               ),
             ),
-            const SizedBox(height: 10),
-            _buildLabeledBlock(
-              icon: Icons.qr_code_scanner_rounded,
-              label: 'Codigo de barras (opcional)',
-              trailing: IconButton.filledTonal(
-                tooltip: 'Escanear',
-                onPressed: _saving ? null : _scanAndSetBarcode,
-                icon: const Icon(Icons.center_focus_strong_rounded),
-              ),
-              child: TextField(
-                controller: _barcodeCtrl,
-                decoration: const InputDecoration(
-                  border: InputBorder.none,
-                  isDense: true,
-                  hintText: 'Escanea o escribe el codigo de barras',
-                  filled: false,
-                ),
-              ),
-            ),
-            const SizedBox(height: 14),
-            _buildPriceField(
-              label: 'Precio de costo',
-              controller: _costCtrl,
-              icon: Icons.savings_outlined,
-              iconColor: const Color(0xFF4B6CF6),
-              onChanged: _onCostChanged,
-            ),
-            const SizedBox(height: 10),
-            _buildProfitField(),
-            const SizedBox(height: 10),
-            _buildPriceField(
-              label: 'Precio de venta',
-              controller: _saleCtrl,
-              icon: Icons.sell_rounded,
-              iconColor: const Color(0xFFE9487D),
-              onChanged: _onSaleChanged,
-            ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
             if (_loadingCatalogs)
               const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
+                padding: EdgeInsets.only(bottom: 8),
                 child: LinearProgressIndicator(minHeight: 3),
               ),
             _catalogDropdownField(
-              kind: ProductCatalogKind.category,
-              icon: Icons.category_outlined,
-              label: 'Categoria',
+              label: 'Categoría',
               options: _categoryOptions,
               selected: _selectedCategory,
               onChanged: (String value) {
                 setState(() => _selectedCategory = value);
               },
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             _catalogDropdownField(
-              kind: ProductCatalogKind.type,
-              icon: Icons.widgets_outlined,
-              label: 'Tipo de producto',
-              options: _typeOptions,
-              selected: _selectedType,
-              onChanged: (String value) {
-                setState(() => _selectedType = value);
-              },
-            ),
-            const SizedBox(height: 10),
-            _catalogDropdownField(
-              kind: ProductCatalogKind.unit,
-              icon: Icons.straighten_rounded,
-              label: 'Unidad de medida',
+              label: 'Unidad de Medida',
               options: _unitOptions,
               selected: _selectedUnit,
               onChanged: (String value) {
                 setState(() => _selectedUnit = value);
               },
             ),
+            const SizedBox(height: 12),
+            _buildTypeSelector(),
+            const SizedBox(height: 20),
+            _buildSectionTitle('PRECIOS Y MÁRGENES'),
+            const SizedBox(height: 12),
+            _buildPricingFields(),
+            const SizedBox(height: 20),
+            _buildSectionTitle('IDENTIFICACIÓN'),
+            const SizedBox(height: 12),
+            _buildFieldLabel('Código Personalizado'),
+            TextField(
+              controller: _codeCtrl,
+              decoration: _fieldDecoration(
+                hintText: 'Ej: A-001',
+              ),
+            ),
+            const SizedBox(height: 12),
+            _buildFieldLabel('Código de Barras'),
+            TextField(
+              controller: _barcodeCtrl,
+              decoration: _fieldDecoration(
+                hintText: 'Escanea o escribe',
+                suffixIcon: IconButton(
+                  tooltip: 'Escanear',
+                  onPressed: _saving ? null : _scanAndSetBarcode,
+                  icon: Icon(
+                    Icons.qr_code_scanner_rounded,
+                    color: accent,
+                  ),
+                ),
+              ),
+            ),
             const SizedBox(height: 16),
           ],
         ),
       ),
       bottomNavigationBar: Container(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1B1826) : const Color(0xFFEAE4F6),
-          boxShadow: <BoxShadow>[
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 12,
-              offset: const Offset(0, -4),
+          color: isDark ? const Color(0xFF141B29) : pageColor,
+          border: Border(
+            top: BorderSide(
+              color: isDark ? const Color(0xFF2D3850) : const Color(0xFFD8E0EB),
             ),
-          ],
+          ),
         ),
         child: Row(
           children: <Widget>[
@@ -1658,6 +1525,9 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
                     foregroundColor: const Color(0xFFC73D6A),
                     side: const BorderSide(color: Color(0xFFC73D6A)),
                     padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
               ),
@@ -1667,7 +1537,7 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
               flex: _isEditing ? 2 : 1,
               child: FilledButton.icon(
                 onPressed: _saving ? null : _save,
-                icon: const Icon(Icons.save_outlined),
+                icon: const Icon(Icons.save_rounded),
                 label: Text(
                   _saving
                       ? 'Guardando...'
@@ -1676,7 +1546,11 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
                           : 'Guardar producto',
                 ),
                 style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  backgroundColor: accent,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                 ),
               ),
             ),
@@ -1684,6 +1558,49 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
         ),
       ),
     );
+  }
+}
+
+class _DashedRoundedRectPainter extends CustomPainter {
+  _DashedRoundedRectPainter({
+    required this.color,
+    required this.radius,
+    this.strokeWidth = 1,
+  });
+
+  final Color color;
+  final double radius;
+  final double strokeWidth;
+  static const double _dashWidth = 7;
+  static const double _dashGap = 5;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint paint = Paint()
+      ..color = color
+      ..strokeWidth = strokeWidth
+      ..style = PaintingStyle.stroke;
+
+    final RRect rrect = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      Radius.circular(radius),
+    );
+    final Path path = Path()..addRRect(rrect);
+    for (final metric in path.computeMetrics()) {
+      double distance = 0;
+      while (distance < metric.length) {
+        final double end = (distance + _dashWidth).clamp(0, metric.length);
+        canvas.drawPath(metric.extractPath(distance, end), paint);
+        distance += _dashWidth + _dashGap;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedRoundedRectPainter oldDelegate) {
+    return oldDelegate.color != color ||
+        oldDelegate.radius != radius ||
+        oldDelegate.strokeWidth != strokeWidth;
   }
 }
 

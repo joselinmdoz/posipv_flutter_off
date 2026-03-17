@@ -15,6 +15,10 @@ class AppScaffold extends ConsumerWidget {
     this.onRefresh,
     this.floatingActionButton,
     this.showTopTabs = true,
+    this.useDefaultActions = true,
+    this.appBarActions,
+    this.showDrawer = true,
+    this.appBarLeading,
   });
 
   final String title;
@@ -23,6 +27,10 @@ class AppScaffold extends ConsumerWidget {
   final Future<void> Function()? onRefresh;
   final Widget? floatingActionButton;
   final bool showTopTabs;
+  final bool useDefaultActions;
+  final List<Widget>? appBarActions;
+  final bool showDrawer;
+  final Widget? appBarLeading;
 
   static const List<_NavItem> _navItems = <_NavItem>[
     _NavItem('Principal', '/home', Icons.grid_view_rounded),
@@ -50,64 +58,27 @@ class AppScaffold extends ConsumerWidget {
     final LicenseStatus licenseStatus = ref.watch(currentLicenseStatusProvider);
     final bool isDark = theme.brightness == Brightness.dark;
     final List<Color> bodyGradient = isDark
-        ? const <Color>[Color(0xFF16131E), Color(0xFF0F0D15)]
-        : const <Color>[Color(0xFFF4F1FA), Color(0xFFECE8F4)];
+        ? <Color>[theme.scaffoldBackgroundColor, const Color(0xFF0B1220)]
+        : <Color>[theme.scaffoldBackgroundColor, const Color(0xFFFFFFFF)];
     final Widget? licenseBanner =
         _buildLicenseBanner(context, licenseStatus, activeRoute);
 
     return Scaffold(
-      drawer: _buildDrawer(context, ref, activeRoute, licenseStatus),
+      drawer: showDrawer
+          ? _buildDrawer(context, ref, activeRoute, licenseStatus)
+          : null,
       floatingActionButton: floatingActionButton,
       appBar: AppBar(
+        leading: appBarLeading,
         title: Text(
           title,
           style: const TextStyle(fontWeight: FontWeight.w700),
         ),
-        actions: <Widget>[
-          IconButton(
-            tooltip: 'Buscar',
-            onPressed: () =>
-                _showSoon(context, 'Busqueda rapida proximamente.'),
-            icon: const Icon(Icons.search_rounded),
-          ),
-          IconButton(
-            tooltip: 'Imprimir',
-            onPressed: () =>
-                _showSoon(context, 'Impresion de tickets proximamente.'),
-            icon: const Icon(Icons.print_outlined),
-          ),
-          PopupMenuButton<String>(
-            tooltip: 'Menu',
-            onSelected: (String value) {
-              _onTopMenu(value, context, ref);
-            },
-            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-              if (onRefresh != null)
-                const PopupMenuItem<String>(
-                  value: 'refresh',
-                  child: Text('Actualizar vista'),
-                ),
-              const PopupMenuItem<String>(
-                value: 'config',
-                child: Text('Ir a configuracion'),
-              ),
-              const PopupMenuDivider(),
-              const PopupMenuItem<String>(
-                value: 'logout',
-                child: Text('Cerrar sesion'),
-              ),
-            ],
-            icon: const Icon(Icons.more_vert_rounded),
-          ),
-          const SizedBox(width: 4),
-        ],
-        bottom: showTopTabs
-            ? PreferredSize(
-                preferredSize: const Size.fromHeight(56),
-                child: _buildTopTabs(context, activeRoute, licenseStatus),
-              )
-            : null,
+        actions: _buildAppBarActions(context, ref),
       ),
+      bottomNavigationBar: showTopTabs
+          ? _buildBottomNav(context, activeRoute, licenseStatus)
+          : null,
       body: DecoratedBox(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -124,6 +95,55 @@ class AppScaffold extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  List<Widget> _buildAppBarActions(BuildContext context, WidgetRef ref) {
+    final List<Widget> actions = <Widget>[];
+    if (useDefaultActions) {
+      actions.addAll(<Widget>[
+        IconButton(
+          tooltip: 'Buscar',
+          onPressed: () => _showSoon(context, 'Busqueda rapida proximamente.'),
+          icon: const Icon(Icons.search_rounded),
+        ),
+        IconButton(
+          tooltip: 'Imprimir',
+          onPressed: () =>
+              _showSoon(context, 'Impresion de tickets proximamente.'),
+          icon: const Icon(Icons.print_outlined),
+        ),
+        PopupMenuButton<String>(
+          tooltip: 'Menu',
+          onSelected: (String value) {
+            _onTopMenu(value, context, ref);
+          },
+          itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+            if (onRefresh != null)
+              const PopupMenuItem<String>(
+                value: 'refresh',
+                child: Text('Actualizar vista'),
+              ),
+            const PopupMenuItem<String>(
+              value: 'config',
+              child: Text('Ir a configuracion'),
+            ),
+            const PopupMenuDivider(),
+            const PopupMenuItem<String>(
+              value: 'logout',
+              child: Text('Cerrar sesion'),
+            ),
+          ],
+          icon: const Icon(Icons.more_vert_rounded),
+        ),
+      ]);
+    }
+    if (appBarActions != null && appBarActions!.isNotEmpty) {
+      actions.addAll(appBarActions!);
+    }
+    if (actions.isNotEmpty) {
+      actions.add(const SizedBox(width: 4));
+    }
+    return actions;
   }
 
   Widget _buildTopTabs(
@@ -163,11 +183,16 @@ class AppScaffold extends ConsumerWidget {
                   decoration: BoxDecoration(
                     color: isActive
                         ? (isDark
-                            ? const Color(0xFF3B3158)
-                            : const Color(0xFFDDD5F4))
+                            ? scheme.primary.withValues(alpha: 0.26)
+                            : scheme.primary.withValues(alpha: 0.15))
                         : (isDark
-                            ? const Color(0xFF241F33)
-                            : const Color(0xFFEDE8F8)),
+                            ? scheme.surface.withValues(alpha: 0.88)
+                            : scheme.surface),
+                    border: Border.all(
+                      color: isActive
+                          ? scheme.primary.withValues(alpha: 0.5)
+                          : scheme.outline.withValues(alpha: 0.8),
+                    ),
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Row(
@@ -177,16 +202,14 @@ class AppScaffold extends ConsumerWidget {
                         item.icon,
                         size: 16,
                         color:
-                            isDark ? scheme.primary : const Color(0xFF4A3F73),
+                            isActive ? scheme.primary : scheme.onSurfaceVariant,
                       ),
                       const SizedBox(width: 6),
                       Text(
                         item.label,
                         style: TextStyle(
                           fontSize: 13,
-                          color: isDark
-                              ? const Color(0xFFF0ECFA)
-                              : const Color(0xFF3A3354),
+                          color: isActive ? scheme.primary : scheme.onSurface,
                           fontWeight:
                               isActive ? FontWeight.w700 : FontWeight.w500,
                         ),
@@ -202,19 +225,97 @@ class AppScaffold extends ConsumerWidget {
     );
   }
 
+  Widget _buildBottomNav(
+    BuildContext context,
+    String activeRoute,
+    LicenseStatus licenseStatus,
+  ) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final bool isDark = theme.brightness == Brightness.dark;
+
+    // Filter only main navigation items for bottom nav
+    final List<_NavItem> bottomNavItems = <_NavItem>[
+      _navItems[0], // Principal
+      _navItems[5], // Productos
+      _navItems[3], // Ventas
+      _navItems[1], // TPV
+      _navItems[11], // Ajustes
+    ];
+
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        border: Border(
+          top: BorderSide(
+            color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+            width: 1,
+          ),
+        ),
+      ),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: bottomNavItems.map((_NavItem item) {
+              final bool isActive = item.route == activeRoute;
+              return Expanded(
+                child: InkWell(
+                  onTap: () =>
+                      _go(context, item.route, activeRoute, licenseStatus),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Icon(
+                          item.icon,
+                          size: 24,
+                          color: isActive
+                              ? const Color(0xFF1152D4)
+                              : (isDark
+                                  ? const Color(0xFF94A3B8)
+                                  : const Color(0xFF64748B)),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          item.label,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight:
+                                isActive ? FontWeight.w700 : FontWeight.w500,
+                            color: isActive
+                                ? const Color(0xFF1152D4)
+                                : (isDark
+                                    ? const Color(0xFF94A3B8)
+                                    : const Color(0xFF64748B)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ),
+    );
+  }
+
   Drawer _buildDrawer(
     BuildContext context,
     WidgetRef ref,
     String activeRoute,
     LicenseStatus licenseStatus,
   ) {
-    bool isTravelMode = false;
     final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
     final bool isDark = theme.brightness == Brightness.dark;
-    final Color drawerTitleColor =
-        isDark ? const Color(0xFFF1EDFA) : const Color(0xFF4C4376);
-    final Color drawerSubtitleColor =
-        isDark ? const Color(0xFFB8B0CE) : const Color(0xFF5C5970);
+    final Color drawerTitleColor = scheme.onSurface;
+    final Color drawerSubtitleColor = scheme.onSurfaceVariant;
 
     return Drawer(
       child: SafeArea(
@@ -254,8 +355,8 @@ class AppScaffold extends ConsumerWidget {
                       ),
                       selected: item.route == activeRoute,
                       selectedTileColor: isDark
-                          ? const Color(0xFF312948)
-                          : const Color(0xFFE2DBF6),
+                          ? scheme.primary.withValues(alpha: 0.2)
+                          : scheme.primary.withValues(alpha: 0.12),
                       leading: Icon(item.icon),
                       title: Text(
                         item.label,
@@ -305,8 +406,9 @@ class AppScaffold extends ConsumerWidget {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
                 ),
-                tileColor:
-                    isDark ? const Color(0xFF241F33) : const Color(0xFFF4EFFB),
+                tileColor: isDark
+                    ? scheme.surface.withValues(alpha: 0.85)
+                    : scheme.surface,
                 leading: const Icon(Icons.logout_rounded),
                 title: const Text('Cerrar sesion'),
                 onTap: () {

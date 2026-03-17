@@ -14,6 +14,8 @@ class InventoryView {
     required this.qty,
     required this.priceCents,
     required this.taxRateBps,
+    this.currencyCode = 'USD',
+    this.imagePath,
   });
 
   final String productId;
@@ -22,7 +24,11 @@ class InventoryView {
   final double qty;
   final int priceCents;
   final int taxRateBps;
+  final String currencyCode;
+  final String? imagePath;
 }
+
+enum InventoryListFilter { all, inStock, lowStock, outOfStock }
 
 class InventoryMovementReason {
   const InventoryMovementReason({
@@ -321,6 +327,132 @@ class InventarioLocalDataSource {
         qty: row.read<double>('qty'),
         priceCents: row.read<int>('price_cents'),
         taxRateBps: row.read<int>('tax_rate_bps'),
+      );
+    }).toList();
+  }
+
+  Future<List<InventoryView>> listInventoryPage({
+    String? warehouseId,
+    String? search,
+    int limit = 60,
+    int offset = 0,
+    InventoryListFilter filter = InventoryListFilter.all,
+    double lowStockThreshold = 10,
+  }) async {
+    final int safeLimit = limit < 1 ? 1 : limit;
+    final int safeOffset = offset < 0 ? 0 : offset;
+    final String cleanedSearch = (search ?? '').trim().toLowerCase();
+    final StringBuffer sql = StringBuffer(
+      '''
+      SELECT
+        p.id,
+        p.name,
+        p.sku,
+        p.price_cents,
+        p.tax_rate_bps,
+        p.currency_code,
+        p.image_path,
+        COALESCE(SUM(sb.qty), 0) AS qty
+      FROM products p
+      LEFT JOIN stock_balances sb
+        ON sb.product_id = p.id
+      ''',
+    );
+    final List<Variable<Object>> variables = <Variable<Object>>[];
+
+    if (warehouseId != null && warehouseId.trim().isNotEmpty) {
+      sql.write(' AND sb.warehouse_id = ?');
+      variables.add(Variable<String>(warehouseId.trim()));
+    }
+
+    sql.write(
+      '''
+      WHERE p.is_active = 1
+        AND p.id IS NOT NULL
+        AND p.name IS NOT NULL
+        AND p.sku IS NOT NULL
+        AND p.price_cents IS NOT NULL
+        AND p.tax_rate_bps IS NOT NULL
+      ''',
+    );
+
+    if (cleanedSearch.isNotEmpty) {
+      sql.write(
+        '''
+         AND (
+           LOWER(p.name) LIKE ?
+           OR LOWER(p.sku) LIKE ?
+           OR LOWER(COALESCE(p.barcode, '')) LIKE ?
+         )
+        ''',
+      );
+      final String pattern = '%$cleanedSearch%';
+      variables.addAll(<Variable<Object>>[
+        Variable<String>(pattern),
+        Variable<String>(pattern),
+        Variable<String>(pattern),
+      ]);
+    }
+
+    sql.write(
+      '''
+      GROUP BY
+        p.id,
+        p.name,
+        p.sku,
+        p.price_cents,
+        p.tax_rate_bps,
+        p.currency_code,
+        p.image_path
+      ''',
+    );
+
+    const String qtyExpr = 'COALESCE(SUM(sb.qty), 0)';
+    switch (filter) {
+      case InventoryListFilter.all:
+        break;
+      case InventoryListFilter.inStock:
+        sql.write(' HAVING $qtyExpr > ?');
+        variables.add(Variable<double>(lowStockThreshold));
+        break;
+      case InventoryListFilter.lowStock:
+        sql.write(' HAVING $qtyExpr > 0 AND $qtyExpr <= ?');
+        variables.add(Variable<double>(lowStockThreshold));
+        break;
+      case InventoryListFilter.outOfStock:
+        sql.write(' HAVING $qtyExpr <= 0');
+        break;
+    }
+
+    sql.write(
+      '''
+      ORDER BY p.name ASC
+      LIMIT ? OFFSET ?
+      ''',
+    );
+    variables.addAll(<Variable<Object>>[
+      Variable<int>(safeLimit),
+      Variable<int>(safeOffset),
+    ]);
+
+    final List<QueryRow> rows = await _db
+        .customSelect(
+          sql.toString(),
+          variables: variables,
+        )
+        .get();
+
+    return rows.map((QueryRow row) {
+      return InventoryView(
+        productId: row.read<String>('id'),
+        productName: row.read<String>('name'),
+        sku: row.read<String>('sku'),
+        qty: row.read<double>('qty'),
+        priceCents: row.read<int>('price_cents'),
+        taxRateBps: row.read<int>('tax_rate_bps'),
+        currencyCode:
+            (row.readNullable<String>('currency_code') ?? 'USD').trim(),
+        imagePath: row.readNullable<String>('image_path'),
       );
     }).toList();
   }
