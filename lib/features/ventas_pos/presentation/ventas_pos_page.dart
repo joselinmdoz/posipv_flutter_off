@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,6 +16,7 @@ import '../../configuracion/data/configuracion_local_datasource.dart';
 import '../../configuracion/presentation/configuracion_providers.dart';
 import '../../inventario/data/inventario_local_datasource.dart';
 import '../../inventario/presentation/inventario_providers.dart';
+import '../../productos/data/productos_local_datasource.dart';
 import '../../productos/domain/product_qr_codec.dart';
 import '../../productos/presentation/productos_providers.dart';
 import '../../reportes/data/reportes_local_datasource.dart';
@@ -25,6 +25,10 @@ import '../../tpv/data/tpv_local_datasource.dart';
 import '../../tpv/presentation/tpv_providers.dart';
 import '../domain/sale_models.dart';
 import 'ventas_pos_providers.dart';
+import 'widgets/pos_bottom_footer.dart';
+import 'widgets/pos_products_grid.dart';
+import 'widgets/pos_search_bar.dart';
+import 'widgets/pos_store_info_bar.dart';
 
 class VentasPosPage extends ConsumerStatefulWidget {
   const VentasPosPage({super.key});
@@ -42,6 +46,8 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
   final Map<String, double> _stockByProductId = <String, double>{};
   final TextEditingController _searchCtrl = TextEditingController();
   Timer? _searchDebounce;
+  List<String> _categories = <String>['Todos'];
+  String _selectedCategory = 'Todos';
 
   String? _warehouseId;
   String? _warehouseName;
@@ -86,6 +92,14 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       setState(() {
         _visibleProducts = _filterProducts(_products, _searchCtrl.text);
       });
+    });
+  }
+
+  void _onCategoryChanged(String category) {
+    if (_selectedCategory == category) return;
+    setState(() {
+      _selectedCategory = category;
+      _visibleProducts = _filterProducts(_products, _searchCtrl.text);
     });
   }
 
@@ -171,7 +185,12 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       final List<Product> products = await ref
           .read(productosLocalDataSourceProvider)
           .listActiveProductsByIds(warehouseProductIds);
-      trace.mark('productos cargados');
+      
+      final List<String> realCats = await ref
+          .read(productosLocalDataSourceProvider)
+          .listCatalogValues(ProductCatalogKind.category);
+      
+      trace.mark('productos + categorias cargados');
 
       if (!mounted) {
         return;
@@ -183,6 +202,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
           warehouseProductIds: warehouseProductIds,
           stockByProductId: stockByProductId,
         );
+        _categories = <String>['Todos', ...realCats];
         _warehouseId = terminalView.warehouse.id;
         _warehouseName = terminalView.warehouse.name;
         _terminalId = terminalView.terminal.id;
@@ -305,13 +325,20 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
 
   List<Product> _filterProducts(List<Product> products, String queryText) {
     final String query = queryText.trim().toLowerCase();
-    if (query.isEmpty) {
-      return products;
-    }
+    
     return products.where((Product product) {
-      return product.name.toLowerCase().contains(query) ||
+      // Filter by category
+      bool categoryMatch = true;
+      if (_selectedCategory != 'Todos') {
+        categoryMatch = product.category == _selectedCategory;
+      }
+
+      final bool searchMatch = query.isEmpty ||
+          product.name.toLowerCase().contains(query) ||
           product.sku.toLowerCase().contains(query) ||
           (product.barcode ?? '').toLowerCase().contains(query);
+
+      return categoryMatch && searchMatch;
     }).toList();
   }
 
@@ -2132,534 +2159,32 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     );
   }
 
-  int _gridColumnsForWidth(double width) {
-    if (width >= 1200) {
-      return 7;
-    }
-    if (width >= 980) {
-      return 6;
-    }
-    if (width >= 760) {
-      return 5;
-    }
-    if (width >= 560) {
-      return 4;
-    }
-    if (width >= 350) {
-      return 3;
-    }
-    return 2;
-  }
 
-  double _gridAspectRatioForWidth(double width) {
-    if (width < 350) {
-      return 0.88;
-    }
-    if (width < 430) {
-      return 0.96;
-    }
-    if (width < 560) {
-      return 1.02;
-    }
-    if (width < 760) {
-      return 1.06;
-    }
-    return 1.1;
-  }
+  // ── Action Buttons ──────────────────────────────────────────────────────
 
-  Widget _terminalHeader() {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme scheme = theme.colorScheme;
-    final bool isDark = theme.brightness == Brightness.dark;
-    final bool hasTerminal = _terminalId != null;
-    final String title =
-        hasTerminal ? (_terminalName ?? 'TPV') : 'Sin TPV activo';
-    final bool open = _openSessionId != null;
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: isDark ? const Color(0xFF342E46) : const Color(0xFFE2DAF3),
-        ),
-      ),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 15,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: !hasTerminal
-                        ? (isDark
-                            ? const Color(0xFF2D2740)
-                            : const Color(0xFFECE9F5))
-                        : open
-                            ? (isDark
-                                ? const Color(0xFF1F3A34)
-                                : const Color(0xFFE3F5EE))
-                            : (isDark
-                                ? const Color(0xFF472733)
-                                : const Color(0xFFF8E9EF)),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    !hasTerminal
-                        ? 'Sin seleccionar'
-                        : open
-                            ? 'Turno abierto'
-                            : 'Sin turno',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: !hasTerminal
-                          ? scheme.onSurfaceVariant
-                          : open
-                              ? const Color(0xFF57D0A6)
-                              : const Color(0xFFFF8EB4),
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (!hasTerminal)
-            TextButton(
-              onPressed: () => context.go('/tpv'),
-              child: const Text('Ir a TPV'),
-            ),
-        ],
-      ),
-    );
-  }
-
-  // ── Category state ──────────────────────────────────────────────────────
-  String _selectedCategory = 'Todos';
-  static const List<String> _kCategories = <String>[
-    'Todos', 'Bebidas', 'Alimentos', 'Limpieza', 'Otros',
-  ];
-
-  Widget _productFilterField() {
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return ValueListenableBuilder<TextEditingValue>(
-      valueListenable: _searchCtrl,
-      builder: (BuildContext context, TextEditingValue value, Widget? child) {
-        return Container(
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1E293B) : Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: isDark
-                ? const <BoxShadow>[]
-                : const <BoxShadow>[
-                    BoxShadow(
-                      color: Color(0x14000000),
-                      blurRadius: 8,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
-            border: Border.all(
-              color: isDark
-                  ? const Color(0xFF334155)
-                  : const Color(0xFFE2E8F0),
-            ),
-          ),
-          child: TextField(
-            controller: _searchCtrl,
-            decoration: InputDecoration(
-              hintText: 'Buscar productos por nombre o SKU...',
-              hintStyle: TextStyle(
-                color: isDark
-                    ? const Color(0xFF64748B)
-                    : const Color(0xFF94A3B8),
-                fontSize: 14,
-              ),
-              prefixIcon: Icon(
-                Icons.search_rounded,
-                color: isDark
-                    ? const Color(0xFF64748B)
-                    : const Color(0xFF94A3B8),
-              ),
-              suffixIcon: value.text.isEmpty
-                  ? null
-                  : IconButton(
-                      onPressed: _searchCtrl.clear,
-                      icon: Icon(
-                        Icons.clear_rounded,
-                        color: isDark
-                            ? const Color(0xFF64748B)
-                            : const Color(0xFF94A3B8),
-                      ),
-                    ),
-              filled: false,
-              border: InputBorder.none,
-              enabledBorder: InputBorder.none,
-              focusedBorder: InputBorder.none,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _categoryChips() {
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    return SizedBox(
-      height: 38,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: _kCategories.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (BuildContext context, int index) {
-          final String cat = _kCategories[index];
-          final bool active = cat == _selectedCategory;
-          return GestureDetector(
-            onTap: () => setState(() => _selectedCategory = cat),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-              decoration: BoxDecoration(
-                color: active
-                    ? const Color(0xFF1152D4)
-                    : (isDark ? const Color(0xFF1E293B) : Colors.white),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(
-                  color: active
-                      ? const Color(0xFF1152D4)
-                      : (isDark
-                          ? const Color(0xFF334155)
-                          : const Color(0xFFE2E8F0)),
-                ),
-              ),
-              child: Text(
-                cat,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: active
-                      ? Colors.white
-                      : (isDark
-                          ? const Color(0xFF94A3B8)
-                          : const Color(0xFF334155)),
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildProductImage(Product product) {
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final String path = (product.imagePath ?? '').trim();
-    if (path.isEmpty) {
-      return Container(
-        width: 34,
-        height: 34,
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF28233A) : const Color(0xFFEDE7FA),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: const Icon(Icons.inventory_2_outlined, size: 16),
-      );
-    }
-
-    final File file = File(path);
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      child: Image.file(
-        file,
-        width: 34,
-        height: 34,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) {
-          return Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF28233A) : const Color(0xFFEDE7FA),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(Icons.broken_image_outlined, size: 16),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _qtyButton({
+  Widget _appBarActionButton({
     required IconData icon,
-    required VoidCallback? onTap,
-    required bool isAdd,
+    required String tooltip,
+    required VoidCallback onPressed,
+    required bool isDark,
+    bool isRed = false,
   }) {
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final bool enabled = onTap != null;
-    final Color bg = isAdd
-        ? (isDark ? const Color(0xFF233246) : const Color(0xFFE4EEF9))
-        : (isDark ? const Color(0xFF35263F) : const Color(0xFFF3EAF8));
-    final Color fg = isAdd
-        ? (isDark ? const Color(0xFF9AC1FF) : const Color(0xFF305A9A))
-        : (isDark ? const Color(0xFFDAB4E7) : const Color(0xFF6C427A));
-
-    return Material(
-      color: enabled
-          ? bg
-          : (isDark ? const Color(0xFF2A2632) : const Color(0xFFECECEC)),
-      shape: const CircleBorder(),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: SizedBox(
-          width: 28,
-          height: 28,
-          child: Icon(
-            icon,
-            size: 16,
-            color:
-                enabled ? fg : Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-        ),
+    return IconButton(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      icon: Icon(
+        icon,
+        color: isRed
+            ? (isDark ? const Color(0xFFFCA5A5) : const Color(0xFFDC2626))
+            : (isDark ? Colors.white : const Color(0xFF1E293B)),
       ),
     );
   }
 
-  Widget _productCard(Product product) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme scheme = theme.colorScheme;
-    final bool isDark = theme.brightness == Brightness.dark;
-    final double qty = _qtyByProductId[product.id] ?? 0;
-    final double stock = _stockByProductId[product.id] ?? 0;
-    final bool outOfStock = stock <= 0;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: isDark ? const Color(0xFF342E46) : const Color(0xFFE3DAF8),
-        ),
-        boxShadow: isDark
-            ? const <BoxShadow>[]
-            : const <BoxShadow>[
-                BoxShadow(
-                  color: Color(0x0E000000),
-                  blurRadius: 6,
-                  offset: Offset(0, 1.5),
-                ),
-              ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(6, 6, 6, 4),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                _buildProductImage(product),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        product.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 11,
-                        ),
-                      ),
-                      Text(
-                        product.sku,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 9.5,
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  margin: const EdgeInsets.only(left: 2),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: outOfStock
-                        ? (isDark
-                            ? const Color(0xFF472733)
-                            : const Color(0xFFFBE9EE))
-                        : (isDark
-                            ? const Color(0xFF233246)
-                            : const Color(0xFFE6ECFA)),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    _formatQty(stock),
-                    style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w800,
-                      color: outOfStock
-                          ? const Color(0xFFFF8EB4)
-                          : (isDark
-                              ? const Color(0xFF9AC1FF)
-                              : const Color(0xFF3D4E89)),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              _money(product.priceCents),
-              style: TextStyle(
-                fontWeight: FontWeight.w900,
-                fontSize: 12.8,
-                color: isDark ? scheme.primary : const Color(0xFF3A2D61),
-              ),
-            ),
-            const SizedBox(height: 2),
-            Row(
-              children: <Widget>[
-                _qtyButton(
-                  icon: Icons.remove_rounded,
-                  isAdd: false,
-                  onTap: _posting ? null : () => _changeQty(product.id, -1),
-                ),
-                Expanded(
-                  child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? const Color(0xFF28233A)
-                            : const Color(0xFFF7F3FC),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        _formatQty(qty),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                _qtyButton(
-                  icon: Icons.add_rounded,
-                  isAdd: true,
-                  onTap: _posting ? null : () => _changeQty(product.id, 1),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
-  Widget _productsGridSliver() {
-    final List<Product> products = _visibleProducts;
-    if (products.isEmpty) {
-      return SliverFillRemaining(
-        hasScrollBody: false,
-        child: Center(
-          child: Text(
-            _terminalId == null
-                ? 'Selecciona un TPV para vender.'
-                : 'No hay productos en el almacen de este TPV.',
-          ),
-        ),
-      );
-    }
 
-    return SliverLayoutBuilder(
-      builder: (BuildContext context, constraints) {
-        final double width = constraints.crossAxisExtent;
-        final int columns = _gridColumnsForWidth(width);
-        final double aspect = _gridAspectRatioForWidth(width);
-        return SliverPadding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 98),
-          sliver: SliverGrid(
-            delegate: SliverChildBuilderDelegate(
-              (_, int index) {
-                final Product product = products[index];
-                return KeyedSubtree(
-                  key: ValueKey<String>(product.id),
-                  child: _productCard(product),
-                );
-              },
-              childCount: products.length,
-            ),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: columns,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
-              childAspectRatio: aspect,
-            ),
-          ),
-        );
-      },
-    );
-  }
 
-  Widget _floatingButtons() {
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        // QR scanner – dark circle matching HTML slate-900/slate-100 button
-        FloatingActionButton(
-          heroTag: 'scanFab',
-          onPressed: _scanAndAddProduct,
-          backgroundColor:
-              isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
-          foregroundColor:
-              isDark ? const Color(0xFF0F172A) : Colors.white,
-          elevation: 10,
-          child: const Icon(Icons.qr_code_scanner_rounded),
-        ),
-        const SizedBox(height: 15),
-        // Badge(
-        //   isLabelVisible: _cartUnits > 0,
-        //   label: Text('$_cartUnits'),
-        //   child: FloatingActionButton.small(
-        //     heroTag: 'cartFab',
-        //     onPressed: _openCartSheet,
-        //     backgroundColor: const Color(0xFF1152D4),
-        //     foregroundColor: Colors.white,
-        //     child: const Icon(Icons.shopping_cart_rounded),
-        //   ),
-        // ),
-      ],
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -2675,631 +2200,84 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       showDrawer: false,
       showTopTabs: false,
       appBarLeading: IconButton(
-        tooltip: 'Menú',
-        onPressed: () {},
-        icon: const Icon(Icons.menu_rounded),
+        tooltip: 'Atrás',
+        onPressed: () => context.pop(),
+        icon: const Icon(Icons.arrow_back_rounded),
       ),
       appBarActions: <Widget>[
-        IconButton(
-          tooltip: 'Imprimir',
-          onPressed: () {},
-          icon: const Icon(Icons.print_outlined),
+        _appBarActionButton(
+          icon: Icons.swap_horiz_rounded,
+          tooltip: 'Movimientos',
+          onPressed: _openQuickStockDialog,
+          isDark: isDark,
         ),
-        IconButton(
-          tooltip: 'Sincronizar',
-          onPressed: () {},
-          icon: const Icon(Icons.sync_rounded),
+        _appBarActionButton(
+          icon: Icons.ios_share_rounded,
+          tooltip: 'Exportar IPV',
+          onPressed: _openSessionId != null ? _openCurrentIpvFromPos : () {},
+          isDark: isDark,
         ),
+        _appBarActionButton(
+          icon: Icons.logout_rounded,
+          tooltip: 'Cerrar Turno',
+          onPressed: _openSessionId != null ? _closeSessionFromPos : () {},
+          isDark: isDark,
+          isRed: true,
+        ),
+        const SizedBox(width: 8),
       ],
-      floatingActionButton: license.canSell ? _floatingButtons() : null,
+      floatingActionButton: null,
+      bottomNavigationBar: null,
       body: license.canSell
           ? (_loading
               ? const Center(child: CircularProgressIndicator())
               : Column(
                   children: <Widget>[
-                    // Store Info Bar
-                    _storeInfoBar(theme, isDark),
-                    // Action Buttons Row
-                    _actionButtonsRow(theme, isDark),
-                    // Search and Categories
+                    PosStoreInfoBar(
+                      terminalName: _terminalName,
+                      open: _openSessionId != null,
+                    ),
                     Expanded(
                       child: Column(
                         children: <Widget>[
                           Padding(
-                            padding:
-                                const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                            child: _productFilterField(),
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                            child: PosSearchBar(
+                              controller: _searchCtrl,
+                              onScanTap: _scanAndAddProduct,
+                              categories: _categories,
+                              selectedCategory: _selectedCategory,
+                              onCategoryChanged: _onCategoryChanged,
+                            ),
                           ),
-                          const SizedBox(height: 10),
-                          _categoryChips(),
-                          const SizedBox(height: 10),
-                          Expanded(child: _productsGrid()),
+                          const SizedBox(height: 8),
+                          Expanded(
+                            child: PosProductsGrid(
+                              products: _visibleProducts,
+                              qtyByProductId: _qtyByProductId,
+                              stockByProductId: _stockByProductId,
+                              currencySymbol: _currencySymbol,
+                              isPosting: _posting,
+                              onQtyChanged: _changeQty,
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                    // Bottom Footer with Total and Pay Button
-                    _bottomFooter(theme, isDark),
+                    PosBottomFooter(
+                      itemCount: _qtyByProductId.values
+                          .fold<double>(
+                              0, (double sum, double qty) => sum + qty)
+                          .toInt(),
+                      total: _computeTotal(),
+                      currencySymbol: _currencySymbol,
+                      onPayTap: _qtyByProductId.values.any((q) => q > 0)
+                          ? _openCartSheet
+                          : null,
+                    ),
                   ],
                 ))
           : _buildLicenseBlockedBody(license.message),
-    );
-  }
-
-  Widget _storeInfoBar(ThemeData theme, bool isDark) {
-    final bool hasTerminal = _terminalId != null;
-    final bool open = _openSessionId != null;
-    final UserSession? session = ref.read(currentSessionProvider);
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-      decoration: BoxDecoration(
-        color: isDark
-            ? const Color(0xFF1E293B)
-            : const Color(0xFF1152D4).withValues(alpha: 0.05),
-        border: Border(
-          top: BorderSide(
-            color: isDark
-                ? const Color(0xFF334155)
-                : const Color(0xFFE2E8F0),
-          ),
-          bottom: BorderSide(
-            color: isDark
-                ? const Color(0xFF334155)
-                : const Color(0xFFE2E8F0),
-          ),
-        ),
-      ),
-      child: Row(
-        children: <Widget>[
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1152D4).withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(
-              Icons.storefront_rounded,
-              color: Color(0xFF1152D4),
-              size: 24,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  _terminalName ?? 'Sin TPV',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Row(
-                  children: <Widget>[
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: BoxDecoration(
-                        color: open ? Colors.green : Colors.grey,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      open ? 'Turno abierto' : 'Turno cerrado',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: isDark
-                            ? const Color(0xFF94A3B8)
-                            : const Color(0xFF64748B),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: <Widget>[
-              Text(
-                'Vendedor',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: isDark
-                      ? const Color(0xFF94A3B8)
-                      : const Color(0xFF64748B),
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              Text(
-                session?.username ?? 'Admin',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _actionButtonsRow(ThemeData theme, bool isDark) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        border: Border(
-          top: BorderSide(
-            color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-          ),
-          bottom: BorderSide(
-            color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-          ),
-        ),
-      ),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: _actionButton(
-              icon: Icons.swap_horiz_rounded,
-              label: 'Movimientos',
-              onPressed: _openQuickStockDialog,
-              theme: theme,
-              isDark: isDark,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _actionButton(
-              icon: Icons.ios_share_rounded,
-              label: 'Exportar IPV',
-              onPressed:
-                  _openSessionId != null ? _openCurrentIpvFromPos : () {},
-              theme: theme,
-              isDark: isDark,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _actionButton(
-              icon: Icons.logout_rounded,
-              label: 'Cerrar Turno',
-              onPressed: _openSessionId != null ? _closeSessionFromPos : () {},
-              theme: theme,
-              isDark: isDark,
-              isRed: true,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _actionButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onPressed,
-    required ThemeData theme,
-    required bool isDark,
-    bool isRed = false,
-  }) {
-    final Color bgColor = isRed
-        ? (isDark
-            ? const Color(0xFF7F1D1D).withValues(alpha: 0.1)
-            : const Color(0xFFFEE2E2))
-        : (isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9));
-    final Color borderColor = isRed
-        ? (isDark
-            ? const Color(0xFF7F1D1D).withValues(alpha: 0.3)
-            : const Color(0xFFFEE2E2))
-        : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0));
-    final Color iconColor = isRed
-        ? (isDark ? const Color(0xFFFCA5A5) : const Color(0xFFDC2626))
-        : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B));
-    final Color textColor = isRed
-        ? (isDark ? const Color(0xFFFCA5A5) : const Color(0xFFDC2626))
-        : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B));
-
-    return InkWell(
-      onTap: onPressed,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: borderColor),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(icon, color: iconColor, size: 20),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                color: textColor,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _productsGrid() {
-    final List<Product> products = _visibleProducts;
-    if (products.isEmpty) {
-      return const Center(
-        child: Text('No hay productos'),
-      );
-    }
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 0.68,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-      ),
-      itemCount: products.length,
-      itemBuilder: (BuildContext context, int index) {
-        return _buildProductCard(products[index]);
-      },
-    );
-  }
-
-  Widget _buildProductCard(Product product) {
-    final ThemeData theme = Theme.of(context);
-    final bool isDark = theme.brightness == Brightness.dark;
-    final double qty = _qtyByProductId[product.id] ?? 0;
-    final double stock = _stockByProductId[product.id] ?? 0;
-    final String imagePath = (product.imagePath ?? '').trim();
-
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-        ),
-        boxShadow: isDark
-            ? const <BoxShadow>[]
-            : const <BoxShadow>[
-                BoxShadow(
-                  color: Color(0x0E000000),
-                  blurRadius: 6,
-                  offset: Offset(0, 2),
-                ),
-              ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          // ── Image area – fills top like HTML aspect-square ────────
-          Expanded(
-            flex: 3,
-            child: ClipRRect(
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(13)),
-              child: Stack(
-                fit: StackFit.expand,
-                children: <Widget>[
-                  // Background colour
-                  Container(
-                    color: isDark
-                        ? const Color(0xFF1E293B)
-                        : const Color(0xFFF1F5F9),
-                  ),
-                  // Product image covers entire area
-                  if (imagePath.isNotEmpty)
-                    Image.file(
-                      File(imagePath),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Center(
-                        child: Icon(
-                          Icons.broken_image_outlined,
-                          size: 36,
-                          color: isDark
-                              ? const Color(0xFF475569)
-                              : const Color(0xFFCBD5E1),
-                        ),
-                      ),
-                    )
-                  else
-                    Center(
-                      child: Icon(
-                        Icons.inventory_2_outlined,
-                        size: 42,
-                        color: isDark
-                            ? const Color(0xFF475569)
-                            : const Color(0xFFCBD5E1),
-                      ),
-                    ),
-                  // SKU badge – top right
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.92),
-                        borderRadius: BorderRadius.circular(4),
-                        border:
-                            Border.all(color: const Color(0xFFE2E8F0)),
-                      ),
-                      child: Text(
-                        product.sku,
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF64748B),
-                        ),
-                      ),
-                    ),
-                  ),
-                  // Stock badge – bottom left
-                  Positioned(
-                    bottom: 8,
-                    left: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.60),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        'Stock: ${stock.toStringAsFixed(0)}',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // ── Product info ──────────────────────────────────────────
-          Expanded(
-            flex: 2,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: <Widget>[
-                  // Name + price
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        product.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                          color: isDark
-                              ? Colors.white
-                              : const Color(0xFF0F172A),
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '$_currencySymbol${(product.priceCents / 100).toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
-                          color: Color(0xFF1152D4),
-                        ),
-                      ),
-                    ],
-                  ),
-                  // ± controls – HTML style: bordered minus, filled blue plus
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: <Widget>[
-                      // Minus – rounded rectangle, bordered
-                      _buildQtyRectBtn(
-                        icon: Icons.remove,
-                        filled: false,
-                        enabled: !_posting && qty > 0,
-                        onTap: qty > 0
-                            ? () => _changeQty(product.id, -1)
-                            : null,
-                        isDark: isDark,
-                      ),
-                      Text(
-                        qty.toStringAsFixed(0),
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
-                          color: isDark
-                              ? Colors.white
-                              : const Color(0xFF0F172A),
-                        ),
-                      ),
-                      // Plus – rounded rectangle, solid blue
-                      _buildQtyRectBtn(
-                        icon: Icons.add,
-                        filled: true,
-                        enabled: !_posting,
-                        onTap: () => _changeQty(product.id, 1),
-                        isDark: isDark,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Rectangular ± button that matches the HTML design.
-  Widget _buildQtyRectBtn({
-    required IconData icon,
-    required bool filled,
-    required bool enabled,
-    required VoidCallback? onTap,
-    required bool isDark,
-  }) {
-    return GestureDetector(
-      onTap: enabled ? onTap : null,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        width: 32,
-        height: 32,
-        decoration: BoxDecoration(
-          color: filled
-              ? (enabled
-                  ? const Color(0xFF1152D4)
-                  : (isDark
-                      ? const Color(0xFF334155)
-                      : const Color(0xFFCBD5E1)))
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          border: filled
-              ? null
-              : Border.all(
-                  color: enabled
-                      ? (isDark
-                          ? const Color(0xFF475569)
-                          : const Color(0xFFE2E8F0))
-                      : (isDark
-                          ? const Color(0xFF334155)
-                          : const Color(0xFFE8E8E8)),
-                ),
-        ),
-        child: Icon(
-          icon,
-          size: 16,
-          color: filled
-              ? Colors.white
-              : (enabled
-                  ? (isDark
-                      ? const Color(0xFF94A3B8)
-                      : const Color(0xFF64748B))
-                  : (isDark
-                      ? const Color(0xFF475569)
-                      : const Color(0xFFCBD5E1))),
-        ),
-      ),
-    );
-  }
-
-  Widget _bottomFooter(ThemeData theme, bool isDark) {
-    final int itemCount = _qtyByProductId.values
-        .fold<double>(0, (double sum, double qty) => sum + qty)
-        .toInt();
-    final double total = _computeTotal();
-
-    return Container(
-      // outer strip – same bg as page body
-      color: isDark ? const Color(0xFF101622) : const Color(0xFFF6F6F8),
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-      child: SafeArea(
-        top: false,
-        child: Container(
-          // floating card
-          padding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            color: theme.cardColor,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: isDark
-                  ? const Color(0xFF334155)
-                  : const Color(0xFFE2E8F0),
-            ),
-            boxShadow: <BoxShadow>[
-              BoxShadow(
-                color: isDark
-                    ? const Color(0x50000000)
-                    : const Color(0x18000000),
-                blurRadius: 24,
-                offset: const Offset(0, -6),
-              ),
-            ],
-          ),
-          child: Row(
-            children: <Widget>[
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text(
-                      'TOTAL ($itemCount PRODUCTOS)',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w500,
-                        letterSpacing: 0.8,
-                        color: isDark
-                            ? const Color(0xFF94A3B8)
-                            : const Color(0xFF64748B),
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '$_currencySymbol${total.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                        color: isDark
-                            ? Colors.white
-                            : const Color(0xFF0F172A),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              FilledButton.icon(
-                onPressed: itemCount > 0 ? _openCartSheet : null,
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF1152D4),
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor: isDark
-                      ? const Color(0xFF334155)
-                      : const Color(0xFFCBD5E1),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 28,
-                    vertical: 16,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  elevation: 4,
-                  shadowColor:
-                      const Color(0xFF1152D4).withValues(alpha: 0.35),
-                ),
-                icon: const Icon(Icons.shopping_cart_checkout_rounded),
-                label: const Text(
-                  'PAGAR',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 

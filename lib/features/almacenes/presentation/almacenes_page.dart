@@ -17,8 +17,16 @@ class AlmacenesPage extends ConsumerStatefulWidget {
 }
 
 class _AlmacenesPageState extends ConsumerState<AlmacenesPage> {
+  final TextEditingController _searchCtrl = TextEditingController();
   List<WarehouseWithStock> _warehouses = <WarehouseWithStock>[];
+  List<WarehouseWithStock> _filteredWarehouses = <WarehouseWithStock>[];
   bool _loading = true;
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -47,6 +55,7 @@ class _AlmacenesPageState extends ConsumerState<AlmacenesPage> {
       }
       setState(() {
         _warehouses = data;
+        _filteredWarehouses = data;
         _loading = false;
       });
       trace.end('ok');
@@ -70,6 +79,7 @@ class _AlmacenesPageState extends ConsumerState<AlmacenesPage> {
     );
     await _loadWarehouses();
   }
+
 
   Future<void> _confirmDelete(Warehouse warehouse) async {
     final bool? confirm = await showDialog<bool>(
@@ -115,110 +125,174 @@ class _AlmacenesPageState extends ConsumerState<AlmacenesPage> {
     }
   }
 
+  void _filterWarehouses(String query) {
+    final String q = query.toLowerCase().trim();
+    setState(() {
+      if (q.isEmpty) {
+        _filteredWarehouses = _warehouses;
+      } else {
+        _filteredWarehouses = _warehouses.where((WarehouseWithStock wws) {
+          final String name = wws.warehouse.name.toLowerCase();
+          final String type = wws.warehouse.warehouseType.toLowerCase();
+          return name.contains(q) || type.contains(q);
+        }).toList();
+      }
+    });
+  }
+
   Widget _buildWarehouseCard(WarehouseWithStock wws) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final bool isDark = theme.brightness == Brightness.dark;
-    final bool isCentral = wws.warehouse.warehouseType == 'Central';
+    final String type = wws.warehouse.warehouseType;
+    final bool isCentral = type == 'Central';
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: BorderSide(
-          color: isDark ? const Color(0xFF342E46) : const Color(0xFFDDD5EF),
+    IconData iconData = Icons.inventory_2_rounded;
+    if (type == 'TPV') iconData = Icons.storefront_rounded;
+    if (type == 'Central') iconData = Icons.warehouse_rounded;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+          width: 1,
         ),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         onTap: () => _openWarehouseDetails(wws.warehouse),
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(16),
           child: Row(
             children: <Widget>[
               Container(
-                width: 44,
-                height: 44,
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
-                  color: isCentral
-                      ? (isDark
-                          ? const Color(0xFF1F3A34)
-                          : const Color(0xFFE7F6F1))
-                      : (isDark
-                          ? const Color(0xFF312948)
-                          : const Color(0xFFE8E2F4)),
+                  color: const Color(0xFF1152D4).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
-                  isCentral
-                      ? Icons.storefront_rounded
-                      : Icons.point_of_sale_rounded,
-                  color: isCentral
-                      ? const Color(0xFF148A65)
-                      : const Color(0xFF5B4B8A),
-                  size: 22,
+                  iconData,
+                  color: const Color(0xFF1152D4),
+                  size: 24,
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text(
-                      wws.warehouse.name,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
                     Row(
                       children: <Widget>[
+                        Flexible(
+                          child: Text(
+                            wws.warehouse.name,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 16,
+                              color: scheme.onSurface,
+                              letterSpacing: -0.2,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
+                            horizontal: 8,
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
                             color: isCentral
-                                ? const Color(0xFF148A65)
-                                : const Color(0xFF5B4B8A),
-                            borderRadius: BorderRadius.circular(4),
+                                ? const Color(0xFF1152D4).withValues(alpha: 0.1)
+                                : (isDark
+                                    ? const Color(0xFF334155)
+                                    : const Color(0xFFF1F5F9)),
+                            borderRadius: BorderRadius.circular(100),
                           ),
                           child: Text(
-                            wws.warehouse.warehouseType,
-                            style: const TextStyle(
+                            type.toUpperCase(),
+                            style: TextStyle(
                               fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              color: isCentral
+                                  ? const Color(0xFF1152D4)
+                                  : (isDark
+                                      ? const Color(0xFF94A3B8)
+                                      : const Color(0xFF64748B)),
+                              letterSpacing: 0.5,
                             ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${wws.totalProducts} productos',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: scheme.onSurfaceVariant,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '(${wws.totalQuantity.toStringAsFixed(0)})',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: scheme.onSurfaceVariant,
                           ),
                         ),
                       ],
                     ),
+                    const SizedBox(height: 2),
+                    RichText(
+                      text: TextSpan(
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
+                        ),
+                        children: <TextSpan>[
+                          TextSpan(text: '${wws.totalProducts} productos '),
+                          TextSpan(
+                            text: '(${wws.totalQuantity.toStringAsFixed(0)} total)',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.delete_outline, size: 20),
-                color: const Color(0xFFE1487D),
-                onPressed: () => _confirmDelete(wws.warehouse),
+              const SizedBox(width: 8),
+              PopupMenuButton<String>(
+                icon: Icon(
+                  Icons.more_vert_rounded,
+                  size: 20,
+                  color: scheme.onSurfaceVariant.withValues(alpha: 0.4),
+                ),
+                onSelected: (String value) {
+                  if (value == 'edit') _openWarehouseDetails(wws.warehouse);
+                  if (value == 'delete') _confirmDelete(wws.warehouse);
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'edit',
+                    child: Row(
+                      children: [
+                        Icon(Icons.edit_outlined, size: 20),
+                        SizedBox(width: 12),
+                        Text('Editar'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Row(
+                      children: [
+                        Icon(Icons.delete_outline_rounded, size: 20, color: Colors.red),
+                        SizedBox(width: 12),
+                        Text('Eliminar', style: TextStyle(color: Colors.red)),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -230,63 +304,151 @@ class _AlmacenesPageState extends ConsumerState<AlmacenesPage> {
   @override
   Widget build(BuildContext context) {
     final license = ref.watch(currentLicenseStatusProvider);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final bool isDark = theme.brightness == Brightness.dark;
+
     return AppScaffold(
       title: 'Almacenes',
       currentRoute: '/almacenes',
       onRefresh: _loadWarehouses,
+      useDefaultActions: false,
+      appBarActions: <Widget>[
+        IconButton(
+          onPressed: () {},
+          icon: const Icon(Icons.print_rounded),
+          tooltip: 'Imprimir',
+        ),
+        IconButton(
+          onPressed: () {},
+          icon: const Icon(Icons.more_vert_rounded),
+          tooltip: 'Opciones',
+        ),
+      ],
       floatingActionButton: license.canWrite
-          ? FloatingActionButton.small(
-              onPressed: () async {
-                final NavigatorState navigator = Navigator.of(context);
-                final ScaffoldMessengerState messenger =
-                    ScaffoldMessenger.of(context);
-                final bool? created = await navigator.push<bool>(
-                  MaterialPageRoute<bool>(
-                    builder: (_) => const _WarehouseFormPage(),
-                    fullscreenDialog: true,
-                  ),
-                );
-                if (created == true) {
-                  await _loadWarehouses();
-                  if (mounted) {
-                    messenger.showSnackBar(
-                      const SnackBar(
-                        content: Text('Registro creado correctamente.'),
-                      ),
-                    );
+          ? Container(
+              margin: const EdgeInsets.only(bottom: 20, right: 10),
+              child: FloatingActionButton(
+                onPressed: () async {
+                  final NavigatorState navigator = Navigator.of(context);
+                  final ScaffoldMessengerState messenger =
+                      ScaffoldMessenger.of(context);
+                  final bool? created = await navigator.push<bool>(
+                    MaterialPageRoute<bool>(
+                      builder: (_) => const _WarehouseFormPage(),
+                      fullscreenDialog: true,
+                    ),
+                  );
+                  if (created == true) {
+                    await _loadWarehouses();
+                    if (mounted) {
+                      messenger.showSnackBar(
+                        const SnackBar(
+                          content: Text('Registro creado correctamente.'),
+                        ),
+                      );
+                    }
                   }
-                }
-              },
-              child: const Icon(Icons.add_rounded),
+                },
+                elevation: 4,
+                backgroundColor: const Color(0xFF1152D4),
+                shape: const CircleBorder(),
+                child: const Icon(Icons.add_rounded, size: 32, color: Colors.white),
+              ),
             )
           : null,
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _loadWarehouses,
-              child: _warehouses.isEmpty
-                  ? ListView(
-                      padding: const EdgeInsets.all(16),
-                      children: const <Widget>[
-                        SizedBox(height: 32),
-                        Center(
-                            child: Text('No hay almacenes. Usa + para crear.')),
-                      ],
-                    )
-                  : ListView.builder(
-                      key: const PageStorageKey<String>('almacenes-list'),
-                      cacheExtent: 420,
-                      padding: const EdgeInsets.fromLTRB(12, 14, 12, 90),
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      itemCount: _warehouses.length,
-                      itemBuilder: (BuildContext context, int index) {
-                        final WarehouseWithStock warehouse = _warehouses[index];
-                        return KeyedSubtree(
-                          key: ValueKey<String>(warehouse.warehouse.id),
-                          child: _buildWarehouseCard(warehouse),
-                        );
-                      },
+              displacement: 20,
+              color: const Color(0xFF1152D4),
+              child: CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: <Widget>[
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: <BoxShadow>[
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.05),
+                              blurRadius: 10,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: TextField(
+                          controller: _searchCtrl,
+                          onChanged: _filterWarehouses,
+                          decoration: InputDecoration(
+                            hintText: 'Buscar almacenes por nombre o tipo...',
+                            hintStyle: TextStyle(
+                              color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                              fontSize: 14,
+                            ),
+                            prefixIcon: Icon(
+                              Icons.search_rounded,
+                              color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                            ),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
+                  ),
+                  if (_filteredWarehouses.isEmpty)
+                    SliverFillRemaining(
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            Icon(
+                              Icons.warehouse_outlined,
+                              size: 64,
+                              color: scheme.onSurfaceVariant.withValues(alpha: 0.2),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              _searchCtrl.text.isEmpty
+                                  ? 'No hay almacenes configurados'
+                                  : 'No se encontraron resultados',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                      sliver: SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (BuildContext context, int index) {
+                            final WarehouseWithStock warehouse =
+                                _filteredWarehouses[index];
+                            return KeyedSubtree(
+                              key: ValueKey<String>(warehouse.warehouse.id),
+                              child: _buildWarehouseCard(warehouse),
+                            );
+                          },
+                          childCount: _filteredWarehouses.length,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
     );
   }
@@ -349,97 +511,131 @@ class _WarehouseFormPageState extends ConsumerState<_WarehouseFormPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        backgroundColor: theme.scaffoldBackgroundColor,
+        elevation: 0,
         title: const Text(
           'Nuevo Almacén',
-          style: TextStyle(fontWeight: FontWeight.w700),
+          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20),
         ),
         centerTitle: true,
         leading: IconButton(
           onPressed: _saving ? null : () => Navigator.of(context).pop(false),
-          icon: const Icon(Icons.arrow_back_rounded),
+          icon: const Icon(Icons.close_rounded),
         ),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            const Text(
-              'Nombre',
+            Text(
+              'Información General',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                color: theme.colorScheme.primary,
+                letterSpacing: 1.2,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Nombre del almacén',
               style: TextStyle(
                 fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF272238),
+                fontWeight: FontWeight.w700,
+                color: theme.colorScheme.onSurface,
               ),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: _nameCtrl,
+              style: const TextStyle(fontWeight: FontWeight.w600),
               decoration: InputDecoration(
                 hintText: 'Ej: Tienda Central, Sucursal 1',
                 filled: true,
-                fillColor: Theme.of(context).inputDecorationTheme.fillColor,
+                fillColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                contentPadding: const EdgeInsets.all(16),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(
+                    color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(
+                    color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                  ),
                 ),
               ),
             ),
-            const SizedBox(height: 20),
-            const Text(
+            const SizedBox(height: 32),
+            Text(
               'Tipo de almacén',
               style: TextStyle(
                 fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF272238),
+                fontWeight: FontWeight.w700,
+                color: theme.colorScheme.onSurface,
               ),
             ),
             const SizedBox(height: 8),
+            Text(
+              'Selecciona la función que cumplirá este almacén.',
+              style: TextStyle(
+                fontSize: 12,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 16),
             Row(
               children: <Widget>[
                 Expanded(
                   child: _TypeOption(
                     label: 'Central',
-                    icon: Icons.storefront_rounded,
+                    icon: Icons.warehouse_rounded,
                     isSelected: _selectedType == 'Central',
                     color: const Color(0xFF148A65),
                     onTap: () => setState(() => _selectedType = 'Central'),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 16),
                 Expanded(
                   child: _TypeOption(
                     label: 'TPV',
-                    icon: Icons.point_of_sale_rounded,
+                    icon: Icons.store_rounded,
                     isSelected: _selectedType == 'TPV',
-                    color: const Color(0xFF5B4B8A),
+                    color: const Color(0xFF1152D4),
                     onTap: () => setState(() => _selectedType = 'TPV'),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 48),
             SizedBox(
               width: double.infinity,
-              height: 50,
+              height: 56,
               child: FilledButton(
                 onPressed: _saving ? null : _save,
                 style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF5B4B8A),
+                  backgroundColor: const Color(0xFF1152D4),
+                  foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(18),
                   ),
+                  elevation: 0,
                 ),
                 child: _saving
                     ? const SizedBox(
-                        width: 22,
-                        height: 22,
+                        width: 24,
+                        height: 24,
                         child: CircularProgressIndicator(
-                          strokeWidth: 2,
+                          strokeWidth: 3,
                           color: Colors.white,
                         ),
                       )
@@ -447,7 +643,7 @@ class _WarehouseFormPageState extends ConsumerState<_WarehouseFormPage> {
                         'Crear almacén',
                         style: TextStyle(
                           fontSize: 16,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
               ),
@@ -479,31 +675,52 @@ class _TypeOption extends StatelessWidget {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14),
+      borderRadius: BorderRadius.circular(20),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
         decoration: BoxDecoration(
           color: isSelected
               ? color.withValues(alpha: 0.1)
-              : Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(14),
+              : (isDark ? const Color(0xFF1E293B) : Colors.white),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: isSelected
                 ? color
-                : (isDark ? const Color(0xFF342E46) : const Color(0xFFDDD5EF)),
+                : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
             width: isSelected ? 2 : 1,
           ),
+          boxShadow: isSelected
+              ? <BoxShadow>[
+                  BoxShadow(
+                    color: color.withValues(alpha: 0.2),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ]
+              : null,
         ),
         child: Column(
           children: <Widget>[
-            Icon(icon, color: isSelected ? color : const Color(0xFF8B83A8)),
-            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isSelected ? color : (isDark ? const Color(0xFF334155) : const Color(0xFFF8FAFC)),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                icon,
+                color: isSelected ? Colors.white : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                size: 24,
+              ),
+            ),
+            const SizedBox(height: 12),
             Text(
               label,
               style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: isSelected ? color : const Color(0xFF655D83),
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: isSelected ? color : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
               ),
             ),
           ],
@@ -615,7 +832,11 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
         backgroundColor: theme.scaffoldBackgroundColor,
-        title: Text(_isEditing ? 'Editar Almacén' : 'Detalles'),
+        elevation: 0,
+        title: Text(
+          _isEditing ? 'Configurar Almacén' : 'Detalles de Almacén',
+          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+        ),
         centerTitle: true,
         leading: IconButton(
           onPressed: () => Navigator.of(context).pop(),
@@ -623,9 +844,12 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
         ),
         actions: <Widget>[
           if (!_isEditing)
-            IconButton(
-              onPressed: () => setState(() => _isEditing = true),
-              icon: const Icon(Icons.edit_outlined),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              child: IconButton.filledTonal(
+                onPressed: () => setState(() => _isEditing = true),
+                icon: const Icon(Icons.edit_rounded, size: 20),
+              ),
             )
           else
             IconButton(
@@ -636,21 +860,31 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
                       height: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.check_rounded),
+                  : const Icon(Icons.check_rounded, color: Color(0xFF148A65)),
             ),
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             // Información del almacén
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: theme.cardColor,
-                borderRadius: BorderRadius.circular(16),
+                color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                ),
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -660,38 +894,41 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
                       'Nombre',
                       style: TextStyle(
                         fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w800,
+                        color: scheme.primary,
+                        letterSpacing: 0.5,
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     TextField(
                       controller: _nameCtrl,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
                       decoration: InputDecoration(
                         filled: true,
                         fillColor: isDark
-                            ? const Color(0xFF211D2D)
-                            : const Color(0xFFF5F3FA),
+                            ? const Color(0xFF0F172A)
+                            : const Color(0xFFF8FAFC),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide.none,
                         ),
                         contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
+                          horizontal: 16,
+                          vertical: 14,
                         ),
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
                     Text(
-                      'Tipo',
+                      'Tipo de almacén',
                       style: TextStyle(
                         fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w800,
+                        color: scheme.primary,
+                        letterSpacing: 0.5,
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 12),
                     Row(
                       children: <Widget>[
                         Expanded(
@@ -703,12 +940,12 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
                                 setState(() => _selectedType = 'Central'),
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 12),
                         Expanded(
                           child: _TypeChip(
                             label: 'TPV',
                             isSelected: _selectedType == 'TPV',
-                            color: const Color(0xFF5B4B8A),
+                            color: const Color(0xFF1152D4),
                             onTap: () => setState(() => _selectedType = 'TPV'),
                           ),
                         ),
@@ -718,29 +955,35 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
                     Row(
                       children: <Widget>[
                         Container(
-                          width: 56,
-                          height: 56,
+                          width: 64,
+                          height: 64,
                           decoration: BoxDecoration(
-                            color: isCentral
-                                ? (isDark
-                                    ? const Color(0xFF1F3A34)
-                                    : const Color(0xFFE7F6F1))
-                                : (isDark
-                                    ? const Color(0xFF312948)
-                                    : const Color(0xFFE8E2F4)),
-                            borderRadius: BorderRadius.circular(16),
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: isCentral
+                                  ? <Color>[const Color(0xFF148A65), const Color(0xFF0D6B4E)]
+                                  : <Color>[const Color(0xFF1152D4), const Color(0xFF0A3C9F)],
+                            ),
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: <BoxShadow>[
+                              BoxShadow(
+                                color: (isCentral ? const Color(0xFF148A65) : const Color(0xFF1152D4))
+                                    .withValues(alpha: 0.3),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
                           ),
                           child: Icon(
                             isCentral
-                                ? Icons.storefront_rounded
-                                : Icons.point_of_sale_rounded,
-                            color: isCentral
-                                ? const Color(0xFF148A65)
-                                : const Color(0xFF5B4B8A),
-                            size: 28,
+                                ? Icons.warehouse_rounded
+                                : Icons.store_rounded,
+                            color: Colors.white,
+                            size: 32,
                           ),
                         ),
-                        const SizedBox(width: 14),
+                        const SizedBox(width: 20),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -748,28 +991,33 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
                               Text(
                                 widget.warehouse.name,
                                 style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w800,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: -0.5,
                                 ),
                               ),
-                              const SizedBox(height: 4),
+                              const SizedBox(height: 6),
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 3,
+                                  horizontal: 10,
+                                  vertical: 4,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: isCentral
-                                      ? const Color(0xFF148A65)
-                                      : const Color(0xFF5B4B8A),
-                                  borderRadius: BorderRadius.circular(6),
+                                  color: (isCentral
+                                          ? const Color(0xFF148A65)
+                                          : const Color(0xFF1152D4))
+                                      .withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Text(
-                                  widget.warehouse.warehouseType,
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.white,
+                                  widget.warehouse.warehouseType.toUpperCase(),
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w900,
+                                    color: isCentral
+                                        ? const Color(0xFF148A65)
+                                        : const Color(0xFF1152D4),
+                                    letterSpacing: 0.5,
                                   ),
                                 ),
                               ),
@@ -785,55 +1033,87 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
             const SizedBox(height: 16),
             // Stock del almacén
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: theme.cardColor,
-                borderRadius: BorderRadius.circular(16),
+                color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   Row(
                     children: <Widget>[
-                      Icon(
-                        Icons.inventory_2_outlined,
-                        color: scheme.primary,
-                        size: 20,
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: scheme.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          Icons.inventory_2_rounded,
+                          color: scheme.primary,
+                          size: 20,
+                        ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 12),
                       Text(
-                        'Stock en este almacén',
+                        'Stock del almacén',
                         style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
                           color: scheme.onSurface,
+                          letterSpacing: -0.5,
                         ),
                       ),
                       const Spacer(),
-                      Text(
-                        '${_stock.length} productos',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: scheme.onSurfaceVariant,
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '${_stock.length} ítems',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: scheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 20),
                   if (_loadingStock)
                     const Center(
                       child: Padding(
-                        padding: EdgeInsets.all(20),
+                        padding: EdgeInsets.all(40),
                         child: CircularProgressIndicator(),
                       ),
                     )
                   else if (_stock.isEmpty)
-                    const Center(
+                    Center(
                       child: Padding(
-                        padding: EdgeInsets.all(20),
-                        child: Text(
-                          'No hay productos en stock',
-                          style: TextStyle(color: Color(0xFF8B83A8)),
+                        padding: const EdgeInsets.all(40),
+                        child: Column(
+                          children: <Widget>[
+                            Icon(
+                              Icons.inventory_2_outlined,
+                              size: 48,
+                              color: scheme.onSurfaceVariant.withValues(alpha: 0.2),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Sin productos en stock',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     )
@@ -860,10 +1140,10 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
                                     children: <Widget>[
                                       Text(
                                         item.product.name,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w600,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w700,
                                           fontSize: 14,
-                                          color: Color(0xFF272238),
+                                          color: theme.colorScheme.onSurface,
                                         ),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
@@ -871,9 +1151,9 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
                                       const SizedBox(height: 2),
                                       Text(
                                         'SKU: ${item.product.sku}',
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 12,
-                                          color: Color(0xFF8B83A8),
+                                          color: theme.colorScheme.onSurfaceVariant,
                                         ),
                                       ),
                                     ],
@@ -908,13 +1188,14 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
                       },
                     ),
                   if (_stock.length > 10) ...<Widget>[
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 16),
                     Center(
                       child: Text(
                         'y ${_stock.length - 10} más...',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
-                          color: Color(0xFF8B83A8),
+                          fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ),
@@ -944,18 +1225,21 @@ class _TypeChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+      borderRadius: BorderRadius.circular(12),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
           color: isSelected
               ? color.withValues(alpha: 0.1)
-              : const Color(0xFFF5F3FA),
-          borderRadius: BorderRadius.circular(8),
+              : (isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9)),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: isSelected ? color : Colors.transparent,
+            width: 2,
           ),
         ),
         child: Center(
@@ -963,8 +1247,8 @@ class _TypeChip extends StatelessWidget {
             label,
             style: TextStyle(
               fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: isSelected ? color : const Color(0xFF655D83),
+              fontWeight: FontWeight.w800,
+              color: isSelected ? color : (isDark ? const Color(0xFF64748B) : const Color(0xFF64748B)),
             ),
           ),
         ),

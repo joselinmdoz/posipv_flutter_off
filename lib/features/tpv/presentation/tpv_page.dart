@@ -1069,23 +1069,9 @@ class _TpvPageState extends ConsumerState<TpvPage> {
     final bool isDark = theme.brightness == Brightness.dark;
     final TpvSessionWithUser? open = terminal.openSession;
     final bool isOpen = open != null;
-    final TpvTerminalConfig config = ref
-        .read(tpvLocalDataSourceProvider)
-        .configFromTerminal(terminal.terminal);
-    final String methods = config.paymentMethods.map((String method) {
-      switch (method) {
-        case 'cash':
-          return 'Efectivo';
-        case 'card':
-          return 'Tarjeta';
-        case 'transfer':
-          return 'Transferencia';
-        case 'wallet':
-          return 'Billetera';
-        default:
-          return method;
-      }
-    }).join(', ');
+    final TpvTerminalConfig config = ref.read(tpvLocalDataSourceProvider).configFromTerminal(terminal.terminal);
+
+    final List<String> methods = config.paymentMethods;
 
     // Get responsible employees names
     final String employeesText = open != null && open.responsibleEmployees.isNotEmpty
@@ -1093,204 +1079,287 @@ class _TpvPageState extends ConsumerState<TpvPage> {
         : (isOpen ? open!.user.username : 'Sin usuario');
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+      margin: const EdgeInsets.only(bottom: 24),
       decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(12),
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: scheme.outline.withValues(alpha: 0.2),
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+          width: 0.8,
         ),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
+          // Card Header with Image and Badge
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                Image.network(
+                  'https://images.unsplash.com/photo-1556742044-3c52d6e88c62?q=80&w=800&auto=format&fit=crop',
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                    child: Icon(
+                      Icons.terminal_rounded,
+                      size: 48,
+                      color: scheme.onSurfaceVariant.withValues(alpha: 0.2),
+                    ),
+                  ),
+                ),
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: 0.4),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 16,
+                  right: 16,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isOpen ? const Color(0xFF10B981) : Colors.black.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(100),
+                      boxShadow: <BoxShadow>[
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.2),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: const BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          isOpen ? 'ABIERTO' : 'CERRADO',
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 8,
+                  left: 8,
+                  child: PopupMenuButton<String>(
+                    icon: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.3),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.more_vert_rounded, color: Colors.white, size: 20),
+                    ),
+                    onSelected: (String value) {
+                      if (value == 'edit') _openForm(terminal: terminal.terminal);
+                      if (value == 'history') _openHistory(terminal);
+                      if (value == 'delete') {
+                        // Implement delete
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: Row(
+                          children: [
+                            Icon(Icons.edit_outlined, size: 20),
+                            SizedBox(width: 12),
+                            Text('Editar terminal'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'history',
+                        child: Row(
+                          children: [
+                            Icon(Icons.history_rounded, size: 20),
+                            SizedBox(width: 12),
+                            Text('Ver historial'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete_outline_rounded, size: 20, color: Colors.red),
+                            SizedBox(width: 12),
+                            Text('Eliminar', style: TextStyle(color: Colors.red)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                // Header row
+                Text(
+                  terminal.terminal.name,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 22,
+                    color: scheme.onSurface,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                Text(
+                  '${terminal.warehouse.name} • ${config.currencyCode}',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 20),
                 Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(
-                            terminal.terminal.name,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 20,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Almacén: ${terminal.warehouse.name} | Moneda: ${config.currencyCode}',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: scheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
+                  children: methods.map((m) {
+                    final String label = (m == 'cash') ? 'EFECTIVO' : (m == 'card' ? 'TARJETA' : (m == 'wallet' ? 'NFC' : m.toUpperCase()));
+                    return Container(
+                      margin: const EdgeInsets.only(right: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: isOpen
-                            ? const Color(0xFFDCFCE7)
-                            : (isDark
-                                ? const Color(0xFF312948)
-                                : const Color(0xFFF1F5F9)),
-                        borderRadius: BorderRadius.circular(999),
+                        color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
-                        isOpen ? 'ABIERTO' : 'CERRADO',
+                        label,
                         style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: isOpen
-                              ? const Color(0xFF15803D)
-                              : scheme.onSurfaceVariant,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          color: scheme.onSurfaceVariant,
+                          letterSpacing: 0.2,
                         ),
                       ),
-                    ),
-                  ],
+                    );
+                  }).toList(),
                 ),
                 const SizedBox(height: 16),
-                // Info row
-                Row(
-                  children: <Widget>[
-                    Icon(
-                      isOpen ? Icons.person_outline : Icons.person_off_outlined,
-                      size: 18,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        open != null && open.responsibleEmployees.isNotEmpty
-                            ? employeesText
-                            : (isOpen ? open!.user.username : 'Sin usuario'),
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: scheme.onSurfaceVariant,
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      Icon(
+                        isOpen ? Icons.person_rounded : Icons.person_off_rounded,
+                        size: 18,
+                        color: isOpen ? const Color(0xFF1152D4) : scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          employeesText,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: isOpen ? FontWeight.w600 : FontWeight.w500,
+                            color: isOpen ? scheme.onSurface : scheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  children: <Widget>[
-                    Icon(
-                      Icons.payments_outlined,
-                      size: 18,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      methods,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          // Action buttons
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-            decoration: BoxDecoration(
-              border: Border(
-                top: BorderSide(
-                  color: scheme.outline.withValues(alpha: 0.1),
-                ),
-              ),
-            ),
-            child: Column(
-              children: <Widget>[
-                // Main action buttons
+                const SizedBox(height: 24),
                 Row(
                   children: <Widget>[
                     Expanded(
-                      child: FilledButton.icon(
-                        onPressed: isOpen
-                            ? () => _goToPos(terminal)
-                            : () => _openSession(terminal),
+                      flex: 2,
+                      child: FilledButton(
+                        onPressed: isOpen ? () => _goToPos(terminal) : () => _openSession(terminal),
                         style: FilledButton.styleFrom(
                           backgroundColor: const Color(0xFF1152D4),
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          elevation: 0,
                         ),
-                        icon: Icon(
-                          isOpen ? Icons.point_of_sale : Icons.lock_open_rounded,
-                          size: 18,
-                        ),
-                        label: Text(
-                          isOpen ? 'Ir al POS' : 'Abrir turno',
-                          style: const TextStyle(fontSize: 14),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: <Widget>[
+                            Icon(isOpen ? Icons.point_of_sale_rounded : Icons.lock_open_rounded, size: 20),
+                            const SizedBox(width: 10),
+                            Text(
+                              isOpen ? 'Ir al POS' : 'Abrir Turno',
+                              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                            ),
+                          ],
                         ),
                       ),
                     ),
                     if (isOpen) ...<Widget>[
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 12),
                       Expanded(
-                        child: OutlinedButton.icon(
+                        child: OutlinedButton(
                           onPressed: () => _closeSession(terminal),
                           style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            side: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                           ),
-                          icon: const Icon(Icons.lock_clock_outlined, size: 18),
-                          label: const Text(
+                          child: const Text(
                             'Cerrar',
-                            style: TextStyle(fontSize: 14),
+                            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
                           ),
                         ),
                       ),
                     ],
                   ],
                 ),
-                const SizedBox(height: 8),
-                // Secondary action buttons
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: <Widget>[
-                    if (isOpen)
-                      _actionButton(
-                        icon: Icons.analytics_outlined,
-                        tooltip: 'Ver IPV',
-                        onPressed: () => _openCurrentSessionIpv(terminal),
-                        theme: theme,
+                if (isOpen) ...[
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: TextButton.icon(
+                      onPressed: () => _openCurrentSessionIpv(terminal),
+                      icon: const Icon(Icons.analytics_rounded, size: 18),
+                      label: const Text('Análisis de Turno (IPV)', style: TextStyle(fontWeight: FontWeight.w600)),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF1152D4),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
-                    _actionButton(
-                      icon: Icons.history_rounded,
-                      tooltip: 'Historial',
-                      onPressed: () => _openHistory(terminal),
-                      theme: theme,
                     ),
-                    _actionButton(
-                      icon: Icons.edit_outlined,
-                      tooltip: 'Editar',
-                      onPressed: () => _openForm(terminal: terminal.terminal),
-                      theme: theme,
-                    ),
-                    _actionButton(
-                      icon: isOpen ? Icons.block_rounded : Icons.check_circle_outline,
-                      tooltip: isOpen ? 'Cerrar turno' : 'Activar',
-                      onPressed: isOpen
-                          ? () => _closeSession(terminal)
-                          : () => _openSession(terminal),
-                      theme: theme,
-                      isDelete: isOpen,
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -1299,41 +1368,15 @@ class _TpvPageState extends ConsumerState<TpvPage> {
     );
   }
 
-  Widget _actionButton({
-    required IconData icon,
-    required String tooltip,
-    required VoidCallback onPressed,
-    required ThemeData theme,
-    bool isDelete = false,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 8),
-      child: IconButton(
-        tooltip: tooltip,
-        onPressed: onPressed,
-        style: IconButton.styleFrom(
-          backgroundColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-          foregroundColor: isDelete
-              ? (theme.brightness == Brightness.dark
-                  ? Colors.red.shade300
-                  : Colors.red.shade600)
-              : theme.colorScheme.onSurfaceVariant,
-        ),
-        icon: Icon(icon, size: 20),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final license = ref.watch(currentLicenseStatusProvider);
     final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
     final List<TpvTerminalView> filteredTerminals = _getFilteredTerminals();
     
     // Count terminals by status
     final int totalCount = _terminals.length;
-    final int openCount = _terminals.where((t) => t.openSession != null).length;
-    final int closedCount = _terminals.where((t) => t.openSession == null).length;
 
     return AppScaffold(
       title: 'Terminales de Venta',
@@ -1347,39 +1390,38 @@ class _TpvPageState extends ConsumerState<TpvPage> {
       ),
       appBarActions: <Widget>[
         IconButton(
-          tooltip: 'Buscar',
           onPressed: () {},
-          icon: const Icon(Icons.search_rounded),
-        ),
-        IconButton(
-          tooltip: 'Filtrar',
-          onPressed: () {},
-          icon: const Icon(Icons.filter_list_rounded),
+          icon: const Icon(Icons.more_vert_rounded),
+          tooltip: 'Opciones',
         ),
       ],
       floatingActionButton: license.canWrite
           ? FloatingActionButton(
               onPressed: () => _openForm(),
               backgroundColor: const Color(0xFF1152D4),
-              child: const Icon(Icons.add_rounded, color: Colors.white),
+              foregroundColor: Colors.white,
+              shape: const CircleBorder(),
+              elevation: 4,
+              child: const Icon(Icons.add_rounded, size: 28),
             )
           : null,
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: <Widget>[
+                // Tabs
                 Container(
                   width: double.infinity,
                   decoration: BoxDecoration(
                     color: theme.colorScheme.surface,
                     border: Border(
                       bottom: BorderSide(
-                        color: theme.colorScheme.outline.withValues(alpha: 0.4),
+                        color: theme.colorScheme.outline.withValues(alpha: 0.1),
                       ),
                     ),
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Row(
                       children: <Widget>[
                         _buildFilterTab(
@@ -1389,13 +1431,13 @@ class _TpvPageState extends ConsumerState<TpvPage> {
                         ),
                         const SizedBox(width: 24),
                         _buildFilterTab(
-                          label: 'Abiertos ($openCount)',
+                          label: 'Abiertos',
                           value: 'open',
                           theme: theme,
                         ),
                         const SizedBox(width: 24),
                         _buildFilterTab(
-                          label: 'Cerrados ($closedCount)',
+                          label: 'Cerrados',
                           value: 'closed',
                           theme: theme,
                         ),
@@ -1404,25 +1446,86 @@ class _TpvPageState extends ConsumerState<TpvPage> {
                   ),
                 ),
                 Expanded(
-                  child: filteredTerminals.isEmpty
-                      ? Center(
-                          child: Text(
-                            'No hay TPVs.',
-                            style: TextStyle(
-                              color: theme.colorScheme.onSurfaceVariant,
+                  child: RefreshIndicator(
+                    onRefresh: _load,
+                    displacement: 20,
+                    color: const Color(0xFF1152D4),
+                    child: CustomScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      slivers: <Widget>[
+                        // Search bar
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: theme.brightness == Brightness.dark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: TextField(
+                                controller: _searchCtrl,
+                                onChanged: (_) => setState(() {}),
+                                decoration: InputDecoration(
+                                  hintText: 'Buscar terminal por nombre o código...',
+                                  hintStyle: TextStyle(
+                                    color: scheme.onSurfaceVariant.withValues(alpha: 0.4),
+                                    fontSize: 14,
+                                  ),
+                                  prefixIcon: Icon(
+                                    Icons.search_rounded,
+                                    color: scheme.onSurfaceVariant.withValues(alpha: 0.4),
+                                    size: 20,
+                                  ),
+                                  border: InputBorder.none,
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                ),
+                              ),
                             ),
                           ),
-                        )
-                      : ListView.builder(
-                          key: const PageStorageKey<String>('tpv-terminals-list'),
-                          cacheExtent: 420,
-                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-                          itemCount: filteredTerminals.length,
-                          itemBuilder: (_, int index) {
-                            final TpvTerminalView terminal = filteredTerminals[index];
-                            return _terminalCard(terminal);
-                          },
                         ),
+                        if (filteredTerminals.isEmpty)
+                          SliverFillRemaining(
+                            child: Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  Icon(
+                                    Icons.terminal_rounded,
+                                    size: 64,
+                                    color: scheme.onSurfaceVariant.withValues(alpha: 0.1),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    _searchCtrl.text.isEmpty ? 'No hay terminales' : 'Sin resultados',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: scheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        else
+                          SliverPadding(
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
+                            sliver: SliverList(
+                              delegate: SliverChildBuilderDelegate(
+                                (context, index) {
+                                  final terminal = filteredTerminals[index];
+                                  return KeyedSubtree(
+                                    key: ValueKey<String>(terminal.terminal.id),
+                                    child: _terminalCard(terminal),
+                                  );
+                                },
+                                childCount: filteredTerminals.length,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),

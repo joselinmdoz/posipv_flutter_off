@@ -19,6 +19,7 @@ class AppScaffold extends ConsumerWidget {
     this.appBarActions,
     this.showDrawer = true,
     this.appBarLeading,
+    this.bottomNavigationBar,
   });
 
   final String title;
@@ -31,6 +32,7 @@ class AppScaffold extends ConsumerWidget {
   final List<Widget>? appBarActions;
   final bool showDrawer;
   final Widget? appBarLeading;
+  final Widget? bottomNavigationBar;
 
   static const List<_NavItem> _navItems = <_NavItem>[
     _NavItem('Principal', '/home', Icons.grid_view_rounded),
@@ -76,9 +78,10 @@ class AppScaffold extends ConsumerWidget {
         ),
         actions: _buildAppBarActions(context, ref),
       ),
-      bottomNavigationBar: showTopTabs
-          ? _buildBottomNav(context, activeRoute, licenseStatus)
-          : null,
+      bottomNavigationBar: bottomNavigationBar ??
+          (showTopTabs
+              ? _buildBottomNav(context, activeRoute, licenseStatus)
+              : null),
       body: DecoratedBox(
         decoration: BoxDecoration(
           gradient: LinearGradient(
