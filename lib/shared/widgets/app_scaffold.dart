@@ -35,10 +35,10 @@ class AppScaffold extends ConsumerWidget {
   final Widget? bottomNavigationBar;
 
   static const List<_NavItem> _navItems = <_NavItem>[
-    _NavItem('Principal', '/home', Icons.grid_view_rounded),
-    _NavItem('TPV', '/tpv', Icons.storefront_rounded),
+    _NavItem('Principal', '/home', Icons.home_rounded),
+    _NavItem('TPV', '/tpv', Icons.point_of_sale_rounded),
     _NavItem('Empleados', '/tpv-empleados', Icons.badge_outlined),
-    _NavItem('Ventas', '/ventas-directas', Icons.point_of_sale_rounded),
+    _NavItem('Ventas', '/ventas-directas', Icons.receipt_long_rounded),
     _NavItem('Inventario', '/inventario', Icons.inventory_2_outlined),
     _NavItem(
       'Movimientos',
@@ -240,9 +240,9 @@ class AppScaffold extends ConsumerWidget {
     // Filter only main navigation items for bottom nav
     final List<_NavItem> bottomNavItems = <_NavItem>[
       _navItems[0], // Principal
-      _navItems[5], // Productos
-      _navItems[3], // Ventas
       _navItems[1], // TPV
+      _navItems[3], // Ventas
+      _navItems[4], // Inventario
       _navItems[11], // Ajustes
     ];
 

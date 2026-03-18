@@ -6,6 +6,8 @@ import '../../../core/utils/perf_trace.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../data/reportes_local_datasource.dart';
 import 'reportes_providers.dart';
+import 'widgets/ipv_report_card.dart';
+import 'widgets/ipv_reporte_detail_page.dart';
 
 class IpvReportesPage extends ConsumerStatefulWidget {
   const IpvReportesPage({super.key});
@@ -17,7 +19,6 @@ class IpvReportesPage extends ConsumerStatefulWidget {
 class _IpvReportesPageState extends ConsumerState<IpvReportesPage> {
   bool _loading = true;
   bool _loadingIpv = false;
-  bool _showingIpvSheet = false;
   List<PosTerminal> _terminalOptions = <PosTerminal>[];
   String? _terminalId;
   DateTime? _fromDate;
@@ -119,84 +120,6 @@ class _IpvReportesPageState extends ConsumerState<IpvReportesPage> {
     }
   }
 
-  Widget _reportCard(IpvReportSummaryStat report) {
-    final ThemeData theme = Theme.of(context);
-    final bool isDark = theme.brightness == Brightness.dark;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      elevation: 0,
-      color: isDark ? const Color(0xFF1C2430) : const Color(0xFFEFF3FB),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () => _openDetail(report),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      report.terminalName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${_formatDateTime(report.openedAt)} → ${report.closedAt == null ? '-' : _formatDateTime(report.closedAt!)}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${_ipvSourceLabel(report.openingSource)} • ${report.lineCount} producto(s)',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 88, maxWidth: 112),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: <Widget>[
-                    Text(
-                      _moneyWithSymbol(
-                        report.totalAmountCents,
-                        report.currencySymbol,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.end,
-                      style: const TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      report.status == 'open' ? 'IPV abierto' : 'IPV cerrado',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.end,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isDark
-                            ? const Color(0xFFB8A9F1)
-                            : const Color(0xFF5B4B8A),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   Future<void> _pickFromDate() async {
     final DateTime now = DateTime.now();
@@ -237,148 +160,14 @@ class _IpvReportesPageState extends ConsumerState<IpvReportesPage> {
     _reloadIpvReports();
   }
 
-  Future<void> _exportIpv(IpvReportSummaryStat report, String format) async {
-    final ReportesLocalDataSource ds =
-        ref.read(reportesLocalDataSourceProvider);
-    try {
-      final String path = format == 'pdf'
-          ? await ds.exportIpvReportPdf(report.reportId)
-          : await ds.exportIpvReportCsv(report.reportId);
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Exportado $format en: $path')),
-      );
-    } catch (e) {
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo exportar IPV: $e')),
-      );
-    }
-  }
-
-  Future<void> _closeSheetAndExportIpv(
-    BuildContext sheetContext,
-    IpvReportSummaryStat report,
-    String format,
-  ) async {
-    Navigator.of(sheetContext).pop();
-    await _exportIpv(report, format);
-  }
-
   Future<void> _openDetail(IpvReportSummaryStat report) async {
-    if (_showingIpvSheet) {
-      return;
-    }
-    if (!mounted) {
-      return;
-    }
-
-    _showingIpvSheet = true;
-    try {
-      await showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        builder: (BuildContext context) {
-          final Color secondaryText =
-              Theme.of(context).colorScheme.onSurfaceVariant;
-          return FractionallySizedBox(
-            heightFactor: 0.92,
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      'IPV ${report.terminalName}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${_formatDateTime(report.openedAt)} → ${report.closedAt == null ? '-' : _formatDateTime(report.closedAt!)}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: secondaryText,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: <Widget>[
-                        OutlinedButton.icon(
-                          onPressed: () =>
-                              _closeSheetAndExportIpv(context, report, 'csv'),
-                          icon: const Icon(Icons.table_view_outlined),
-                          label: const Text('Exportar CSV'),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: () =>
-                              _closeSheetAndExportIpv(context, report, 'pdf'),
-                          icon: const Icon(Icons.picture_as_pdf_outlined),
-                          label: const Text('Exportar PDF'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    const SizedBox(height: 4),
-                    Text(
-                      'El detalle IPV se consulta por archivo exportado.',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        color: secondaryText,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      );
-    } finally {
-      _showingIpvSheet = false;
-    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => IpvReporteDetailPage(summary: report),
+      ),
+    );
   }
 
-  String _moneyWithSymbol(int cents, String symbol) {
-    return '$symbol${(cents / 100).toStringAsFixed(2)}';
-  }
-
-  String _formatDate(DateTime dt) {
-    final DateTime local = dt.toLocal();
-    final String y = local.year.toString().padLeft(4, '0');
-    final String m = local.month.toString().padLeft(2, '0');
-    final String d = local.day.toString().padLeft(2, '0');
-    return '$y-$m-$d';
-  }
-
-  String _formatDateTime(DateTime dt) {
-    final DateTime local = dt.toLocal();
-    final String y = local.year.toString().padLeft(4, '0');
-    final String m = local.month.toString().padLeft(2, '0');
-    final String d = local.day.toString().padLeft(2, '0');
-    final String hh = local.hour.toString().padLeft(2, '0');
-    final String mm = local.minute.toString().padLeft(2, '0');
-    return '$y-$m-$d $hh:$mm';
-  }
-
-  String _ipvSourceLabel(String source) {
-    switch (source.trim().toLowerCase()) {
-      case 'previous_final':
-        return 'Inicio desde cierre IPV anterior';
-      case 'initial_stock':
-      default:
-        return 'Inicio desde stock del TPV';
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -392,44 +181,70 @@ class _IpvReportesPageState extends ConsumerState<IpvReportesPage> {
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 children: <Widget>[
                   if (_loadingIpv)
                     const Padding(
                       padding: EdgeInsets.only(bottom: 8),
                       child: LinearProgressIndicator(minHeight: 2),
                     ),
-                  Card(
-                    elevation: 0,
-                    color: isDark
-                        ? const Color(0xFF241F33)
-                        : const Color(0xFFF4F1FB),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: <Widget>[
-                          SizedBox(
-                            width: 230,
-                            child: DropdownButtonFormField<String?>(
-                              initialValue: _terminalId,
+                    
+                  // Filtros Section
+                  Text(
+                    'FILTROS DE BÚSQUEDA',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                      color: isDark ? const Color(0xFF64748B) : const Color(0xFF64748B),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1E293B).withValues(alpha: 0.5) : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                      ),
+                    ),
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Punto de Venta',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF0F172A) : Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                            ),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String?>(
+                              value: _terminalId,
                               isExpanded: true,
-                              decoration: const InputDecoration(
-                                labelText: 'TPV',
-                                isDense: true,
-                              ),
-                              items: <DropdownMenuItem<String?>>[
+                              icon: const Icon(Icons.expand_more_rounded),
+                              items: [
                                 const DropdownMenuItem<String?>(
                                   value: null,
                                   child: Text('Todos los TPV'),
                                 ),
                                 ..._terminalOptions.map(
-                                  (PosTerminal terminal) =>
-                                      DropdownMenuItem<String?>(
-                                    value: terminal.id,
-                                    child: Text(terminal.name),
+                                  (PosTerminal t) => DropdownMenuItem<String?>(
+                                    value: t.id,
+                                    child: Text(t.name),
                                   ),
                                 ),
                               ],
@@ -438,44 +253,144 @@ class _IpvReportesPageState extends ConsumerState<IpvReportesPage> {
                               },
                             ),
                           ),
-                          OutlinedButton.icon(
-                            onPressed: _pickFromDate,
-                            icon: const Icon(Icons.date_range_outlined),
-                            label: Text(
-                              _fromDate == null
-                                  ? 'Desde'
-                                  : _formatDate(_fromDate!),
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Desde',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                      color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  InkWell(
+                                    onTap: _pickFromDate,
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                                      decoration: BoxDecoration(
+                                        color: isDark ? const Color(0xFF0F172A) : Colors.white,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(
+                                            _fromDate == null ? 'Seleccionar' : _fromDate.toString().split(' ')[0],
+                                            style: const TextStyle(fontSize: 14),
+                                          ),
+                                          const Icon(Icons.calendar_today_rounded, size: 18),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Hasta',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                      color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  InkWell(
+                                    onTap: _pickToDate,
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                                      decoration: BoxDecoration(
+                                        color: isDark ? const Color(0xFF0F172A) : Colors.white,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(
+                                            _toDate == null ? 'Seleccionar' : _toDate.toString().split(' ')[0],
+                                            style: const TextStyle(fontSize: 14),
+                                          ),
+                                          const Icon(Icons.calendar_today_rounded, size: 18),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _loadingIpv ? null : _reloadIpvReports,
+                            icon: const Icon(Icons.filter_list_rounded, size: 20),
+                            label: const Text('Aplicar filtros'),
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              backgroundColor: const Color(0xFF1152D4),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              textStyle: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
                             ),
                           ),
-                          OutlinedButton.icon(
-                            onPressed: _pickToDate,
-                            icon: const Icon(Icons.event_outlined),
-                            label: Text(_toDate == null
-                                ? 'Hasta'
-                                : _formatDate(_toDate!)),
-                          ),
-                          IconButton(
-                            tooltip: 'Limpiar filtros',
-                            onPressed: _clearFilters,
-                            icon: const Icon(Icons.restart_alt_rounded),
-                          ),
-                          FilledButton.tonalIcon(
-                            onPressed: _loadingIpv ? null : _reloadIpvReports,
-                            icon: const Icon(Icons.filter_alt_rounded),
-                            label: const Text('Aplicar'),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 10),
+                  
+                  const SizedBox(height: 24),
+                  Row(
+                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                     children: [
+                       Text(
+                         'RESULTADOS (${_reports.length})',
+                         style: TextStyle(
+                           fontSize: 12,
+                           fontWeight: FontWeight.w600,
+                           letterSpacing: 0.5,
+                           color: isDark ? const Color(0xFF64748B) : const Color(0xFF64748B),
+                         ),
+                       ),
+                       if (_fromDate != null || _toDate != null || _terminalId != null)
+                          TextButton(
+                            onPressed: _clearFilters,
+                            child: const Text('Limpiar', style: TextStyle(fontSize: 12)),
+                          )
+                     ],
+                  ),
+                  const SizedBox(height: 12),
                   if (_reports.isEmpty)
-                    const Card(
-                      elevation: 0,
-                      child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child:
-                            Text('No hay reportes IPV para el filtro actual.'),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: Center(
+                        child: Text('No hay reportes IPV para el filtro actual.'),
                       ),
                     )
                   else
@@ -485,10 +400,10 @@ class _IpvReportesPageState extends ConsumerState<IpvReportesPage> {
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: _reports.length,
                       itemBuilder: (BuildContext context, int index) {
-                        final IpvReportSummaryStat report = _reports[index];
-                        return KeyedSubtree(
-                          key: ValueKey<String>(report.reportId),
-                          child: _reportCard(report),
+                        return IpvReportCard(
+                          report: _reports[index],
+                          onTap: () => _openDetail(_reports[index]),
+                          dateFormatter: (dt) => dt.toString().substring(0, 16),
                         );
                       },
                     ),

@@ -11,3 +11,8 @@ final Provider<TpvLocalDataSource> tpvLocalDataSourceProvider =
     licenseService: ref.watch(offlineLicenseServiceProvider),
   );
 });
+
+final FutureProvider<List<TpvTerminalView>> tpvTerminalsProvider = 
+    FutureProvider<List<TpvTerminalView>>((ref) async {
+  return ref.watch(tpvLocalDataSourceProvider).listActiveTerminalViews();
+});

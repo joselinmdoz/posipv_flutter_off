@@ -1877,6 +1877,12 @@ class $PosTerminalsTable extends PosTerminals
           type: DriftSqlType.string,
           requiredDuringInsert: false,
           defaultValue: const Constant('[10000,5000,2000,1000,500,100]'));
+  static const VerificationMeta _imagePathMeta =
+      const VerificationMeta('imagePath');
+  @override
+  late final GeneratedColumn<String> imagePath = GeneratedColumn<String>(
+      'image_path', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   static const VerificationMeta _isActiveMeta =
       const VerificationMeta('isActive');
   @override
@@ -1911,6 +1917,7 @@ class $PosTerminalsTable extends PosTerminals
         currencySymbol,
         paymentMethodsJson,
         cashDenominationsJson,
+        imagePath,
         isActive,
         createdAt,
         updatedAt
@@ -1974,6 +1981,10 @@ class $PosTerminalsTable extends PosTerminals
           cashDenominationsJson.isAcceptableOrUnknown(
               data['cash_denominations_json']!, _cashDenominationsJsonMeta));
     }
+    if (data.containsKey('image_path')) {
+      context.handle(_imagePathMeta,
+          imagePath.isAcceptableOrUnknown(data['image_path']!, _imagePathMeta));
+    }
     if (data.containsKey('is_active')) {
       context.handle(_isActiveMeta,
           isActive.isAcceptableOrUnknown(data['is_active']!, _isActiveMeta));
@@ -2012,6 +2023,8 @@ class $PosTerminalsTable extends PosTerminals
       cashDenominationsJson: attachedDatabase.typeMapping.read(
           DriftSqlType.string,
           data['${effectivePrefix}cash_denominations_json'])!,
+      imagePath: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}image_path']),
       isActive: attachedDatabase.typeMapping
           .read(DriftSqlType.bool, data['${effectivePrefix}is_active'])!,
       createdAt: attachedDatabase.typeMapping
@@ -2036,6 +2049,7 @@ class PosTerminal extends DataClass implements Insertable<PosTerminal> {
   final String currencySymbol;
   final String paymentMethodsJson;
   final String cashDenominationsJson;
+  final String? imagePath;
   final bool isActive;
   final DateTime createdAt;
   final DateTime? updatedAt;
@@ -2048,6 +2062,7 @@ class PosTerminal extends DataClass implements Insertable<PosTerminal> {
       required this.currencySymbol,
       required this.paymentMethodsJson,
       required this.cashDenominationsJson,
+      this.imagePath,
       required this.isActive,
       required this.createdAt,
       this.updatedAt});
@@ -2062,6 +2077,9 @@ class PosTerminal extends DataClass implements Insertable<PosTerminal> {
     map['currency_symbol'] = Variable<String>(currencySymbol);
     map['payment_methods_json'] = Variable<String>(paymentMethodsJson);
     map['cash_denominations_json'] = Variable<String>(cashDenominationsJson);
+    if (!nullToAbsent || imagePath != null) {
+      map['image_path'] = Variable<String>(imagePath);
+    }
     map['is_active'] = Variable<bool>(isActive);
     map['created_at'] = Variable<DateTime>(createdAt);
     if (!nullToAbsent || updatedAt != null) {
@@ -2080,6 +2098,9 @@ class PosTerminal extends DataClass implements Insertable<PosTerminal> {
       currencySymbol: Value(currencySymbol),
       paymentMethodsJson: Value(paymentMethodsJson),
       cashDenominationsJson: Value(cashDenominationsJson),
+      imagePath: imagePath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(imagePath),
       isActive: Value(isActive),
       createdAt: Value(createdAt),
       updatedAt: updatedAt == null && nullToAbsent
@@ -2102,6 +2123,7 @@ class PosTerminal extends DataClass implements Insertable<PosTerminal> {
           serializer.fromJson<String>(json['paymentMethodsJson']),
       cashDenominationsJson:
           serializer.fromJson<String>(json['cashDenominationsJson']),
+      imagePath: serializer.fromJson<String?>(json['imagePath']),
       isActive: serializer.fromJson<bool>(json['isActive']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime?>(json['updatedAt']),
@@ -2119,6 +2141,7 @@ class PosTerminal extends DataClass implements Insertable<PosTerminal> {
       'currencySymbol': serializer.toJson<String>(currencySymbol),
       'paymentMethodsJson': serializer.toJson<String>(paymentMethodsJson),
       'cashDenominationsJson': serializer.toJson<String>(cashDenominationsJson),
+      'imagePath': serializer.toJson<String?>(imagePath),
       'isActive': serializer.toJson<bool>(isActive),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime?>(updatedAt),
@@ -2134,6 +2157,7 @@ class PosTerminal extends DataClass implements Insertable<PosTerminal> {
           String? currencySymbol,
           String? paymentMethodsJson,
           String? cashDenominationsJson,
+          Value<String?> imagePath = const Value.absent(),
           bool? isActive,
           DateTime? createdAt,
           Value<DateTime?> updatedAt = const Value.absent()}) =>
@@ -2147,6 +2171,7 @@ class PosTerminal extends DataClass implements Insertable<PosTerminal> {
         paymentMethodsJson: paymentMethodsJson ?? this.paymentMethodsJson,
         cashDenominationsJson:
             cashDenominationsJson ?? this.cashDenominationsJson,
+        imagePath: imagePath.present ? imagePath.value : this.imagePath,
         isActive: isActive ?? this.isActive,
         createdAt: createdAt ?? this.createdAt,
         updatedAt: updatedAt.present ? updatedAt.value : this.updatedAt,
@@ -2170,6 +2195,7 @@ class PosTerminal extends DataClass implements Insertable<PosTerminal> {
       cashDenominationsJson: data.cashDenominationsJson.present
           ? data.cashDenominationsJson.value
           : this.cashDenominationsJson,
+      imagePath: data.imagePath.present ? data.imagePath.value : this.imagePath,
       isActive: data.isActive.present ? data.isActive.value : this.isActive,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
@@ -2187,6 +2213,7 @@ class PosTerminal extends DataClass implements Insertable<PosTerminal> {
           ..write('currencySymbol: $currencySymbol, ')
           ..write('paymentMethodsJson: $paymentMethodsJson, ')
           ..write('cashDenominationsJson: $cashDenominationsJson, ')
+          ..write('imagePath: $imagePath, ')
           ..write('isActive: $isActive, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
@@ -2204,6 +2231,7 @@ class PosTerminal extends DataClass implements Insertable<PosTerminal> {
       currencySymbol,
       paymentMethodsJson,
       cashDenominationsJson,
+      imagePath,
       isActive,
       createdAt,
       updatedAt);
@@ -2219,6 +2247,7 @@ class PosTerminal extends DataClass implements Insertable<PosTerminal> {
           other.currencySymbol == this.currencySymbol &&
           other.paymentMethodsJson == this.paymentMethodsJson &&
           other.cashDenominationsJson == this.cashDenominationsJson &&
+          other.imagePath == this.imagePath &&
           other.isActive == this.isActive &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
@@ -2233,6 +2262,7 @@ class PosTerminalsCompanion extends UpdateCompanion<PosTerminal> {
   final Value<String> currencySymbol;
   final Value<String> paymentMethodsJson;
   final Value<String> cashDenominationsJson;
+  final Value<String?> imagePath;
   final Value<bool> isActive;
   final Value<DateTime> createdAt;
   final Value<DateTime?> updatedAt;
@@ -2246,6 +2276,7 @@ class PosTerminalsCompanion extends UpdateCompanion<PosTerminal> {
     this.currencySymbol = const Value.absent(),
     this.paymentMethodsJson = const Value.absent(),
     this.cashDenominationsJson = const Value.absent(),
+    this.imagePath = const Value.absent(),
     this.isActive = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
@@ -2260,6 +2291,7 @@ class PosTerminalsCompanion extends UpdateCompanion<PosTerminal> {
     this.currencySymbol = const Value.absent(),
     this.paymentMethodsJson = const Value.absent(),
     this.cashDenominationsJson = const Value.absent(),
+    this.imagePath = const Value.absent(),
     this.isActive = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
@@ -2277,6 +2309,7 @@ class PosTerminalsCompanion extends UpdateCompanion<PosTerminal> {
     Expression<String>? currencySymbol,
     Expression<String>? paymentMethodsJson,
     Expression<String>? cashDenominationsJson,
+    Expression<String>? imagePath,
     Expression<bool>? isActive,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
@@ -2293,6 +2326,7 @@ class PosTerminalsCompanion extends UpdateCompanion<PosTerminal> {
         'payment_methods_json': paymentMethodsJson,
       if (cashDenominationsJson != null)
         'cash_denominations_json': cashDenominationsJson,
+      if (imagePath != null) 'image_path': imagePath,
       if (isActive != null) 'is_active': isActive,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
@@ -2309,6 +2343,7 @@ class PosTerminalsCompanion extends UpdateCompanion<PosTerminal> {
       Value<String>? currencySymbol,
       Value<String>? paymentMethodsJson,
       Value<String>? cashDenominationsJson,
+      Value<String?>? imagePath,
       Value<bool>? isActive,
       Value<DateTime>? createdAt,
       Value<DateTime?>? updatedAt,
@@ -2323,6 +2358,7 @@ class PosTerminalsCompanion extends UpdateCompanion<PosTerminal> {
       paymentMethodsJson: paymentMethodsJson ?? this.paymentMethodsJson,
       cashDenominationsJson:
           cashDenominationsJson ?? this.cashDenominationsJson,
+      imagePath: imagePath ?? this.imagePath,
       isActive: isActive ?? this.isActive,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -2358,6 +2394,9 @@ class PosTerminalsCompanion extends UpdateCompanion<PosTerminal> {
       map['cash_denominations_json'] =
           Variable<String>(cashDenominationsJson.value);
     }
+    if (imagePath.present) {
+      map['image_path'] = Variable<String>(imagePath.value);
+    }
     if (isActive.present) {
       map['is_active'] = Variable<bool>(isActive.value);
     }
@@ -2384,6 +2423,7 @@ class PosTerminalsCompanion extends UpdateCompanion<PosTerminal> {
           ..write('currencySymbol: $currencySymbol, ')
           ..write('paymentMethodsJson: $paymentMethodsJson, ')
           ..write('cashDenominationsJson: $cashDenominationsJson, ')
+          ..write('imagePath: $imagePath, ')
           ..write('isActive: $isActive, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
@@ -10058,6 +10098,7 @@ typedef $$PosTerminalsTableCreateCompanionBuilder = PosTerminalsCompanion
   Value<String> currencySymbol,
   Value<String> paymentMethodsJson,
   Value<String> cashDenominationsJson,
+  Value<String?> imagePath,
   Value<bool> isActive,
   Value<DateTime> createdAt,
   Value<DateTime?> updatedAt,
@@ -10073,6 +10114,7 @@ typedef $$PosTerminalsTableUpdateCompanionBuilder = PosTerminalsCompanion
   Value<String> currencySymbol,
   Value<String> paymentMethodsJson,
   Value<String> cashDenominationsJson,
+  Value<String?> imagePath,
   Value<bool> isActive,
   Value<DateTime> createdAt,
   Value<DateTime?> updatedAt,
@@ -10176,6 +10218,9 @@ class $$PosTerminalsTableFilterComposer
   ColumnFilters<String> get cashDenominationsJson => $composableBuilder(
       column: $table.cashDenominationsJson,
       builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get imagePath => $composableBuilder(
+      column: $table.imagePath, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<bool> get isActive => $composableBuilder(
       column: $table.isActive, builder: (column) => ColumnFilters(column));
@@ -10304,6 +10349,9 @@ class $$PosTerminalsTableOrderingComposer
       column: $table.cashDenominationsJson,
       builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get imagePath => $composableBuilder(
+      column: $table.imagePath, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<bool> get isActive => $composableBuilder(
       column: $table.isActive, builder: (column) => ColumnOrderings(column));
 
@@ -10363,6 +10411,9 @@ class $$PosTerminalsTableAnnotationComposer
 
   GeneratedColumn<String> get cashDenominationsJson => $composableBuilder(
       column: $table.cashDenominationsJson, builder: (column) => column);
+
+  GeneratedColumn<String> get imagePath =>
+      $composableBuilder(column: $table.imagePath, builder: (column) => column);
 
   GeneratedColumn<bool> get isActive =>
       $composableBuilder(column: $table.isActive, builder: (column) => column);
@@ -10492,6 +10543,7 @@ class $$PosTerminalsTableTableManager extends RootTableManager<
             Value<String> currencySymbol = const Value.absent(),
             Value<String> paymentMethodsJson = const Value.absent(),
             Value<String> cashDenominationsJson = const Value.absent(),
+            Value<String?> imagePath = const Value.absent(),
             Value<bool> isActive = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<DateTime?> updatedAt = const Value.absent(),
@@ -10506,6 +10558,7 @@ class $$PosTerminalsTableTableManager extends RootTableManager<
             currencySymbol: currencySymbol,
             paymentMethodsJson: paymentMethodsJson,
             cashDenominationsJson: cashDenominationsJson,
+            imagePath: imagePath,
             isActive: isActive,
             createdAt: createdAt,
             updatedAt: updatedAt,
@@ -10520,6 +10573,7 @@ class $$PosTerminalsTableTableManager extends RootTableManager<
             Value<String> currencySymbol = const Value.absent(),
             Value<String> paymentMethodsJson = const Value.absent(),
             Value<String> cashDenominationsJson = const Value.absent(),
+            Value<String?> imagePath = const Value.absent(),
             Value<bool> isActive = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<DateTime?> updatedAt = const Value.absent(),
@@ -10534,6 +10588,7 @@ class $$PosTerminalsTableTableManager extends RootTableManager<
             currencySymbol: currencySymbol,
             paymentMethodsJson: paymentMethodsJson,
             cashDenominationsJson: cashDenominationsJson,
+            imagePath: imagePath,
             isActive: isActive,
             createdAt: createdAt,
             updatedAt: updatedAt,

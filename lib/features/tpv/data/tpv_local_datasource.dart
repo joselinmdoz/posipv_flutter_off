@@ -248,6 +248,7 @@ class TpvLocalDataSource {
     required String name,
     String? code,
     TpvTerminalConfig? config,
+    String? imagePath,
   }) async {
     await _licenseService.requireWriteAccess();
     final String cleanName = name.trim();
@@ -288,6 +289,7 @@ class TpvLocalDataSource {
               cashDenominationsJson: Value(
                 jsonEncode(safeConfig.cashDenominationsCents),
               ),
+              imagePath: Value(imagePath),
             ),
           );
 
@@ -300,6 +302,7 @@ class TpvLocalDataSource {
     required String name,
     required String code,
     TpvTerminalConfig? config,
+    String? imagePath,
   }) async {
     await _licenseService.requireWriteAccess();
     final String cleanName = name.trim();
@@ -336,6 +339,7 @@ class TpvLocalDataSource {
           cashDenominationsJson: Value(
             jsonEncode(safeConfig.cashDenominationsCents),
           ),
+          imagePath: Value(imagePath),
           updatedAt: Value(DateTime.now()),
         ),
       );

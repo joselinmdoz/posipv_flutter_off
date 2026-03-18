@@ -84,6 +84,7 @@ class PosTerminals extends Table {
       text().withDefault(const Constant('["cash"]'))();
   TextColumn get cashDenominationsJson =>
       text().withDefault(const Constant('[10000,5000,2000,1000,500,100]'))();
+  TextColumn get imagePath => text().nullable()();
   BoolColumn get isActive => boolean().withDefault(const Constant(true))();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get updatedAt => dateTime().nullable()();
