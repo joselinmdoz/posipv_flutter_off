@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -11,6 +13,7 @@ import '../../../shared/widgets/app_scaffold.dart';
 import '../../configuracion/presentation/configuracion_providers.dart';
 import '../../almacenes/presentation/almacenes_providers.dart';
 import '../../auth/presentation/auth_providers.dart';
+import '../../productos/presentation/productos_providers.dart';
 import '../../ventas_pos/presentation/widgets/pos_inventory_movement_dialog.dart';
 import '../data/inventario_local_datasource.dart';
 import 'inventario_providers.dart';
@@ -904,6 +907,14 @@ class _MovimientosInventarioPageState
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<int>(productosCatalogRevisionProvider,
+        (int? previous, int next) {
+      if (previous == null || previous == next || !mounted) {
+        return;
+      }
+      unawaited(_reloadMovements());
+    });
+
     final ThemeData theme = Theme.of(context);
     final String query = _searchCtrl.text.trim().toLowerCase();
     final List<InventoryMovementView> filteredMovements = query.isEmpty

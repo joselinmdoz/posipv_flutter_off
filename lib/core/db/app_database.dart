@@ -212,6 +212,8 @@ class Payments extends Table {
   TextColumn get saleId => text().references(Sales, #id)();
   TextColumn get method => text()();
   IntColumn get amountCents => integer()();
+  TextColumn get sourceCurrencyCode => text().nullable()();
+  IntColumn get sourceAmountCents => integer().nullable()();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
 
   @override
@@ -302,7 +304,7 @@ class AppDatabase extends _$AppDatabase {
   final Uuid _uuid = const Uuid();
 
   @override
-  int get schemaVersion => 14;
+  int get schemaVersion => 15;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -468,6 +470,18 @@ class AppDatabase extends _$AppDatabase {
           if (from < 14) {
             await _createPerformanceIndexes();
           }
+          if (from < 15) {
+            await _addPaymentColumnIfMissing(
+              m,
+              'source_currency_code',
+              () => m.addColumn(payments, payments.sourceCurrencyCode),
+            );
+            await _addPaymentColumnIfMissing(
+              m,
+              'source_amount_cents',
+              () => m.addColumn(payments, payments.sourceAmountCents),
+            );
+          }
         },
       );
 
@@ -521,6 +535,17 @@ class AppDatabase extends _$AppDatabase {
     Future<void> Function() addColumn,
   ) async {
     final bool exists = await _tableHasColumn('employees', columnName);
+    if (!exists) {
+      await addColumn();
+    }
+  }
+
+  Future<void> _addPaymentColumnIfMissing(
+    Migrator migrator,
+    String columnName,
+    Future<void> Function() addColumn,
+  ) async {
+    final bool exists = await _tableHasColumn('payments', columnName);
     if (!exists) {
       await addColumn();
     }

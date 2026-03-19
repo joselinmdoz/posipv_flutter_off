@@ -596,6 +596,7 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
       } else {
         await ds.createProduct(input);
       }
+      ref.read(productosCatalogRevisionProvider.notifier).state++;
 
       if (!mounted) {
         return;
@@ -652,6 +653,7 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
       await ref
           .read(productosLocalDataSourceProvider)
           .deactivateProduct(widget.product!.id);
+      ref.read(productosCatalogRevisionProvider.notifier).state++;
 
       if (!mounted) {
         return;
@@ -765,24 +767,32 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
     }
 
     if (path.startsWith('http')) {
-      return Image.network(
-        path,
-        fit: BoxFit.cover,
+      return Padding(
+        padding: const EdgeInsets.all(10),
+        child: Image.network(
+          path,
+          fit: BoxFit.contain,
+          alignment: Alignment.center,
+          cacheWidth: 640,
+          errorBuilder: (_, __, ___) => Container(
+            color: isDark ? const Color(0xFF1A2334) : const Color(0xFFEAF0F7),
+            child: const Icon(Icons.broken_image_outlined),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(10),
+      child: Image.file(
+        File(path),
+        fit: BoxFit.contain,
+        alignment: Alignment.center,
         cacheWidth: 640,
         errorBuilder: (_, __, ___) => Container(
           color: isDark ? const Color(0xFF1A2334) : const Color(0xFFEAF0F7),
           child: const Icon(Icons.broken_image_outlined),
         ),
-      );
-    }
-
-    return Image.file(
-      File(path),
-      fit: BoxFit.cover,
-      cacheWidth: 640,
-      errorBuilder: (_, __, ___) => Container(
-        color: isDark ? const Color(0xFF1A2334) : const Color(0xFFEAF0F7),
-        child: const Icon(Icons.broken_image_outlined),
       ),
     );
   }

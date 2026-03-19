@@ -11,3 +11,6 @@ final Provider<ProductosLocalDataSource> productosLocalDataSourceProvider =
     licenseService: ref.watch(offlineLicenseServiceProvider),
   );
 });
+
+final StateProvider<int> productosCatalogRevisionProvider =
+    StateProvider<int>((_) => 0);

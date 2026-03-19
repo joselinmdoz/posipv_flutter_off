@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/licensing/license_providers.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../data/data_management_local_datasource.dart';
 import 'configuracion_providers.dart';
@@ -254,6 +255,12 @@ class _GestionDatosPageState extends ConsumerState<GestionDatosPage> {
     _show('Próximamente.');
   }
 
+  void _showFullLicenseRequired() {
+    _show(
+      'Modo demo: esta función está disponible solo con licencia activa.',
+    );
+  }
+
   void _show(String message) {
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
@@ -262,6 +269,11 @@ class _GestionDatosPageState extends ConsumerState<GestionDatosPage> {
 
   @override
   Widget build(BuildContext context) {
+    final license = ref.watch(currentLicenseStatusProvider);
+    final bool isFullLicense = license.isFull;
+    final bool isLicenseLoading = license.isLoading;
+    final bool blockDataOps = !isFullLicense && !isLicenseLoading;
+
     return AppScaffold(
       title: 'Gestión de datos',
       currentRoute: '/configuracion',
@@ -273,17 +285,44 @@ class _GestionDatosPageState extends ConsumerState<GestionDatosPage> {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               children: <Widget>[
                 if (_working) const LinearProgressIndicator(minHeight: 3),
+                if (blockDataOps)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .errorContainer
+                          .withValues(alpha: 0.45),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      'Modo demo: importación/exportación y salvas de base de datos requieren licencia activa.',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).colorScheme.onErrorContainer,
+                      ),
+                    ),
+                  ),
                 _section('Copia de seguridad y restaurar'),
                 _option(
                   icon: Icons.storage_rounded,
                   title: 'Almacenamiento del teléfono',
-                  subtitle: 'Crear copia completa de la base de datos',
-                  onTap: _working ? null : _createBackup,
+                  subtitle: isFullLicense
+                      ? 'Crear copia completa de la base de datos'
+                      : 'Disponible con licencia activa',
+                  onTap: _working || isLicenseLoading
+                      ? null
+                      : (isFullLicense
+                          ? _createBackup
+                          : _showFullLicenseRequired),
                 ),
                 _option(
                   icon: Icons.restore_rounded,
                   title: 'Restaurar copia',
-                  subtitle: 'Próximamente',
+                  subtitle: isFullLicense
+                      ? 'Próximamente'
+                      : 'Disponible con licencia activa',
                   onTap: _working ? null : _showSoon,
                 ),
                 const SizedBox(height: 16),
@@ -291,8 +330,14 @@ class _GestionDatosPageState extends ConsumerState<GestionDatosPage> {
                 _option(
                   icon: Icons.table_chart_outlined,
                   title: 'Excel (.csv)',
-                  subtitle: 'Importar productos desde CSV',
-                  onTap: _working ? null : _openCsvImportSheet,
+                  subtitle: isFullLicense
+                      ? 'Importar productos desde CSV'
+                      : 'Disponible con licencia activa',
+                  onTap: _working || isLicenseLoading
+                      ? null
+                      : (isFullLicense
+                          ? _openCsvImportSheet
+                          : _showFullLicenseRequired),
                 ),
                 _option(
                   icon: Icons.receipt_long_outlined,
@@ -305,14 +350,26 @@ class _GestionDatosPageState extends ConsumerState<GestionDatosPage> {
                 _option(
                   icon: Icons.ios_share_rounded,
                   title: 'Productos (.csv)',
-                  subtitle: 'Exportar productos activos',
-                  onTap: _working ? null : _exportProductsCsv,
+                  subtitle: isFullLicense
+                      ? 'Exportar productos activos'
+                      : 'Disponible con licencia activa',
+                  onTap: _working || isLicenseLoading
+                      ? null
+                      : (isFullLicense
+                          ? _exportProductsCsv
+                          : _showFullLicenseRequired),
                 ),
                 _option(
                   icon: Icons.qr_code_2_rounded,
                   title: 'Etiquetas QR (.pdf)',
-                  subtitle: 'Exportar QR para impresión',
-                  onTap: _working ? null : _exportProductsQrPdf,
+                  subtitle: isFullLicense
+                      ? 'Exportar QR para impresión'
+                      : 'Disponible con licencia activa',
+                  onTap: _working || isLicenseLoading
+                      ? null
+                      : (isFullLicense
+                          ? _exportProductsQrPdf
+                          : _showFullLicenseRequired),
                 ),
                 const SizedBox(height: 16),
                 _section('Reiniciar datos'),

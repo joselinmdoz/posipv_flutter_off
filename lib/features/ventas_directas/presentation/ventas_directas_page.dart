@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,7 +18,15 @@ import '../../inventario/presentation/inventario_providers.dart';
 import '../../productos/domain/product_qr_codec.dart';
 import '../../productos/presentation/productos_providers.dart';
 import '../../ventas_pos/domain/sale_models.dart';
+import '../../ventas_pos/domain/sale_receipt.dart';
 import '../../ventas_pos/presentation/ventas_pos_providers.dart';
+import '../../ventas_pos/presentation/widgets/pos_payment_models.dart';
+import '../../ventas_pos/presentation/widgets/pos_bottom_footer.dart';
+import '../../ventas_pos/presentation/widgets/pos_scanned_product_dialog.dart';
+import '../../ventas_pos/presentation/widgets/pos_product_card.dart';
+import '../../ventas_pos/presentation/widgets/pos_sale_receipt_page.dart';
+import '../../ventas_pos/presentation/widgets/pos_search_bar.dart';
+import 'widgets/direct_sales_payment_dialog.dart';
 
 class VentasDirectasPage extends ConsumerStatefulWidget {
   const VentasDirectasPage({super.key});
@@ -37,7 +44,6 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
   List<Product> _visibleProducts = <Product>[];
   final Map<String, Product> _productsById = <String, Product>{};
   String? _selectedWarehouseId;
-  String _currencySymbol = AppConfig.defaultCurrencySymbol;
   AppCurrencyConfig _currencyConfig = AppCurrencyConfig.defaults;
   bool _allowNegativeStock = false;
   bool _loading = true;
@@ -145,7 +151,6 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
           availableIds: warehouseData.availableIds,
         );
         _currencyConfig = config.currencyConfig.normalized();
-        _currencySymbol = _currencyConfig.primaryCurrency.symbol;
         _allowNegativeStock = config.allowNegativeStock;
         _loading = false;
       });
@@ -391,23 +396,57 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
       _show('No se encontro un producto para el codigo escaneado.');
       return;
     }
-    if (!_warehouseProductIds.contains(product.id)) {
+    final Product matched = product;
+    if (!_warehouseProductIds.contains(matched.id)) {
       _show(
-          'El producto ${product.name} no pertenece al almacen seleccionado.');
+          'El producto ${matched.name} no pertenece al almacen seleccionado.');
       return;
     }
-    final double stock = _stockByProductId[product.id] ?? 0;
+    final double stock = _stockByProductId[matched.id] ?? 0;
     if (!_allowNegativeStock && stock <= 0) {
-      _show('El producto ${product.name} no tiene existencia.');
+      _show('El producto ${matched.name} no tiene existencia.');
       return;
     }
-    if (!_canIncreaseQty(product.id)) {
+    if (!_canIncreaseQty(matched.id)) {
       _show(
-        'Stock insuficiente para ${product.name}. Disponible: ${_formatQty(stock)}',
+        'Stock insuficiente para ${matched.name}. Disponible: ${_formatQty(stock)}',
       );
       return;
     }
-    _changeQty(product.id, 1);
+
+    final double currentCartQty = _qtyByProductId[matched.id] ?? 0;
+    final double availableToAdd = _allowNegativeStock
+        ? 999999
+        : (stock - currentCartQty).clamp(0, double.infinity);
+    if (!_allowNegativeStock && availableToAdd < 1) {
+      _show(
+        'Stock insuficiente para ${matched.name}. Disponible: ${_formatQty(stock)}',
+      );
+      return;
+    }
+
+    final double? qtyToAdd = await showDialog<double>(
+      context: context,
+      builder: (BuildContext context) {
+        return PosScannedProductDialog(
+          product: matched,
+          currencySymbol: _currencyConfig.symbolForCode(matched.currencyCode),
+          availableToAdd: availableToAdd,
+          allowNegativeStock: _allowNegativeStock,
+        );
+      },
+    );
+    if (qtyToAdd == null || qtyToAdd <= 0) {
+      return;
+    }
+    if (!_allowNegativeStock && currentCartQty + qtyToAdd > stock + 0.000001) {
+      _show('La cantidad excede el stock disponible para ${matched.name}.');
+      return;
+    }
+
+    setState(() {
+      _qtyByProductId[matched.id] = currentCartQty + qtyToAdd;
+    });
   }
 
   int _subtotalFromLines(List<_DirectCartLine> lines) {
@@ -459,602 +498,79 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
     return (amountCents / rateToPrimary).round();
   }
 
-  int _fromPrimaryCents({
-    required int amountCents,
-    required String currencyCode,
-  }) {
-    final String code = currencyCode.trim().toUpperCase();
-    if (code.isEmpty || code == _currencyConfig.primaryCurrencyCode) {
-      return amountCents;
-    }
-    final AppCurrencySetting? currency = _currencyConfig.currencyByCode(code);
-    final double rateToPrimary = currency?.rateToPrimary ?? 1;
-    if (!rateToPrimary.isFinite || rateToPrimary <= 0) {
-      return amountCents;
-    }
-    return (amountCents * rateToPrimary).round();
-  }
-
-  Future<void> _openCartSheet() async {
-    final double width = MediaQuery.sizeOf(context).width;
-    if (width >= 900) {
-      await _openCartSidePanel();
-      return;
-    }
-    await _openCartBottomSheet();
-  }
-
-  Future<void> _openCartBottomSheet() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (BuildContext context) {
-        return FractionallySizedBox(
-          heightFactor: 0.88,
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-              child: StatefulBuilder(
-                builder: (
-                  BuildContext modalContext,
-                  StateSetter setModalState,
-                ) {
-                  return _buildCartBody(
-                    modalContext: modalContext,
-                    setModalState: setModalState,
-                    withCloseButton: false,
-                  );
-                },
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _openCartSidePanel() async {
-    await showGeneralDialog<void>(
-      context: context,
-      barrierLabel: 'Carrito',
-      barrierDismissible: true,
-      barrierColor: const Color(0x55000000),
-      transitionDuration: const Duration(milliseconds: 220),
-      pageBuilder: (_, __, ___) {
-        return SafeArea(
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(0, 10, 10, 10),
-              child: Material(
-                elevation: 10,
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(18),
-                child: SizedBox(
-                  width: 420,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-                    child: StatefulBuilder(
-                      builder: (
-                        BuildContext modalContext,
-                        StateSetter setModalState,
-                      ) {
-                        return _buildCartBody(
-                          modalContext: modalContext,
-                          setModalState: setModalState,
-                          withCloseButton: true,
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-      transitionBuilder: (
-        BuildContext context,
-        Animation<double> animation,
-        Animation<double> secondaryAnimation,
-        Widget child,
-      ) {
-        return FadeTransition(opacity: animation, child: child);
-      },
-    );
-  }
-
-  Widget _buildCartBody({
-    required BuildContext modalContext,
-    required StateSetter setModalState,
-    required bool withCloseButton,
-  }) {
-    final Color secondaryText = Theme.of(context).colorScheme.onSurfaceVariant;
-    final List<_DirectCartLine> lines = _cartLines;
-    final int subtotal = _subtotalFromLines(lines);
-    final int tax = _taxFromLines(lines);
-    final int total = subtotal + tax;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Row(
-          children: <Widget>[
-            const Expanded(
-              child: Text(
-                'Carrito',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-              ),
-            ),
-            Text(
-              '${lines.length} item(s)',
-              style: TextStyle(color: secondaryText),
-            ),
-            if (withCloseButton)
-              IconButton(
-                tooltip: 'Cerrar',
-                onPressed: () => Navigator.of(modalContext).pop(),
-                icon: const Icon(Icons.close_rounded),
-              ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Expanded(
-          child: lines.isEmpty
-              ? const Center(child: Text('No hay productos en el carrito.'))
-              : ListView.separated(
-                  itemCount: lines.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (_, int index) {
-                    final _DirectCartLine line = lines[index];
-                    return ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                      title: Text(line.product.name),
-                      subtitle: Text(
-                        '${line.product.sku} • ${_moneyByCurrency(line.product.priceCents, currencyCode: line.product.currencyCode)}',
-                      ),
-                      trailing: SizedBox(
-                        width: 138,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: <Widget>[
-                            IconButton(
-                              onPressed: _posting
-                                  ? null
-                                  : () {
-                                      _changeQty(line.product.id, -1);
-                                      setModalState(() {});
-                                    },
-                              icon: const Icon(Icons.remove_circle_outline),
-                            ),
-                            Text(_formatQty(line.qty)),
-                            IconButton(
-                              onPressed: _posting
-                                  ? null
-                                  : () {
-                                      _changeQty(line.product.id, 1);
-                                      setModalState(() {});
-                                    },
-                              icon: const Icon(Icons.add_circle_outline),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        ),
-        if (lines.isNotEmpty) ...<Widget>[
-          const Divider(height: 1),
-          const SizedBox(height: 10),
-          _summaryRow('Subtotal', _money(subtotal)),
-          _summaryRow('Impuesto', _money(tax)),
-          _summaryRow('Total', _money(total), isBold: true),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: _posting
-                  ? null
-                  : () async {
-                      Navigator.of(modalContext).pop();
-                      await _openPaymentSheet();
-                    },
-              icon: const Icon(Icons.payments_outlined),
-              label: const Text('Procesar pago'),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
   Future<void> _openPaymentSheet() async {
     final List<_DirectCartLine> lines = _cartLines;
     if (lines.isEmpty) {
       _show('El carrito esta vacio.');
       return;
     }
-    final int subtotal = _subtotalFromLines(lines);
-    final int tax = _taxFromLines(lines);
-    final int gross = subtotal + tax;
-
-    final String defaultMethod =
-        _paymentMethods.contains('cash') ? 'cash' : _paymentMethods.first;
-    String selectedCurrencyCode = _currencyConfig.primaryCurrencyCode;
-    final TextEditingController discountCtrl = TextEditingController();
-    final List<_DirectPaymentLineDraft> drafts = <_DirectPaymentLineDraft>[
-      _DirectPaymentLineDraft(method: defaultMethod)
-        ..amountCtrl.text = (gross / 100).toStringAsFixed(2),
-    ];
-
-    int? submittedDiscountCents;
-    Map<String, int>? submittedPayments;
-
-    await showModalBottomSheet<void>(
+    final DirectSalesPaymentResult? result =
+        await showDialog<DirectSalesPaymentResult>(
       context: context,
-      isScrollControlled: true,
       builder: (BuildContext context) {
-        return FractionallySizedBox(
-          heightFactor: 0.92,
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-              child: StatefulBuilder(
-                builder: (BuildContext context, StateSetter setModalState) {
-                  final int discountCents =
-                      _moneyTextToCents(discountCtrl.text) ?? 0;
-                  final int total =
-                      discountCents >= gross ? 0 : gross - discountCents;
-                  final int totalInSelectedCurrency = _fromPrimaryCents(
-                    amountCents: total,
-                    currencyCode: selectedCurrencyCode,
-                  );
-
-                  final Map<String, int> paymentByMethod = <String, int>{};
-                  for (final _DirectPaymentLineDraft draft in drafts) {
-                    final int enteredCents =
-                        _moneyTextToCents(draft.amountCtrl.text) ?? 0;
-                    if (enteredCents <= 0) {
-                      continue;
-                    }
-                    final int cents = _toPrimaryCents(
-                      amountCents: enteredCents,
-                      currencyCode: selectedCurrencyCode,
-                    );
-                    paymentByMethod[draft.method] =
-                        (paymentByMethod[draft.method] ?? 0) + cents;
-                  }
-
-                  final int paid = paymentByMethod.values.fold<int>(
-                    0,
-                    (int sum, int value) => sum + value,
-                  );
-                  final int delta = paid - total;
-                  final int pending = delta < 0 ? -delta : 0;
-                  final int overpaid = delta > 0 ? delta : 0;
-                  final bool settled = delta.abs() <= 1;
-
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      const Text(
-                        'Procesar pago',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Expanded(
-                        child: SingleChildScrollView(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              DropdownButtonFormField<String>(
-                                initialValue: selectedCurrencyCode,
-                                decoration: const InputDecoration(
-                                  labelText: 'Moneda de cobro',
-                                ),
-                                items: _currencyConfig.currencies
-                                    .map(
-                                      (AppCurrencySetting currency) =>
-                                          DropdownMenuItem<String>(
-                                        value: currency.code,
-                                        child: Text(
-                                          '${currency.code} (${currency.symbol})',
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (String? value) {
-                                  if (value == null ||
-                                      value == selectedCurrencyCode) {
-                                    return;
-                                  }
-                                  setModalState(() {
-                                    selectedCurrencyCode = value;
-                                    _syncSinglePaymentLineToTotal(
-                                      drafts: drafts,
-                                      totalCents: total,
-                                      currencyCode: selectedCurrencyCode,
-                                    );
-                                  });
-                                },
-                              ),
-                              const SizedBox(height: 12),
-                              const Text(
-                                'Lineas de pago',
-                                style: TextStyle(fontWeight: FontWeight.w700),
-                              ),
-                              const SizedBox(height: 8),
-                              ...List<Widget>.generate(drafts.length, (
-                                int index,
-                              ) {
-                                final _DirectPaymentLineDraft draft =
-                                    drafts[index];
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 8),
-                                  child: Row(
-                                    children: <Widget>[
-                                      Expanded(
-                                        child: DropdownButtonFormField<String>(
-                                          initialValue: draft.method,
-                                          items: _paymentMethods
-                                              .map(
-                                                (String method) =>
-                                                    DropdownMenuItem<String>(
-                                                  value: method,
-                                                  child: Text(
-                                                    _paymentMethodLabel(method),
-                                                  ),
-                                                ),
-                                              )
-                                              .toList(),
-                                          onChanged: (String? value) {
-                                            if (value == null) {
-                                              return;
-                                            }
-                                            setModalState(() {
-                                              draft.method = value;
-                                            });
-                                          },
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      SizedBox(
-                                        width: 110,
-                                        child: TextField(
-                                          controller: draft.amountCtrl,
-                                          keyboardType: const TextInputType
-                                              .numberWithOptions(
-                                            decimal: true,
-                                          ),
-                                          decoration: const InputDecoration(
-                                            hintText: '0.00',
-                                          ).copyWith(
-                                            prefixText:
-                                                '${_currencyConfig.symbolForCode(selectedCurrencyCode)} ',
-                                          ),
-                                          onChanged: (_) =>
-                                              setModalState(() {}),
-                                        ),
-                                      ),
-                                      IconButton(
-                                        onPressed: drafts.length <= 1
-                                            ? null
-                                            : () {
-                                                setModalState(() {
-                                                  final _DirectPaymentLineDraft
-                                                      removed = drafts.removeAt(
-                                                    index,
-                                                  );
-                                                  removed.dispose();
-                                                  final int currentDiscount =
-                                                      _moneyTextToCents(
-                                                            discountCtrl.text,
-                                                          ) ??
-                                                          0;
-                                                  final int currentTotal =
-                                                      currentDiscount >= gross
-                                                          ? 0
-                                                          : gross -
-                                                              currentDiscount;
-                                                  _syncSinglePaymentLineToTotal(
-                                                    drafts: drafts,
-                                                    totalCents: currentTotal,
-                                                    currencyCode:
-                                                        selectedCurrencyCode,
-                                                  );
-                                                });
-                                              },
-                                        icon: const Icon(
-                                          Icons.delete_outline_rounded,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              }),
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: TextButton.icon(
-                                  onPressed: () {
-                                    setModalState(() {
-                                      drafts.add(
-                                        _DirectPaymentLineDraft(
-                                          method: defaultMethod,
-                                        ),
-                                      );
-                                    });
-                                  },
-                                  icon: const Icon(Icons.add_rounded),
-                                  label: const Text('Agregar linea'),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              TextField(
-                                controller: discountCtrl,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                  decimal: true,
-                                ),
-                                decoration: const InputDecoration(
-                                  labelText: 'Descuento',
-                                  hintText: '0.00',
-                                ),
-                                onChanged: (_) {
-                                  setModalState(() {
-                                    final int nextDiscount =
-                                        _moneyTextToCents(discountCtrl.text) ??
-                                            0;
-                                    final int nextTotal = nextDiscount >= gross
-                                        ? 0
-                                        : gross - nextDiscount;
-                                    _syncSinglePaymentLineToTotal(
-                                      drafts: drafts,
-                                      totalCents: nextTotal,
-                                      currencyCode: selectedCurrencyCode,
-                                    );
-                                  });
-                                },
-                              ),
-                              const SizedBox(height: 8),
-                              _summaryRow(
-                                'Subtotal',
-                                _moneyWithConversion(
-                                  subtotal,
-                                  currencyCode: selectedCurrencyCode,
-                                ),
-                              ),
-                              _summaryRow(
-                                'Impuesto',
-                                _moneyWithConversion(
-                                  tax,
-                                  currencyCode: selectedCurrencyCode,
-                                ),
-                              ),
-                              _summaryRow(
-                                'Total',
-                                _moneyWithConversion(
-                                  total,
-                                  currencyCode: selectedCurrencyCode,
-                                ),
-                                isBold: true,
-                              ),
-                              if (selectedCurrencyCode !=
-                                  _currencyConfig.primaryCurrencyCode)
-                                _summaryRow(
-                                  'Total en $selectedCurrencyCode',
-                                  _moneyByCurrency(
-                                    totalInSelectedCurrency,
-                                    currencyCode: selectedCurrencyCode,
-                                  ),
-                                ),
-                              _summaryRow(
-                                'Pagado',
-                                _moneyWithConversion(
-                                  paid,
-                                  currencyCode: selectedCurrencyCode,
-                                ),
-                              ),
-                              _summaryRow(
-                                'Pendiente',
-                                _moneyWithConversion(
-                                  pending,
-                                  currencyCode: selectedCurrencyCode,
-                                ),
-                                valueColor: settled
-                                    ? const Color(0xFF148A65)
-                                    : const Color(0xFFB13B5A),
-                              ),
-                              if (overpaid > 0)
-                                _summaryRow(
-                                  'Sobrepago',
-                                  _moneyWithConversion(
-                                    overpaid,
-                                    currencyCode: selectedCurrencyCode,
-                                  ),
-                                  valueColor: const Color(0xFFB13B5A),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed: _posting
-                              ? null
-                              : () {
-                                  if (discountCents < 0) {
-                                    _show(
-                                      'El descuento no puede ser negativo.',
-                                    );
-                                    return;
-                                  }
-                                  if (discountCents > gross) {
-                                    _show(
-                                      'El descuento no puede superar el total bruto de la venta.',
-                                    );
-                                    return;
-                                  }
-                                  if (paymentByMethod.isEmpty) {
-                                    _show('Debes ingresar al menos un pago.');
-                                    return;
-                                  }
-                                  if (delta.abs() > 1) {
-                                    _show(
-                                      'La suma de pagos debe ser igual al total de la venta (considerando conversion de moneda).',
-                                    );
-                                    return;
-                                  }
-                                  if (delta != 0) {
-                                    final String methodToAdjust =
-                                        paymentByMethod.keys.first;
-                                    paymentByMethod[methodToAdjust] =
-                                        paymentByMethod[methodToAdjust]! -
-                                            delta;
-                                    paymentByMethod.removeWhere(
-                                      (String _, int value) => value <= 0,
-                                    );
-                                  }
-                                  submittedDiscountCents = discountCents;
-                                  submittedPayments = paymentByMethod;
-                                  Navigator.of(context).pop();
-                                },
-                          child: const Text('Validar pago'),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ),
+        return DirectSalesPaymentDialog(
+          cartLines: lines
+              .map(
+                (_DirectCartLine line) =>
+                    PosCartLine(product: line.product, qty: line.qty),
+              )
+              .toList(),
+          stockByProductId: _stockByProductId,
+          allowNegativeStock: _allowNegativeStock,
+          currencyConfig: _currencyConfig,
+          paymentMethods: _paymentMethods,
+          paymentMethodLabel: _paymentMethodLabel,
         );
       },
     );
 
-    for (final _DirectPaymentLineDraft draft in drafts) {
-      draft.dispose();
-    }
-    discountCtrl.dispose();
-
-    if (submittedPayments == null || submittedDiscountCents == null) {
+    if (result == null ||
+        result.paymentByMethodPrimaryCents.isEmpty ||
+        result.paymentLines.isEmpty ||
+        result.cartLines.isEmpty) {
       return;
     }
+
+    final List<_DirectCartLine> finalLines = result.cartLines
+        .map(
+          (PosCartLine line) => _DirectCartLine(
+            product: line.product,
+            qty: line.qty,
+          ),
+        )
+        .toList();
+    _applyCartLinesFromPayment(finalLines);
+
     await _submitSale(
-      discountCents: submittedDiscountCents!,
-      paymentByMethod: submittedPayments!,
+      discountCents: result.discountCents,
+      paymentByMethod: result.paymentByMethodPrimaryCents,
+      paymentLines: result.paymentLines,
+      linesOverride: finalLines,
     );
+  }
+
+  void _applyCartLinesFromPayment(List<_DirectCartLine> lines) {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _qtyByProductId
+        ..clear()
+        ..addEntries(
+          lines.map(
+            (_DirectCartLine line) =>
+                MapEntry<String, double>(line.product.id, line.qty),
+          ),
+        );
+    });
   }
 
   Future<void> _submitSale({
     required int discountCents,
     required Map<String, int> paymentByMethod,
+    List<DirectSalesPaymentLine> paymentLines =
+        const <DirectSalesPaymentLine>[],
+    List<_DirectCartLine>? linesOverride,
   }) async {
     final session = ref.read(currentSessionProvider);
     if (session == null) {
@@ -1066,7 +582,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
       return;
     }
 
-    final List<_DirectCartLine> lines = _cartLines;
+    final List<_DirectCartLine> lines = linesOverride ?? _cartLines;
     if (lines.isEmpty) {
       _show('Agrega al menos un producto con cantidad mayor a 0.');
       return;
@@ -1079,10 +595,16 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
       return;
     }
     final int totalCents = _totalFromLines(lines, discountCents);
-    final int paymentsTotal = paymentByMethod.values.fold<int>(
-      0,
-      (int sum, int value) => sum + value,
-    );
+    final int paymentsTotal = paymentLines.isEmpty
+        ? paymentByMethod.values.fold<int>(
+            0,
+            (int sum, int value) => sum + value,
+          )
+        : paymentLines.fold<int>(
+            0,
+            (int sum, DirectSalesPaymentLine line) =>
+                sum + line.primaryAmountCents,
+          );
     if (paymentsTotal != totalCents) {
       _show('La suma de pagos no coincide con el total de la venta.');
       return;
@@ -1099,18 +621,49 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
         )
         .toList();
 
+    final List<PaymentInput> paymentInputs = paymentLines.isEmpty
+        ? paymentByMethod.entries
+            .map(
+              (MapEntry<String, int> entry) =>
+                  PaymentInput(method: entry.key, amountCents: entry.value),
+            )
+            .toList()
+        : paymentLines
+            .map(
+              (DirectSalesPaymentLine line) => PaymentInput(
+                method: line.method,
+                amountCents: line.primaryAmountCents,
+                sourceCurrencyCode: line.currencyCode,
+                sourceAmountCents: line.enteredAmountCents,
+              ),
+            )
+            .toList();
+
+    final List<ReceiptPayment> receiptPayments = paymentLines.isEmpty
+        ? paymentByMethod.entries
+            .map(
+              (MapEntry<String, int> entry) => ReceiptPayment(
+                method: _paymentMethodLabel(entry.key),
+                amountCents: entry.value,
+              ),
+            )
+            .toList()
+        : paymentLines
+            .map(
+              (DirectSalesPaymentLine line) => ReceiptPayment(
+                method: _formatPaymentLineLabel(line),
+                amountCents: line.primaryAmountCents,
+              ),
+            )
+            .toList();
+
     final CreateSaleInput input = CreateSaleInput(
       warehouseId: _selectedWarehouseId!,
       cashierId: session.userId,
       terminalId: null,
       terminalSessionId: null,
       items: items,
-      payments: paymentByMethod.entries
-          .map(
-            (MapEntry<String, int> entry) =>
-                PaymentInput(method: entry.key, amountCents: entry.value),
-          )
-          .toList(),
+      payments: paymentInputs,
       discountCents: discountCents,
       allowNegativeStock: _allowNegativeStock,
       saleOrigin: 'direct',
@@ -1126,6 +679,43 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
 
     switch (result) {
       case AppSuccess<CreateSaleResult>(:final data):
+        final licenseStatus = ref.read(currentLicenseStatusProvider);
+        final SaleReceipt receipt = SaleReceipt(
+          folio: data.folio,
+          createdAt: DateTime.now(),
+          cashierUsername: session.username,
+          terminalName: 'Venta Directa',
+          warehouseName: _selectedWarehouseName(),
+          currencySymbol: _currencyConfig.primaryCurrency.symbol,
+          lines: lines.map(
+            (_DirectCartLine line) {
+              final String code =
+                  line.product.currencyCode.trim().toUpperCase();
+              final String symbol = _currencyConfig.symbolForCode(code);
+              final int lineTotalNativeCents =
+                  (line.qty * line.product.priceCents).round();
+              return SaleReceiptLine(
+                name: line.product.name,
+                sku: line.product.sku,
+                qty: line.qty,
+                unitPriceCents: _unitPricePrimaryCents(line.product),
+                taxRateBps: line.product.taxRateBps,
+                unitPriceDisplay:
+                    '$symbol${(line.product.priceCents / 100).toStringAsFixed(2)} $code',
+                lineTotalDisplay:
+                    '$symbol${(lineTotalNativeCents / 100).toStringAsFixed(2)} $code',
+              );
+            },
+          ).toList(),
+          subtotalCents: subtotalCents,
+          taxCents: taxCents,
+          discountCents: discountCents,
+          totalCents: totalCents,
+          payments: receiptPayments,
+          paidCents: paymentsTotal,
+          isDemoMode: !licenseStatus.isFull,
+        );
+
         setState(() => _qtyByProductId.clear());
         try {
           await _reloadWarehouseInventory();
@@ -1137,40 +727,32 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
           return;
         }
         _show('Venta directa registrada. Folio: ${data.folio}');
+        await _showReceiptDialog(receipt);
       case AppFailure<CreateSaleResult>(:final message):
         _show(message);
     }
   }
 
-  int? _moneyTextToCents(String raw) {
-    final String normalized = raw.trim().replaceAll(',', '.');
-    if (normalized.isEmpty) {
-      return null;
+  String _selectedWarehouseName() {
+    final String? selectedId = _selectedWarehouseId;
+    if (selectedId == null) {
+      return '';
     }
-    final double? value = double.tryParse(normalized);
-    if (value == null || value < 0) {
-      return null;
+    for (final Warehouse warehouse in _warehouses) {
+      if (warehouse.id == selectedId) {
+        return warehouse.name;
+      }
     }
-    return (value * 100).round();
+    return '';
   }
 
-  void _syncSinglePaymentLineToTotal({
-    required List<_DirectPaymentLineDraft> drafts,
-    required int totalCents,
-    required String currencyCode,
-  }) {
-    if (drafts.length != 1) {
-      return;
-    }
-    final int displayedTotal = _fromPrimaryCents(
-      amountCents: totalCents,
-      currencyCode: currencyCode,
+  Future<void> _showReceiptDialog(SaleReceipt receipt) async {
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return PosSaleReceiptPage(receipt: receipt);
+      },
     );
-    final String next = (displayedTotal / 100).toStringAsFixed(2);
-    if (drafts.first.amountCtrl.text == next) {
-      return;
-    }
-    drafts.first.amountCtrl.text = next;
   }
 
   String _paymentMethodLabel(String method) {
@@ -1188,42 +770,13 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
     }
   }
 
-  String _money(int cents) {
-    final bool negative = cents < 0;
-    final int absCents = cents.abs();
-    final String value =
-        '$_currencySymbol${(absCents / 100).toStringAsFixed(2)}';
-    return negative ? '-$value' : value;
-  }
-
-  String _moneyByCurrency(
-    int cents, {
-    required String currencyCode,
-  }) {
-    final bool negative = cents < 0;
-    final int absCents = cents.abs();
-    final String symbol = _currencyConfig.symbolForCode(currencyCode);
-    final String value = '$symbol${(absCents / 100).toStringAsFixed(2)}';
-    return negative ? '-$value' : value;
-  }
-
-  String _moneyWithConversion(
-    int primaryCents, {
-    required String currencyCode,
-  }) {
-    final String primary = _money(primaryCents);
-    if (currencyCode == _currencyConfig.primaryCurrencyCode) {
-      return primary;
-    }
-    final int converted = _fromPrimaryCents(
-      amountCents: primaryCents,
-      currencyCode: currencyCode,
-    );
-    final String extra = _moneyByCurrency(
-      converted,
-      currencyCode: currencyCode,
-    );
-    return '$primary ($extra)';
+  String _formatPaymentLineLabel(DirectSalesPaymentLine line) {
+    final String method = _paymentMethodLabel(line.method);
+    final String code = line.currencyCode.trim().toUpperCase();
+    final String symbol = _currencyConfig.symbolForCode(code);
+    final String source =
+        '$symbol${(line.enteredAmountCents / 100).toStringAsFixed(2)} $code';
+    return '$method ($source)';
   }
 
   String _formatQty(double qty) {
@@ -1231,6 +784,18 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
       return qty.toStringAsFixed(0);
     }
     return qty.toStringAsFixed(2);
+  }
+
+  double _computeFooterTotal() {
+    double total = 0;
+    for (final MapEntry<String, double> entry in _qtyByProductId.entries) {
+      final Product? product = _productsById[entry.key];
+      if (product == null) {
+        continue;
+      }
+      total += (_unitPricePrimaryCents(product) / 100) * entry.value;
+    }
+    return total;
   }
 
   void _show(String message) {
@@ -1242,56 +807,21 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Widget _summaryRow(
-    String label,
-    String value, {
-    bool isBold = false,
-    Color? valueColor,
-  }) {
-    final TextStyle style = isBold
-        ? const TextStyle(fontWeight: FontWeight.w800)
-        : const TextStyle();
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        children: <Widget>[
-          Expanded(child: Text(label, style: style)),
-          Text(value, style: style.copyWith(color: valueColor)),
-        ],
-      ),
-    );
-  }
-
   int _gridColumnsForWidth(double width) {
-    if (width >= 1180) {
-      return 6;
-    }
-    if (width >= 980) {
+    if (width >= 1400) {
       return 5;
     }
-    if (width >= 760) {
+    if (width >= 1100) {
       return 4;
     }
-    if (width >= 350) {
+    if (width >= 860) {
       return 3;
     }
     return 2;
   }
 
   double _gridAspectRatioForWidth(double width) {
-    if (width < 350) {
-      return 0.88;
-    }
-    if (width < 430) {
-      return 0.96;
-    }
-    if (width < 560) {
-      return 1.02;
-    }
-    if (width < 760) {
-      return 1.06;
-    }
-    return 1.1;
+    return 0.82;
   }
 
   Widget _warehouseHeader() {
@@ -1341,265 +871,23 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
   }
 
   Widget _productFilterField() {
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return ValueListenableBuilder<TextEditingValue>(
-      valueListenable: _searchCtrl,
-      builder: (
-        BuildContext context,
-        TextEditingValue value,
-        Widget? child,
-      ) {
-        return TextField(
-          controller: _searchCtrl,
-          decoration: InputDecoration(
-            hintText: 'Filtrar productos',
-            prefixIcon: const Icon(Icons.search_rounded),
-            suffixIcon: value.text.isEmpty
-                ? null
-                : IconButton(
-                    onPressed: _searchCtrl.clear,
-                    icon: const Icon(Icons.clear_rounded),
-                  ),
-            filled: true,
-            fillColor:
-                isDark ? const Color(0xFF211D2D) : const Color(0xFFF9F7FD),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(
-                color:
-                    isDark ? const Color(0xFF342E46) : const Color(0xFFE1D8F2),
-              ),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(
-                color:
-                    isDark ? const Color(0xFF342E46) : const Color(0xFFE1D8F2),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildProductImage(Product product) {
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final String path = (product.imagePath ?? '').trim();
-    if (path.isEmpty) {
-      return Container(
-        width: 34,
-        height: 34,
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF28233A) : const Color(0xFFEDE7FA),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: const Icon(Icons.inventory_2_outlined, size: 16),
-      );
-    }
-
-    final File file = File(path);
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      child: Image.file(
-        file,
-        width: 34,
-        height: 34,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) {
-          return Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF28233A) : const Color(0xFFEDE7FA),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(Icons.broken_image_outlined, size: 16),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _qtyButton({
-    required IconData icon,
-    required VoidCallback? onTap,
-    required bool isAdd,
-  }) {
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final bool enabled = onTap != null;
-    final Color bg = isAdd
-        ? (isDark ? const Color(0xFF233246) : const Color(0xFFE4EEF9))
-        : (isDark ? const Color(0xFF35263F) : const Color(0xFFF3EAF8));
-    final Color fg = isAdd
-        ? (isDark ? const Color(0xFF9AC1FF) : const Color(0xFF305A9A))
-        : (isDark ? const Color(0xFFDAB4E7) : const Color(0xFF6C427A));
-
-    return Material(
-      color: enabled
-          ? bg
-          : (isDark ? const Color(0xFF2A2632) : const Color(0xFFECECEC)),
-      shape: const CircleBorder(),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: SizedBox(
-          width: 31,
-          height: 31,
-          child: Icon(
-            icon,
-            size: 18,
-            color:
-                enabled ? fg : Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-        ),
-      ),
+    return PosSearchBar(
+      controller: _searchCtrl,
+      onScanTap: _scanAndAddProduct,
+      categories: const <String>['Todos'],
+      selectedCategory: 'Todos',
+      onCategoryChanged: (_) {},
     );
   }
 
   Widget _productCard(Product product) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme scheme = theme.colorScheme;
-    final bool isDark = theme.brightness == Brightness.dark;
-    final double qty = _qtyByProductId[product.id] ?? 0;
-    final double stock = _stockByProductId[product.id] ?? 0;
-    final bool outOfStock = stock <= 0;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: isDark ? const Color(0xFF342E46) : const Color(0xFFE3DAF8),
-        ),
-        boxShadow: isDark
-            ? const <BoxShadow>[]
-            : const <BoxShadow>[
-                BoxShadow(
-                  color: Color(0x0E000000),
-                  blurRadius: 6,
-                  offset: Offset(0, 1.5),
-                ),
-              ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(6, 6, 6, 4),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                _buildProductImage(product),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        product.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 11,
-                        ),
-                      ),
-                      Text(
-                        product.sku,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 9.5,
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  margin: const EdgeInsets.only(left: 2),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: outOfStock
-                        ? (isDark
-                            ? const Color(0xFF472733)
-                            : const Color(0xFFFBE9EE))
-                        : (isDark
-                            ? const Color(0xFF233246)
-                            : const Color(0xFFE6ECFA)),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    _formatQty(stock),
-                    style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w800,
-                      color: outOfStock
-                          ? const Color(0xFFFF8EB4)
-                          : (isDark
-                              ? const Color(0xFF9AC1FF)
-                              : const Color(0xFF3D4E89)),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              _moneyByCurrency(
-                product.priceCents,
-                currencyCode: product.currencyCode,
-              ),
-              style: TextStyle(
-                fontWeight: FontWeight.w900,
-                fontSize: 12.8,
-                color: isDark ? scheme.primary : const Color(0xFF3A2D61),
-              ),
-            ),
-            const SizedBox(height: 2),
-            Row(
-              children: <Widget>[
-                _qtyButton(
-                  icon: Icons.remove_rounded,
-                  isAdd: false,
-                  onTap: _posting ? null : () => _changeQty(product.id, -1),
-                ),
-                Expanded(
-                  child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? const Color(0xFF28233A)
-                            : const Color(0xFFF7F3FC),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        _formatQty(qty),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                _qtyButton(
-                  icon: Icons.add_rounded,
-                  isAdd: true,
-                  onTap: _posting ? null : () => _changeQty(product.id, 1),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
+    return PosProductCard(
+      product: product,
+      qty: _qtyByProductId[product.id] ?? 0,
+      stock: _stockByProductId[product.id] ?? 0,
+      currencySymbol: _currencyConfig.symbolForCode(product.currencyCode),
+      isPosting: _posting,
+      onQtyChanged: (double delta) => _changeQty(product.id, delta),
     );
   }
 
@@ -1618,7 +906,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
       builder: (BuildContext context, constraints) {
         final double width = constraints.crossAxisExtent;
         return SliverPadding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 98),
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
           sliver: SliverGrid(
             delegate: SliverChildBuilderDelegate(
               (_, int index) {
@@ -1642,62 +930,61 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
     );
   }
 
-  Widget _floatingButtons() {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        FloatingActionButton.small(
-          heroTag: 'directScanFab',
-          onPressed: _scanAndAddProduct,
-          child: const Icon(Icons.qr_code_scanner_rounded),
-        ),
-        const SizedBox(height: 10),
-        Badge(
-          isLabelVisible: _cartUnits > 0,
-          label: Text('$_cartUnits'),
-          child: FloatingActionButton.small(
-            heroTag: 'directCartFab',
-            onPressed: _openCartSheet,
-            child: const Icon(Icons.shopping_cart_rounded),
-          ),
-        ),
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
+    ref.listen<int>(productosCatalogRevisionProvider,
+        (int? previous, int next) {
+      if (previous == null || previous == next || !mounted) {
+        return;
+      }
+      unawaited(_reloadWarehouseInventory());
+    });
     final license = ref.watch(currentLicenseStatusProvider);
     return AppScaffold(
       title: 'Ventas Directas',
       currentRoute: '/ventas-directas',
       onRefresh: _bootstrap,
       showBottomNavigationBar: false,
-      floatingActionButton: license.canSell ? _floatingButtons() : null,
+      floatingActionButton: null,
       body: license.canSell
           ? (_loading
               ? const Center(child: CircularProgressIndicator())
-              : SafeArea(
-                  child: CustomScrollView(
-                    keyboardDismissBehavior:
-                        ScrollViewKeyboardDismissBehavior.onDrag,
-                    slivers: <Widget>[
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-                        sliver: SliverToBoxAdapter(
-                          child: Column(
-                            children: <Widget>[
-                              _warehouseHeader(),
-                              const SizedBox(height: 10),
-                              _productFilterField(),
-                              const SizedBox(height: 8),
-                            ],
-                          ),
+              : Column(
+                  children: <Widget>[
+                    Expanded(
+                      child: SafeArea(
+                        bottom: false,
+                        child: CustomScrollView(
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          slivers: <Widget>[
+                            SliverPadding(
+                              padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                              sliver: SliverToBoxAdapter(
+                                child: Column(
+                                  children: <Widget>[
+                                    _warehouseHeader(),
+                                    const SizedBox(height: 10),
+                                    _productFilterField(),
+                                    const SizedBox(height: 8),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            _productsGridSliver(),
+                          ],
                         ),
                       ),
-                      _productsGridSliver(),
-                    ],
-                  ),
+                    ),
+                    PosBottomFooter(
+                      itemCount: _cartUnits,
+                      total: _computeFooterTotal(),
+                      currencySymbol: _currencyConfig.primaryCurrency.symbol,
+                      onPayTap: _qtyByProductId.values.any((double q) => q > 0)
+                          ? _openPaymentSheet
+                          : null,
+                    ),
+                  ],
                 ))
           : _buildLicenseBlockedBody(license.message),
     );
@@ -1744,16 +1031,4 @@ class _DirectCartLine {
 
   final Product product;
   final double qty;
-}
-
-class _DirectPaymentLineDraft {
-  _DirectPaymentLineDraft({required this.method})
-      : amountCtrl = TextEditingController();
-
-  String method;
-  final TextEditingController amountCtrl;
-
-  void dispose() {
-    amountCtrl.dispose();
-  }
 }

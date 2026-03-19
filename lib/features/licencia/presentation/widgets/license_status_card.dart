@@ -165,7 +165,9 @@ class LicenseStatusCard extends StatelessWidget {
                         ? 'Modo demo con límites: '
                             '${DemoLicenseLimits.maxActiveProducts} productos, '
                             '${DemoLicenseLimits.maxActiveTerminals} TPV, '
-                            '${DemoLicenseLimits.maxSalesPerDay} ventas por día y sin reportes generales.'
+                            '${DemoLicenseLimits.maxActiveEmployees} empleado activo, '
+                            '${DemoLicenseLimits.maxSalesPerDay} ventas por día, '
+                            'sin reportes generales y sin importar/exportar datos.'
                         : 'Licencia sin fecha de caducidad.',
                     style: TextStyle(
                       fontSize: 14,

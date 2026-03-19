@@ -16,10 +16,14 @@ class PaymentInput {
   const PaymentInput({
     required this.method,
     required this.amountCents,
+    this.sourceCurrencyCode,
+    this.sourceAmountCents,
   });
 
   final String method;
   final int amountCents;
+  final String? sourceCurrencyCode;
+  final int? sourceAmountCents;
 }
 
 class CreateSaleInput {

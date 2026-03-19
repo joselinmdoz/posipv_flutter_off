@@ -6,12 +6,14 @@ class TpvOpenSessionDialog extends StatefulWidget {
   final TpvTerminalView terminal;
   final List<TpvEmployee> employees;
   final VoidCallback onManageEmployees;
+  final bool allowMultipleSelection;
 
   const TpvOpenSessionDialog({
     super.key,
     required this.terminal,
     required this.employees,
     required this.onManageEmployees,
+    this.allowMultipleSelection = true,
   });
 
   @override
@@ -98,7 +100,9 @@ class _TpvOpenSessionDialogState extends State<TpvOpenSessionDialog> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Selecciona los responsables para iniciar la jornada.',
+                      widget.allowMultipleSelection
+                          ? 'Selecciona los responsables para iniciar la jornada.'
+                          : 'Selecciona el responsable para iniciar la jornada.',
                       style: TextStyle(
                         fontSize: 14,
                         color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
@@ -122,11 +126,18 @@ class _TpvOpenSessionDialogState extends State<TpvOpenSessionDialog> {
                       separatorBuilder: (_, __) => const SizedBox(height: 12),
                       itemBuilder: (context, index) {
                         final employee = widget.employees[index];
-                        final isSelected = _selectedEmployeeIds.contains(employee.id);
+                        final isSelected =
+                            _selectedEmployeeIds.contains(employee.id);
 
                         return InkWell(
                           onTap: () {
                             setState(() {
+                              if (!widget.allowMultipleSelection) {
+                                _selectedEmployeeIds
+                                  ..clear()
+                                  ..add(employee.id);
+                                return;
+                              }
                               if (isSelected) {
                                 if (_selectedEmployeeIds.length > 1) {
                                   _selectedEmployeeIds.remove(employee.id);
@@ -141,7 +152,8 @@ class _TpvOpenSessionDialogState extends State<TpvOpenSessionDialog> {
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
                               color: isSelected && !isDark
-                                  ? const Color(0xFF1152D4).withValues(alpha: 0.05)
+                                  ? const Color(0xFF1152D4)
+                                      .withValues(alpha: 0.05)
                                   : Colors.transparent,
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
@@ -156,13 +168,15 @@ class _TpvOpenSessionDialogState extends State<TpvOpenSessionDialog> {
                                 TpvEmployeeAvatar(
                                   imagePath: employee.imagePath,
                                   radius: 24,
-                                  backgroundColor: scheme.primaryContainer.withValues(alpha: 0.3),
+                                  backgroundColor: scheme.primaryContainer
+                                      .withValues(alpha: 0.3),
                                   iconColor: scheme.primary,
                                 ),
                                 const SizedBox(width: 16),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         employee.name,
@@ -173,10 +187,12 @@ class _TpvOpenSessionDialogState extends State<TpvOpenSessionDialog> {
                                         ),
                                       ),
                                       Text(
-                                        employee.associatedUsername ?? 'Empleado',
+                                        employee.associatedUsername ??
+                                            'Empleado',
                                         style: TextStyle(
                                           fontSize: 13,
-                                          color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
+                                          color: scheme.onSurfaceVariant
+                                              .withValues(alpha: 0.6),
                                         ),
                                       ),
                                     ],
@@ -193,13 +209,17 @@ class _TpvOpenSessionDialogState extends State<TpvOpenSessionDialog> {
                                     border: Border.all(
                                       color: isSelected
                                           ? const Color(0xFF1152D4)
-                                          : scheme.outline.withValues(alpha: 0.4),
+                                          : scheme.outline
+                                              .withValues(alpha: 0.4),
                                       width: 2,
                                     ),
                                   ),
                                   child: isSelected
-                                      ? const Icon(
-                                          Icons.check_rounded,
+                                      ? Icon(
+                                          widget.allowMultipleSelection
+                                              ? Icons.check_rounded
+                                              : Icons
+                                                  .radio_button_checked_rounded,
                                           size: 16,
                                           color: Colors.white,
                                         )
@@ -217,12 +237,24 @@ class _TpvOpenSessionDialogState extends State<TpvOpenSessionDialog> {
                       icon: const Icon(Icons.add_rounded, size: 24),
                       label: const Text(
                         'Agregar empleado',
-                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                        style: TextStyle(
+                            fontWeight: FontWeight.w700, fontSize: 16),
                       ),
                       style: TextButton.styleFrom(
                         foregroundColor: const Color(0xFF1152D4),
                       ),
                     ),
+                    if (!widget.allowMultipleSelection) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Modo demo: solo se permite 1 responsable por turno.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -243,7 +275,8 @@ class _TpvOpenSessionDialogState extends State<TpvOpenSessionDialog> {
                       onPressed: () => Navigator.pop(context),
                       style: TextButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
                       ),
                       child: Text(
                         'Cancelar',
@@ -260,17 +293,20 @@ class _TpvOpenSessionDialogState extends State<TpvOpenSessionDialog> {
                     child: ElevatedButton(
                       onPressed: _selectedEmployeeIds.isEmpty
                           ? null
-                          : () => Navigator.pop(context, _selectedEmployeeIds.toList()),
+                          : () => Navigator.pop(
+                              context, _selectedEmployeeIds.toList()),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF1152D4),
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
                         elevation: 0,
                       ),
                       child: const Text(
                         'Abrir',
-                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                        style: TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 16),
                       ),
                     ),
                   ),

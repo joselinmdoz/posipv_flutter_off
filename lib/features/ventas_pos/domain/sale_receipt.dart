@@ -15,6 +15,7 @@ class SaleReceipt {
     required this.payments,
     required this.paidCents,
     this.currencySymbol = r'$',
+    this.isDemoMode = false,
   });
 
   final String folio;
@@ -30,6 +31,7 @@ class SaleReceipt {
   final List<ReceiptPayment> payments;
   final int paidCents;
   final String currencySymbol;
+  final bool isDemoMode;
 }
 
 class ReceiptPayment {
@@ -49,6 +51,8 @@ class SaleReceiptLine {
     required this.qty,
     required this.unitPriceCents,
     required this.taxRateBps,
+    this.unitPriceDisplay,
+    this.lineTotalDisplay,
   });
 
   final String name;
@@ -56,6 +60,8 @@ class SaleReceiptLine {
   final double qty;
   final int unitPriceCents;
   final int taxRateBps;
+  final String? unitPriceDisplay;
+  final String? lineTotalDisplay;
 
   int get lineSubtotalCents => (qty * unitPriceCents).round();
 

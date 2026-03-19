@@ -48,6 +48,7 @@ class DemoLicenseLimits {
 
   static const int maxActiveProducts = 5;
   static const int maxActiveTerminals = 1;
+  static const int maxActiveEmployees = 1;
   static const int maxSalesPerDay = 5;
 }
 
@@ -207,8 +208,9 @@ class LicenseStatus {
             : 'Modo demo activo con limites: '
                 '${DemoLicenseLimits.maxActiveProducts} productos, '
                 '${DemoLicenseLimits.maxActiveTerminals} TPV, '
+                '${DemoLicenseLimits.maxActiveEmployees} empleado activo, '
                 '${DemoLicenseLimits.maxSalesPerDay} ventas/dia y '
-                'sin acceso a reportes generales.');
+                'sin reportes generales ni importacion/exportacion de datos.');
     return LicenseStatus(
       mode: LicenseMode.trial,
       isLoading: false,

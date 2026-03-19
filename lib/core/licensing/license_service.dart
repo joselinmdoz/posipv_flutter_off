@@ -170,6 +170,15 @@ class OfflineLicenseService {
     }
   }
 
+  Future<void> requireFullAccess({
+    String message = 'Esta funcion requiere una licencia activa.',
+  }) async {
+    final LicenseStatus status = await current();
+    if (!status.isFull) {
+      throw LicenseException(message);
+    }
+  }
+
   Future<StoredTrialState> _ensureTrialState(
     DateTime now, {
     required StoredTrialState? persistedTrialState,

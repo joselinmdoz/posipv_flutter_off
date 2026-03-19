@@ -798,6 +798,7 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
       return;
     }
 
+    final bool canExportIpv = ref.read(currentLicenseStatusProvider).isFull;
     _showingIpvSheet = true;
     try {
       await showModalBottomSheet<void>(
@@ -833,19 +834,40 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
                       runSpacing: 8,
                       children: <Widget>[
                         OutlinedButton.icon(
-                          onPressed: () =>
-                              _closeSheetAndExportIpv(context, report, 'csv'),
+                          onPressed: canExportIpv
+                              ? () => _closeSheetAndExportIpv(
+                                    context,
+                                    report,
+                                    'csv',
+                                  )
+                              : null,
                           icon: const Icon(Icons.table_view_outlined),
                           label: const Text('Exportar CSV'),
                         ),
                         OutlinedButton.icon(
-                          onPressed: () =>
-                              _closeSheetAndExportIpv(context, report, 'pdf'),
+                          onPressed: canExportIpv
+                              ? () => _closeSheetAndExportIpv(
+                                    context,
+                                    report,
+                                    'pdf',
+                                  )
+                              : null,
                           icon: const Icon(Icons.picture_as_pdf_outlined),
                           label: const Text('Exportar PDF'),
                         ),
                       ],
                     ),
+                    if (!canExportIpv) ...<Widget>[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Modo demo: exportar IPV requiere licencia activa.',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 8),
                     const SizedBox(height: 4),
                     Text(

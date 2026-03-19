@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/licensing/license_providers.dart';
 import '../../../../core/utils/perf_trace.dart';
 import '../../data/reportes_local_datasource.dart';
 import '../reportes_providers.dart';
@@ -182,6 +183,7 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
   Widget _buildContent(BuildContext context, bool isDark) {
     final IpvReportDetailStat detail = _detail!;
     final int tableTotalAmountCents = _tableTotalAmountCents(detail);
+    final bool canExportIpv = ref.watch(currentLicenseStatusProvider).isFull;
 
     return ListView(
       padding: EdgeInsets.zero,
@@ -294,7 +296,7 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
             children: [
               Expanded(
                 child: InkWell(
-                  onTap: () => _exportFormat('csv'),
+                  onTap: canExportIpv ? () => _exportFormat('csv') : null,
                   borderRadius: BorderRadius.circular(16),
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 16),
@@ -326,7 +328,7 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
               const SizedBox(width: 16),
               Expanded(
                 child: InkWell(
-                  onTap: () => _exportFormat('pdf'),
+                  onTap: canExportIpv ? () => _exportFormat('pdf') : null,
                   borderRadius: BorderRadius.circular(16),
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 16),
@@ -358,6 +360,18 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
             ],
           ),
         ),
+        if (!canExportIpv)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            child: Text(
+              'Modo demo: exportar IPV requiere licencia activa.',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ),
+          ),
 
         const SizedBox(height: 24),
 

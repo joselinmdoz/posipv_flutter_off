@@ -31,7 +31,9 @@ import 'widgets/pos_search_bar.dart';
 import 'widgets/pos_store_info_bar.dart';
 import 'widgets/pos_inventory_movement_dialog.dart';
 import 'widgets/pos_payment_dialog.dart';
+import 'widgets/pos_payment_models.dart';
 import 'widgets/pos_close_session_dialog.dart';
+import 'widgets/pos_scanned_product_dialog.dart';
 import 'widgets/pos_sale_receipt_page.dart';
 import '../domain/sale_receipt.dart';
 import '../../reportes/presentation/widgets/ipv_reporte_detail_page.dart';
@@ -560,7 +562,43 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       return;
     }
 
-    _changeQty(matched.id, 1);
+    final double currentCartQty = _qtyByProductId[matched.id] ?? 0;
+    final double availableToAdd = _allowNegativeStock
+        ? 999999
+        : (stock - currentCartQty).clamp(0, double.infinity);
+    if (!_allowNegativeStock && availableToAdd < 1) {
+      _show(
+        'Stock insuficiente para ${matched.name}. Disponible: ${_formatQty(stock)}',
+      );
+      return;
+    }
+
+    final double? qtyToAdd = await showDialog<double>(
+      context: context,
+      builder: (BuildContext context) {
+        return PosScannedProductDialog(
+          product: matched,
+          currencySymbol: _currencySymbol,
+          availableToAdd: availableToAdd,
+          allowNegativeStock: _allowNegativeStock,
+        );
+      },
+    );
+
+    if (qtyToAdd == null || qtyToAdd <= 0) {
+      return;
+    }
+
+    if (!_allowNegativeStock && currentCartQty + qtyToAdd > stock + 0.000001) {
+      _show(
+        'La cantidad excede el stock disponible para ${matched.name}.',
+      );
+      return;
+    }
+
+    setState(() {
+      _qtyByProductId[matched.id] = currentCartQty + qtyToAdd;
+    });
   }
 
   Future<void> _openPaymentSheet() async {
@@ -574,40 +612,62 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
         ? <String>['cash', 'card']
         : _terminalConfig.paymentMethods;
 
-    final int subtotalCents = _subtotalFromLines(lines);
-    final int taxCents = _taxFromLines(lines);
-    final int totalCents = subtotalCents + taxCents;
-
-    final Map<String, int>? result = await showDialog<Map<String, int>>(
+    final PosPaymentResult? result = await showDialog<PosPaymentResult>(
       context: context,
       builder: (BuildContext context) {
         return PosPaymentDialog(
           cartLines: lines
-              .map((l) => PosCartLine(product: l.product, qty: l.qty))
+              .map((_CartLine line) =>
+                  PosCartLine(product: line.product, qty: line.qty))
               .toList(),
-          subtotal: subtotalCents / 100,
-          tax: taxCents / 100,
-          total: totalCents / 100,
           currencySymbol: _currencySymbol,
           paymentMethods: methods,
           paymentMethodLabel: _paymentMethodLabel,
+          stockByProductId: _stockByProductId,
+          allowNegativeStock: _allowNegativeStock,
         );
       },
     );
 
-    if (result == null || result.isEmpty) {
+    if (result == null ||
+        result.paymentByMethod.isEmpty ||
+        result.cartLines.isEmpty) {
       return;
     }
 
+    final List<_CartLine> finalLines = result.cartLines
+        .map((PosCartLine line) =>
+            _CartLine(product: line.product, qty: line.qty))
+        .toList();
+    _applyCartLinesFromPayment(finalLines);
+
     await _submitSale(
       discountCents: 0,
-      paymentByMethod: result,
+      paymentByMethod: result.paymentByMethod,
+      linesOverride: finalLines,
     );
+  }
+
+  void _applyCartLinesFromPayment(List<_CartLine> lines) {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _qtyByProductId
+        ..clear()
+        ..addEntries(
+          lines.map(
+            (_CartLine line) =>
+                MapEntry<String, double>(line.product.id, line.qty),
+          ),
+        );
+    });
   }
 
   Future<void> _submitSale({
     required int discountCents,
     required Map<String, int> paymentByMethod,
+    List<_CartLine>? linesOverride,
   }) async {
     final session = ref.read(currentSessionProvider);
     if (session == null) {
@@ -623,7 +683,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       return;
     }
 
-    final List<_CartLine> lines = _cartLines;
+    final List<_CartLine> lines = linesOverride ?? _cartLines;
     if (lines.isEmpty) {
       _show('Agrega al menos un producto con cantidad mayor a 0.');
       return;
@@ -684,6 +744,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
 
     switch (result) {
       case AppSuccess<CreateSaleResult>(:final data):
+        final licenseStatus = ref.read(currentLicenseStatusProvider);
         final SaleReceipt receipt = SaleReceipt(
           folio: data.folio,
           createdAt: DateTime.now(),
@@ -715,6 +776,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
               )
               .toList(),
           paidCents: paymentsTotal,
+          isDemoMode: !licenseStatus.isFull,
         );
 
         setState(() {
@@ -1046,6 +1108,31 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<int>(productosCatalogRevisionProvider,
+        (int? previous, int next) {
+      if (previous == null || previous == next || !mounted) {
+        return;
+      }
+      unawaited(_reloadPosInventory());
+    });
+    ref.listen<UserSession?>(currentSessionProvider,
+        (UserSession? previous, UserSession? next) {
+      final String? prevUserId = previous?.userId;
+      final String? nextUserId = next?.userId;
+      final String? prevTerminalId = previous?.activeTerminalId;
+      final String? nextTerminalId = next?.activeTerminalId;
+
+      final bool sameUser = prevUserId == nextUserId;
+      final bool sameTerminal = prevTerminalId == nextTerminalId;
+      if (sameUser && sameTerminal) {
+        return;
+      }
+      if (!mounted) {
+        return;
+      }
+      unawaited(_bootstrap());
+    });
+
     final license = ref.watch(currentLicenseStatusProvider);
     final ThemeData theme = Theme.of(context);
     final bool isDark = theme.brightness == Brightness.dark;

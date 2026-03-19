@@ -5987,6 +5987,18 @@ class $PaymentsTable extends Payments with TableInfo<$PaymentsTable, Payment> {
   late final GeneratedColumn<int> amountCents = GeneratedColumn<int>(
       'amount_cents', aliasedName, false,
       type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _sourceCurrencyCodeMeta =
+      const VerificationMeta('sourceCurrencyCode');
+  @override
+  late final GeneratedColumn<String> sourceCurrencyCode =
+      GeneratedColumn<String>('source_currency_code', aliasedName, true,
+          type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _sourceAmountCentsMeta =
+      const VerificationMeta('sourceAmountCents');
+  @override
+  late final GeneratedColumn<int> sourceAmountCents = GeneratedColumn<int>(
+      'source_amount_cents', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
   static const VerificationMeta _createdAtMeta =
       const VerificationMeta('createdAt');
   @override
@@ -5996,8 +6008,15 @@ class $PaymentsTable extends Payments with TableInfo<$PaymentsTable, Payment> {
       requiredDuringInsert: false,
       defaultValue: currentDateAndTime);
   @override
-  List<GeneratedColumn> get $columns =>
-      [id, saleId, method, amountCents, createdAt];
+  List<GeneratedColumn> get $columns => [
+        id,
+        saleId,
+        method,
+        amountCents,
+        sourceCurrencyCode,
+        sourceAmountCents,
+        createdAt
+      ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -6033,6 +6052,18 @@ class $PaymentsTable extends Payments with TableInfo<$PaymentsTable, Payment> {
     } else if (isInserting) {
       context.missing(_amountCentsMeta);
     }
+    if (data.containsKey('source_currency_code')) {
+      context.handle(
+          _sourceCurrencyCodeMeta,
+          sourceCurrencyCode.isAcceptableOrUnknown(
+              data['source_currency_code']!, _sourceCurrencyCodeMeta));
+    }
+    if (data.containsKey('source_amount_cents')) {
+      context.handle(
+          _sourceAmountCentsMeta,
+          sourceAmountCents.isAcceptableOrUnknown(
+              data['source_amount_cents']!, _sourceAmountCentsMeta));
+    }
     if (data.containsKey('created_at')) {
       context.handle(_createdAtMeta,
           createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
@@ -6054,6 +6085,10 @@ class $PaymentsTable extends Payments with TableInfo<$PaymentsTable, Payment> {
           .read(DriftSqlType.string, data['${effectivePrefix}method'])!,
       amountCents: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}amount_cents'])!,
+      sourceCurrencyCode: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}source_currency_code']),
+      sourceAmountCents: attachedDatabase.typeMapping.read(
+          DriftSqlType.int, data['${effectivePrefix}source_amount_cents']),
       createdAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
     );
@@ -6070,12 +6105,16 @@ class Payment extends DataClass implements Insertable<Payment> {
   final String saleId;
   final String method;
   final int amountCents;
+  final String? sourceCurrencyCode;
+  final int? sourceAmountCents;
   final DateTime createdAt;
   const Payment(
       {required this.id,
       required this.saleId,
       required this.method,
       required this.amountCents,
+      this.sourceCurrencyCode,
+      this.sourceAmountCents,
       required this.createdAt});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -6084,6 +6123,12 @@ class Payment extends DataClass implements Insertable<Payment> {
     map['sale_id'] = Variable<String>(saleId);
     map['method'] = Variable<String>(method);
     map['amount_cents'] = Variable<int>(amountCents);
+    if (!nullToAbsent || sourceCurrencyCode != null) {
+      map['source_currency_code'] = Variable<String>(sourceCurrencyCode);
+    }
+    if (!nullToAbsent || sourceAmountCents != null) {
+      map['source_amount_cents'] = Variable<int>(sourceAmountCents);
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     return map;
   }
@@ -6094,6 +6139,12 @@ class Payment extends DataClass implements Insertable<Payment> {
       saleId: Value(saleId),
       method: Value(method),
       amountCents: Value(amountCents),
+      sourceCurrencyCode: sourceCurrencyCode == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceCurrencyCode),
+      sourceAmountCents: sourceAmountCents == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceAmountCents),
       createdAt: Value(createdAt),
     );
   }
@@ -6106,6 +6157,9 @@ class Payment extends DataClass implements Insertable<Payment> {
       saleId: serializer.fromJson<String>(json['saleId']),
       method: serializer.fromJson<String>(json['method']),
       amountCents: serializer.fromJson<int>(json['amountCents']),
+      sourceCurrencyCode:
+          serializer.fromJson<String?>(json['sourceCurrencyCode']),
+      sourceAmountCents: serializer.fromJson<int?>(json['sourceAmountCents']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
     );
   }
@@ -6117,6 +6171,8 @@ class Payment extends DataClass implements Insertable<Payment> {
       'saleId': serializer.toJson<String>(saleId),
       'method': serializer.toJson<String>(method),
       'amountCents': serializer.toJson<int>(amountCents),
+      'sourceCurrencyCode': serializer.toJson<String?>(sourceCurrencyCode),
+      'sourceAmountCents': serializer.toJson<int?>(sourceAmountCents),
       'createdAt': serializer.toJson<DateTime>(createdAt),
     };
   }
@@ -6126,12 +6182,20 @@ class Payment extends DataClass implements Insertable<Payment> {
           String? saleId,
           String? method,
           int? amountCents,
+          Value<String?> sourceCurrencyCode = const Value.absent(),
+          Value<int?> sourceAmountCents = const Value.absent(),
           DateTime? createdAt}) =>
       Payment(
         id: id ?? this.id,
         saleId: saleId ?? this.saleId,
         method: method ?? this.method,
         amountCents: amountCents ?? this.amountCents,
+        sourceCurrencyCode: sourceCurrencyCode.present
+            ? sourceCurrencyCode.value
+            : this.sourceCurrencyCode,
+        sourceAmountCents: sourceAmountCents.present
+            ? sourceAmountCents.value
+            : this.sourceAmountCents,
         createdAt: createdAt ?? this.createdAt,
       );
   Payment copyWithCompanion(PaymentsCompanion data) {
@@ -6141,6 +6205,12 @@ class Payment extends DataClass implements Insertable<Payment> {
       method: data.method.present ? data.method.value : this.method,
       amountCents:
           data.amountCents.present ? data.amountCents.value : this.amountCents,
+      sourceCurrencyCode: data.sourceCurrencyCode.present
+          ? data.sourceCurrencyCode.value
+          : this.sourceCurrencyCode,
+      sourceAmountCents: data.sourceAmountCents.present
+          ? data.sourceAmountCents.value
+          : this.sourceAmountCents,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
   }
@@ -6152,13 +6222,16 @@ class Payment extends DataClass implements Insertable<Payment> {
           ..write('saleId: $saleId, ')
           ..write('method: $method, ')
           ..write('amountCents: $amountCents, ')
+          ..write('sourceCurrencyCode: $sourceCurrencyCode, ')
+          ..write('sourceAmountCents: $sourceAmountCents, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, saleId, method, amountCents, createdAt);
+  int get hashCode => Object.hash(id, saleId, method, amountCents,
+      sourceCurrencyCode, sourceAmountCents, createdAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -6167,6 +6240,8 @@ class Payment extends DataClass implements Insertable<Payment> {
           other.saleId == this.saleId &&
           other.method == this.method &&
           other.amountCents == this.amountCents &&
+          other.sourceCurrencyCode == this.sourceCurrencyCode &&
+          other.sourceAmountCents == this.sourceAmountCents &&
           other.createdAt == this.createdAt);
 }
 
@@ -6175,6 +6250,8 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
   final Value<String> saleId;
   final Value<String> method;
   final Value<int> amountCents;
+  final Value<String?> sourceCurrencyCode;
+  final Value<int?> sourceAmountCents;
   final Value<DateTime> createdAt;
   final Value<int> rowid;
   const PaymentsCompanion({
@@ -6182,6 +6259,8 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
     this.saleId = const Value.absent(),
     this.method = const Value.absent(),
     this.amountCents = const Value.absent(),
+    this.sourceCurrencyCode = const Value.absent(),
+    this.sourceAmountCents = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -6190,6 +6269,8 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
     required String saleId,
     required String method,
     required int amountCents,
+    this.sourceCurrencyCode = const Value.absent(),
+    this.sourceAmountCents = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
   })  : id = Value(id),
@@ -6201,6 +6282,8 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
     Expression<String>? saleId,
     Expression<String>? method,
     Expression<int>? amountCents,
+    Expression<String>? sourceCurrencyCode,
+    Expression<int>? sourceAmountCents,
     Expression<DateTime>? createdAt,
     Expression<int>? rowid,
   }) {
@@ -6209,6 +6292,9 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
       if (saleId != null) 'sale_id': saleId,
       if (method != null) 'method': method,
       if (amountCents != null) 'amount_cents': amountCents,
+      if (sourceCurrencyCode != null)
+        'source_currency_code': sourceCurrencyCode,
+      if (sourceAmountCents != null) 'source_amount_cents': sourceAmountCents,
       if (createdAt != null) 'created_at': createdAt,
       if (rowid != null) 'rowid': rowid,
     });
@@ -6219,6 +6305,8 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
       Value<String>? saleId,
       Value<String>? method,
       Value<int>? amountCents,
+      Value<String?>? sourceCurrencyCode,
+      Value<int?>? sourceAmountCents,
       Value<DateTime>? createdAt,
       Value<int>? rowid}) {
     return PaymentsCompanion(
@@ -6226,6 +6314,8 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
       saleId: saleId ?? this.saleId,
       method: method ?? this.method,
       amountCents: amountCents ?? this.amountCents,
+      sourceCurrencyCode: sourceCurrencyCode ?? this.sourceCurrencyCode,
+      sourceAmountCents: sourceAmountCents ?? this.sourceAmountCents,
       createdAt: createdAt ?? this.createdAt,
       rowid: rowid ?? this.rowid,
     );
@@ -6246,6 +6336,12 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
     if (amountCents.present) {
       map['amount_cents'] = Variable<int>(amountCents.value);
     }
+    if (sourceCurrencyCode.present) {
+      map['source_currency_code'] = Variable<String>(sourceCurrencyCode.value);
+    }
+    if (sourceAmountCents.present) {
+      map['source_amount_cents'] = Variable<int>(sourceAmountCents.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -6262,6 +6358,8 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
           ..write('saleId: $saleId, ')
           ..write('method: $method, ')
           ..write('amountCents: $amountCents, ')
+          ..write('sourceCurrencyCode: $sourceCurrencyCode, ')
+          ..write('sourceAmountCents: $sourceAmountCents, ')
           ..write('createdAt: $createdAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -14515,6 +14613,8 @@ typedef $$PaymentsTableCreateCompanionBuilder = PaymentsCompanion Function({
   required String saleId,
   required String method,
   required int amountCents,
+  Value<String?> sourceCurrencyCode,
+  Value<int?> sourceAmountCents,
   Value<DateTime> createdAt,
   Value<int> rowid,
 });
@@ -14523,6 +14623,8 @@ typedef $$PaymentsTableUpdateCompanionBuilder = PaymentsCompanion Function({
   Value<String> saleId,
   Value<String> method,
   Value<int> amountCents,
+  Value<String?> sourceCurrencyCode,
+  Value<int?> sourceAmountCents,
   Value<DateTime> createdAt,
   Value<int> rowid,
 });
@@ -14563,6 +14665,14 @@ class $$PaymentsTableFilterComposer
 
   ColumnFilters<int> get amountCents => $composableBuilder(
       column: $table.amountCents, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get sourceCurrencyCode => $composableBuilder(
+      column: $table.sourceCurrencyCode,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get sourceAmountCents => $composableBuilder(
+      column: $table.sourceAmountCents,
+      builder: (column) => ColumnFilters(column));
 
   ColumnFilters<DateTime> get createdAt => $composableBuilder(
       column: $table.createdAt, builder: (column) => ColumnFilters(column));
@@ -14606,6 +14716,14 @@ class $$PaymentsTableOrderingComposer
   ColumnOrderings<int> get amountCents => $composableBuilder(
       column: $table.amountCents, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get sourceCurrencyCode => $composableBuilder(
+      column: $table.sourceCurrencyCode,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get sourceAmountCents => $composableBuilder(
+      column: $table.sourceAmountCents,
+      builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
       column: $table.createdAt, builder: (column) => ColumnOrderings(column));
 
@@ -14647,6 +14765,12 @@ class $$PaymentsTableAnnotationComposer
 
   GeneratedColumn<int> get amountCents => $composableBuilder(
       column: $table.amountCents, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceCurrencyCode => $composableBuilder(
+      column: $table.sourceCurrencyCode, builder: (column) => column);
+
+  GeneratedColumn<int> get sourceAmountCents => $composableBuilder(
+      column: $table.sourceAmountCents, builder: (column) => column);
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -14699,6 +14823,8 @@ class $$PaymentsTableTableManager extends RootTableManager<
             Value<String> saleId = const Value.absent(),
             Value<String> method = const Value.absent(),
             Value<int> amountCents = const Value.absent(),
+            Value<String?> sourceCurrencyCode = const Value.absent(),
+            Value<int?> sourceAmountCents = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
@@ -14707,6 +14833,8 @@ class $$PaymentsTableTableManager extends RootTableManager<
             saleId: saleId,
             method: method,
             amountCents: amountCents,
+            sourceCurrencyCode: sourceCurrencyCode,
+            sourceAmountCents: sourceAmountCents,
             createdAt: createdAt,
             rowid: rowid,
           ),
@@ -14715,6 +14843,8 @@ class $$PaymentsTableTableManager extends RootTableManager<
             required String saleId,
             required String method,
             required int amountCents,
+            Value<String?> sourceCurrencyCode = const Value.absent(),
+            Value<int?> sourceAmountCents = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
@@ -14723,6 +14853,8 @@ class $$PaymentsTableTableManager extends RootTableManager<
             saleId: saleId,
             method: method,
             amountCents: amountCents,
+            sourceCurrencyCode: sourceCurrencyCode,
+            sourceAmountCents: sourceAmountCents,
             createdAt: createdAt,
             rowid: rowid,
           ),

@@ -89,6 +89,9 @@ class DataManagementLocalDataSource {
   final AppDatabase _db;
   final OfflineLicenseService _licenseService;
   final Uuid _uuid;
+  static const String _fullLicenseDataMessage =
+      'Modo demo: importar/exportar productos y gestionar salvas de la base de datos '
+      'esta disponible solo con licencia activa.';
 
   Future<String> dataRootPath() async {
     final Directory root = await _resolvePosIpvRootDir();
@@ -96,6 +99,7 @@ class DataManagementLocalDataSource {
   }
 
   Future<BackupResult> createDatabaseBackup() async {
+    await _licenseService.requireFullAccess(message: _fullLicenseDataMessage);
     final DateTime now = DateTime.now();
     final String stamp = _ts(now);
     final Directory dir = await _resolveBackupDir();
@@ -125,6 +129,7 @@ class DataManagementLocalDataSource {
   }
 
   Future<CsvExportResult> exportProductsCsv() async {
+    await _licenseService.requireFullAccess(message: _fullLicenseDataMessage);
     final DateTime now = DateTime.now();
     final String stamp = _ts(now);
     final Directory dir = await _resolveCsvExportDir();
@@ -185,6 +190,7 @@ class DataManagementLocalDataSource {
   }
 
   Future<QrPdfExportResult> exportProductsQrPdf() async {
+    await _licenseService.requireFullAccess(message: _fullLicenseDataMessage);
     final DateTime now = DateTime.now();
     final String stamp = _ts(now);
     final Directory dir = await _resolveQrExportDir();
@@ -322,6 +328,7 @@ class DataManagementLocalDataSource {
   }
 
   Future<CsvImportResult> importProductsCsv(String filePath) async {
+    await _licenseService.requireFullAccess(message: _fullLicenseDataMessage);
     await _licenseService.requireWriteAccess();
     final LicenseStatus licenseStatus = await _licenseService.current();
     final File file = File(filePath);

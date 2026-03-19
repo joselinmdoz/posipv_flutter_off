@@ -10,6 +10,7 @@ import '../../../shared/widgets/app_add_action_button.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../almacenes/presentation/almacenes_providers.dart';
 import '../../productos/presentation/productos_page.dart';
+import '../../productos/presentation/productos_providers.dart';
 import '../data/inventario_local_datasource.dart';
 import 'inventory_product_detail_page.dart';
 import 'inventario_providers.dart';
@@ -376,6 +377,13 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
   @override
   Widget build(BuildContext context) {
     ref.listen<int>(inventoryRefreshSignalProvider, (int? previous, int next) {
+      if (previous == null || previous == next || !mounted) {
+        return;
+      }
+      unawaited(_reloadInventory());
+    });
+    ref.listen<int>(productosCatalogRevisionProvider,
+        (int? previous, int next) {
       if (previous == null || previous == next || !mounted) {
         return;
       }

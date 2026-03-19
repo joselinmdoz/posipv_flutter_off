@@ -8,6 +8,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../../../core/db/app_database.dart';
+import '../../../core/licensing/license_service.dart';
 
 class SalesSummary {
   const SalesSummary({
@@ -224,9 +225,15 @@ class HomeOperationalInsight {
 }
 
 class ReportesLocalDataSource {
-  ReportesLocalDataSource(this._db);
+  ReportesLocalDataSource(
+    this._db, {
+    required OfflineLicenseService licenseService,
+  }) : _licenseService = licenseService;
 
   final AppDatabase _db;
+  final OfflineLicenseService _licenseService;
+  static const String _demoIpvExportBlockedMessage =
+      'Modo demo: la exportacion de IPV (CSV/PDF) esta disponible solo con licencia activa.';
 
   Future<HomeOperationalInsight> loadHomeOperationalInsight({
     double lowStockThreshold = 5,
@@ -994,6 +1001,9 @@ class ReportesLocalDataSource {
   }
 
   Future<String> exportIpvReportCsv(String reportId) async {
+    await _licenseService.requireFullAccess(
+      message: _demoIpvExportBlockedMessage,
+    );
     try {
       final IpvReportDetailStat? detail = await loadIpvReportDetail(reportId);
       if (detail == null) {
@@ -1072,6 +1082,9 @@ class ReportesLocalDataSource {
   }
 
   Future<String> exportIpvReportPdf(String reportId) async {
+    await _licenseService.requireFullAccess(
+      message: _demoIpvExportBlockedMessage,
+    );
     try {
       final IpvReportDetailStat? loaded = await loadIpvReportDetail(reportId);
       if (loaded == null) {

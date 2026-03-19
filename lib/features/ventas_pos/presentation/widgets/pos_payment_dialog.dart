@@ -1,105 +1,240 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
-import '../../../../core/db/app_database.dart';
+
+import 'pos_order_summary_line.dart';
+import 'pos_payment_models.dart';
 
 class PosPaymentDialog extends StatefulWidget {
-  final List<PosCartLine> cartLines;
-  final double subtotal;
-  final double tax;
-  final double total;
-  final String currencySymbol;
-  final List<String> paymentMethods;
-  final String Function(String) paymentMethodLabel;
-
   const PosPaymentDialog({
     super.key,
     required this.cartLines,
-    required this.subtotal,
-    required this.tax,
-    required this.total,
     required this.currencySymbol,
     required this.paymentMethods,
     required this.paymentMethodLabel,
+    required this.stockByProductId,
+    required this.allowNegativeStock,
   });
+
+  final List<PosCartLine> cartLines;
+  final String currencySymbol;
+  final List<String> paymentMethods;
+  final String Function(String) paymentMethodLabel;
+  final Map<String, double> stockByProductId;
+  final bool allowNegativeStock;
 
   @override
   State<PosPaymentDialog> createState() => _PosPaymentDialogState();
 }
 
-class PosCartLine {
-  final Product product;
-  final double qty;
-
-  const PosCartLine({required this.product, required this.qty});
-}
-
 class _PosPaymentDialogState extends State<PosPaymentDialog> {
-  final List<_PaymentDraft> _payments = [];
-  String _selectedMethod = 'cash';
+  final List<_PaymentDraft> _payments = <_PaymentDraft>[];
   final TextEditingController _amountCtrl = TextEditingController();
+  final List<PosCartLine> _editableLines = <PosCartLine>[];
+  String _selectedMethod = 'cash';
 
   @override
   void initState() {
     super.initState();
     _selectedMethod = widget.paymentMethods.contains('cash')
         ? 'cash'
-        : (widget.paymentMethods.isNotEmpty ? widget.paymentMethods.first : 'cash');
-    
-    // Default first line with total amount
-    _amountCtrl.text = widget.total.toStringAsFixed(2);
+        : (widget.paymentMethods.isNotEmpty
+            ? widget.paymentMethods.first
+            : 'cash');
+    _editableLines
+      ..clear()
+      ..addAll(
+        widget.cartLines
+            .where((PosCartLine line) => line.qty > 0)
+            .map((PosCartLine line) => line.copyWith()),
+      );
+    _amountCtrl.text = _total.toStringAsFixed(2);
   }
 
   @override
   void dispose() {
     _amountCtrl.dispose();
-    for (var p in _payments) {
+    for (final _PaymentDraft p in _payments) {
       p.controller.dispose();
     }
     super.dispose();
   }
 
+  int get _subtotalCents {
+    return _editableLines.fold<int>(
+      0,
+      (int sum, PosCartLine line) =>
+          sum + (line.qty * line.product.priceCents).round(),
+    );
+  }
+
+  int get _taxCents {
+    return _editableLines.fold<int>(0, (int sum, PosCartLine line) {
+      final int lineSubtotal = (line.qty * line.product.priceCents).round();
+      final int lineTax =
+          (lineSubtotal * line.product.taxRateBps / 10000).round();
+      return sum + lineTax;
+    });
+  }
+
+  int get _totalCents => _subtotalCents + _taxCents;
+
+  double get _subtotal => _subtotalCents / 100;
+  double get _tax => _taxCents / 100;
+  double get _total => _totalCents / 100;
+
+  double _toAmount(String raw) {
+    final String normalized = raw.trim().replaceAll(',', '.');
+    return double.tryParse(normalized) ?? 0;
+  }
+
+  int _toCents(String raw) {
+    return (_toAmount(raw) * 100).round();
+  }
+
   double get _paidAmount {
-    double total = 0;
-    // Current input
-    double current = double.tryParse(_amountCtrl.text) ?? 0;
-    total += current;
-    
-    // Added lines
-    for (var p in _payments) {
-      total += double.tryParse(p.controller.text) ?? 0;
+    double total = _toAmount(_amountCtrl.text);
+    for (final _PaymentDraft p in _payments) {
+      total += _toAmount(p.controller.text);
     }
     return total;
   }
 
   double get _pendingAmount {
-    double pending = widget.total - _paidAmount;
+    final double pending = _total - _paidAmount;
     return pending > 0 ? pending : 0;
   }
 
-  void _addPaymentLine() {
-    double current = double.tryParse(_amountCtrl.text) ?? 0;
-    if (current <= 0) return;
+  void _syncMainAmount() {
+    if (_payments.isNotEmpty) {
+      return;
+    }
+    _amountCtrl.text = _total.toStringAsFixed(2);
+  }
 
+  bool _canIncreaseLine(PosCartLine line) {
+    if (widget.allowNegativeStock) {
+      return true;
+    }
+    final double stock = widget.stockByProductId[line.product.id] ?? 0;
+    return line.qty + 1 <= stock + 0.000001;
+  }
+
+  void _updateLineQty(String productId, double nextQty) {
+    final int index = _editableLines
+        .indexWhere((PosCartLine line) => line.product.id == productId);
+    if (index == -1) {
+      return;
+    }
+    if (nextQty <= 0) {
+      setState(() {
+        _editableLines.removeAt(index);
+        _syncMainAmount();
+      });
+      return;
+    }
     setState(() {
-      _payments.add(_PaymentDraft(
-        method: _selectedMethod,
-        controller: TextEditingController(text: current.toStringAsFixed(2)),
-      ));
-      _amountCtrl.text = '0.00';
-      
-      // Auto-fill next input with new pending balance if any
-      double pending = _pendingAmount;
-      if (pending > 0.005) {
-        _amountCtrl.text = pending.toStringAsFixed(2);
-      }
+      _editableLines[index] = _editableLines[index].copyWith(qty: nextQty);
+      _syncMainAmount();
     });
+  }
+
+  void _increaseLine(PosCartLine line) {
+    if (!_canIncreaseLine(line)) {
+      final double stock = widget.stockByProductId[line.product.id] ?? 0;
+      _show(
+        'Stock insuficiente para ${line.product.name}. Disponible: ${stock.toStringAsFixed(0)}',
+      );
+      return;
+    }
+    _updateLineQty(line.product.id, line.qty + 1);
+  }
+
+  void _decreaseLine(PosCartLine line) {
+    _updateLineQty(line.product.id, line.qty - 1);
+  }
+
+  void _removeLine(PosCartLine line) {
+    _updateLineQty(line.product.id, 0);
+  }
+
+  void _addPaymentLine() {
+    final double current = _toAmount(_amountCtrl.text);
+    if (current <= 0) {
+      return;
+    }
+    setState(() {
+      _payments.add(
+        _PaymentDraft(
+          method: _selectedMethod,
+          controller: TextEditingController(
+            text: current.toStringAsFixed(2),
+          ),
+        ),
+      );
+      _amountCtrl.text =
+          _pendingAmount > 0.005 ? _pendingAmount.toStringAsFixed(2) : '0.00';
+    });
+  }
+
+  void _removePaymentLine(int index) {
+    setState(() {
+      final _PaymentDraft removed = _payments.removeAt(index);
+      removed.controller.dispose();
+      _syncMainAmount();
+    });
+  }
+
+  void _validatePayment() {
+    if (_editableLines.isEmpty) {
+      _show('El resumen no tiene productos para cobrar.');
+      return;
+    }
+
+    final Map<String, int> finalPayments = <String, int>{};
+    final int mainCents = _toCents(_amountCtrl.text);
+    if (mainCents > 0) {
+      finalPayments[_selectedMethod] =
+          (finalPayments[_selectedMethod] ?? 0) + mainCents;
+    }
+    for (final _PaymentDraft p in _payments) {
+      final int cents = _toCents(p.controller.text);
+      if (cents <= 0) {
+        continue;
+      }
+      finalPayments[p.method] = (finalPayments[p.method] ?? 0) + cents;
+    }
+
+    final int paidCents = finalPayments.values.fold<int>(
+      0,
+      (int sum, int value) => sum + value,
+    );
+    if (paidCents != _totalCents) {
+      _show(
+        'La suma de pagos debe ser exacta: ${widget.currencySymbol}${_total.toStringAsFixed(2)}',
+      );
+      return;
+    }
+
+    Navigator.pop(
+      context,
+      PosPaymentResult(
+        paymentByMethod: finalPayments,
+        cartLines:
+            _editableLines.map((PosCartLine line) => line.copyWith()).toList(),
+      ),
+    );
+  }
+
+  void _show(String message) {
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool isDark = theme.brightness == Brightness.dark;
-    final Color primaryColor = const Color(0xFF1152D4);
+    const Color primaryColor = Color(0xFF1152D4);
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -112,16 +247,16 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
           borderRadius: BorderRadius.circular(24),
         ),
         child: Column(
-          children: [
-            // AppBar
+          children: <Widget>[
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(24)),
               ),
               child: Row(
-                children: [
+                children: <Widget>[
                   IconButton(
                     onPressed: () => Navigator.pop(context),
                     icon: const Icon(Icons.arrow_back_rounded),
@@ -142,18 +277,15 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
                 ],
               ),
             ),
-
-            // Progress Steps
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 24),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
-                children: [
+                children: <Widget>[
                   _buildStep(
                     icon: Icons.receipt_long_rounded,
                     label: 'Resumen',
                     isActive: true,
-                    isCompleted: true,
                     primaryColor: primaryColor,
                   ),
                   Container(
@@ -166,24 +298,21 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
                     icon: Icons.payments_rounded,
                     label: 'Pago',
                     isActive: true,
-                    isCompleted: false,
                     primaryColor: primaryColor,
                   ),
                 ],
               ),
             ),
-
-            // Main Content: Two Columns
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
                 child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    bool isWide = constraints.maxWidth > 700;
+                  builder: (BuildContext context, BoxConstraints constraints) {
+                    final bool isWide = constraints.maxWidth > 700;
                     if (isWide) {
                       return Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
+                        children: <Widget>[
                           Expanded(
                             flex: 2,
                             child: _buildOrderSummary(isDark, primaryColor),
@@ -191,27 +320,22 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
                           const SizedBox(width: 24),
                           Expanded(
                             flex: 1,
-                            child: _buildPaymentForm(isDark, primaryColor, constraints),
+                            child: _buildPaymentForm(isDark, primaryColor),
                           ),
                         ],
                       );
-                    } else {
-                      return Column(
-                        children: [
-                          _buildOrderSummary(isDark, primaryColor),
-                          const SizedBox(height: 24),
-                          _buildPaymentForm(isDark, primaryColor, constraints),
-                        ],
-                      );
                     }
+                    return Column(
+                      children: <Widget>[
+                        _buildOrderSummary(isDark, primaryColor),
+                        const SizedBox(height: 24),
+                        _buildPaymentForm(isDark, primaryColor),
+                      ],
+                    );
                   },
                 ),
               ),
             ),
-            
-            // For mobile/narrow screens, show payment form below
-            // Handled by Column if needed, but here I used Row with Expanded
-            // Actually I should probably use a Wrap or different layout if not wide.
           ],
         ),
       ),
@@ -222,21 +346,22 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
     required IconData icon,
     required String label,
     required bool isActive,
-    required bool isCompleted,
     required Color primaryColor,
   }) {
     return Column(
-      children: [
+      children: <Widget>[
         Container(
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            color: isActive ? primaryColor : primaryColor.withValues(alpha: 0.1),
+            color:
+                isActive ? primaryColor : primaryColor.withValues(alpha: 0.1),
             shape: BoxShape.circle,
           ),
           child: Icon(
             icon,
-            color: isActive ? Colors.white : primaryColor.withValues(alpha: 0.5),
+            color:
+                isActive ? Colors.white : primaryColor.withValues(alpha: 0.5),
             size: 20,
           ),
         ),
@@ -259,7 +384,7 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E293B) : Colors.white,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [
+        boxShadow: <BoxShadow>[
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
@@ -269,7 +394,7 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+        children: <Widget>[
           const Text(
             'Resumen de pedido',
             style: TextStyle(
@@ -279,96 +404,53 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
             ),
           ),
           const SizedBox(height: 20),
-          // Product List
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: widget.cartLines.length,
-            separatorBuilder: (_, __) => Divider(
-              height: 24,
-              color: isDark ? Colors.white10 : Colors.grey[100],
+          if (_editableLines.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text('No hay productos en el resumen.'),
+            )
+          else
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _editableLines.length,
+              separatorBuilder: (_, __) => Divider(
+                height: 24,
+                color: isDark ? Colors.white10 : const Color(0xFFF1F5F9),
+              ),
+              itemBuilder: (BuildContext context, int index) {
+                final PosCartLine item = _editableLines[index];
+                return PosOrderSummaryLine(
+                  line: item,
+                  currencySymbol: widget.currencySymbol,
+                  isDark: isDark,
+                  canIncrease: _canIncreaseLine(item),
+                  onIncrease: () => _increaseLine(item),
+                  onDecrease: () => _decreaseLine(item),
+                  onRemove: () => _removeLine(item),
+                );
+              },
             ),
-            itemBuilder: (context, index) {
-              final item = widget.cartLines[index];
-              return Row(
-                children: [
-                  Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: isDark ? Colors.white10 : Colors.grey[200]!,
-                      ),
-                      image: item.product.imagePath != null
-                          ? DecorationImage(
-                              image: FileImage(File(item.product.imagePath!)),
-                              fit: BoxFit.cover,
-                            )
-                          : null,
-                    ),
-                    child: item.product.imagePath == null
-                        ? Icon(Icons.inventory_2_outlined, color: Colors.grey[400])
-                        : null,
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          item.product.name,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 16,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '${item.qty.toStringAsFixed(0)} x ${widget.currencySymbol}${(item.product.priceCents / 100).toStringAsFixed(2)}',
-                          style: TextStyle(
-                            color: Colors.grey[500],
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Text(
-                    '${widget.currencySymbol}${((item.product.priceCents * item.qty) / 100).toStringAsFixed(2)}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 16,
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-
           const SizedBox(height: 24),
-          // Totals
           Container(
             padding: const EdgeInsets.only(top: 24),
             decoration: BoxDecoration(
               border: Border(
                 top: BorderSide(
-                  color: isDark ? Colors.white10 : Colors.grey[100]!,
+                  color: isDark ? Colors.white10 : const Color(0xFFF1F5F9),
                   width: 2,
-                  style: BorderStyle.solid,
                 ),
               ),
             ),
             child: Column(
-              children: [
-                _buildSummaryLine('Subtotal', widget.subtotal, isDark),
+              children: <Widget>[
+                _buildSummaryLine('Subtotal', _subtotal, isDark),
                 const SizedBox(height: 8),
-                _buildSummaryLine('Impuesto (16%)', widget.tax, isDark),
+                _buildSummaryLine('Impuesto', _tax, isDark),
                 const SizedBox(height: 16),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
+                  children: <Widget>[
                     const Text(
                       'Total',
                       style: TextStyle(
@@ -377,7 +459,7 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
                       ),
                     ),
                     Text(
-                      '${widget.currencySymbol}${widget.total.toStringAsFixed(2)}',
+                      '${widget.currencySymbol}${_total.toStringAsFixed(2)}',
                       style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.w900,
@@ -397,7 +479,7 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
   Widget _buildSummaryLine(String label, double amount, bool isDark) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
+      children: <Widget>[
         Text(
           label,
           style: TextStyle(
@@ -416,9 +498,9 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
     );
   }
 
-  Widget _buildPaymentForm(bool isDark, Color primaryColor, BoxConstraints constraints) {
+  Widget _buildPaymentForm(bool isDark, Color primaryColor) {
     return Column(
-      children: [
+      children: <Widget>[
         Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
@@ -431,7 +513,7 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+            children: <Widget>[
               const Text(
                 'Procesar Pago',
                 style: TextStyle(
@@ -440,7 +522,6 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
                 ),
               ),
               const SizedBox(height: 20),
-              // Payment Method Toggle
               const Text(
                 'Método de Pago',
                 style: TextStyle(
@@ -456,9 +537,7 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
                   final String method = entry.value;
                   return Expanded(
                     child: Padding(
-                      padding: EdgeInsets.only(
-                        left: index > 0 ? 8 : 0,
-                      ),
+                      padding: EdgeInsets.only(left: index > 0 ? 8 : 0),
                       child: _buildMethodBtn(
                         label: widget.paymentMethodLabel(method),
                         icon: _getMethodIcon(method),
@@ -471,7 +550,6 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
                 }).toList(),
               ),
               const SizedBox(height: 20),
-              // Amount Input
               const Text(
                 'Monto Recibido',
                 style: TextStyle(
@@ -483,29 +561,31 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
               const SizedBox(height: 8),
               TextField(
                 controller: _amountCtrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
                 onChanged: (_) => setState(() {}),
                 decoration: InputDecoration(
                   prefixText: '${widget.currencySymbol} ',
                   filled: true,
-                  fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                  fillColor: isDark
+                      ? const Color(0xFF0F172A)
+                      : const Color(0xFFF8FAFC),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide(
-                      color: isDark ? Colors.white10 : Colors.grey[200]!,
+                      color: isDark ? Colors.white10 : const Color(0xFFE2E8F0),
                     ),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide(
-                      color: isDark ? Colors.white10 : Colors.grey[200]!,
+                      color: isDark ? Colors.white10 : const Color(0xFFE2E8F0),
                     ),
                   ),
                 ),
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 16),
-              // Add Line Button
               SizedBox(
                 width: double.infinity,
                 child: TextButton.icon(
@@ -522,8 +602,7 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
                   ),
                 ),
               ),
-
-              if (_payments.isNotEmpty) ...[
+              if (_payments.isNotEmpty) ...<Widget>[
                 const SizedBox(height: 24),
                 const Text(
                   'Pagos Agregados',
@@ -539,26 +618,31 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: _payments.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (context, index) {
-                    final p = _payments[index];
+                  itemBuilder: (BuildContext context, int index) {
+                    final _PaymentDraft p = _payments[index];
                     return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
                       decoration: BoxDecoration(
-                        color: isDark ? Colors.white10 : Colors.grey[100],
+                        color:
+                            isDark ? Colors.white10 : const Color(0xFFF1F5F9),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(
-                        children: [
+                        children: <Widget>[
                           Icon(
-                            p.method == 'cash' ? Icons.payments_outlined : Icons.credit_card_rounded,
+                            _getMethodIcon(p.method),
                             size: 18,
                             color: primaryColor,
                           ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              p.method == 'cash' ? 'Efectivo' : 'Tarjeta',
-                              style: const TextStyle(fontWeight: FontWeight.w600),
+                              widget.paymentMethodLabel(p.method),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w600),
                             ),
                           ),
                           Text(
@@ -567,8 +651,12 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
                           ),
                           const SizedBox(width: 8),
                           IconButton(
-                            onPressed: () => setState(() => _payments.removeAt(index)),
-                            icon: const Icon(Icons.remove_circle_outline, color: Colors.redAccent, size: 20),
+                            onPressed: () => _removePaymentLine(index),
+                            icon: const Icon(
+                              Icons.remove_circle_outline,
+                              color: Colors.redAccent,
+                              size: 20,
+                            ),
                           ),
                         ],
                       ),
@@ -576,26 +664,36 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
                   },
                 ),
               ],
-
-              // Status Breakdown
               const SizedBox(height: 32),
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                  color: isDark
+                      ? const Color(0xFF0F172A)
+                      : const Color(0xFFF8FAFC),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Column(
-                  children: [
-                    _buildBreakdownRow('Total a pagar', widget.total, Colors.grey, false),
+                  children: <Widget>[
+                    _buildBreakdownRow(
+                      'Total a pagar',
+                      _total,
+                      Colors.grey,
+                      false,
+                    ),
                     const SizedBox(height: 12),
-                    _buildBreakdownRow('Pagado', _paidAmount, Colors.green[600]!, true),
+                    _buildBreakdownRow(
+                      'Pagado',
+                      _paidAmount,
+                      Colors.green[600]!,
+                      true,
+                    ),
                     const SizedBox(height: 12),
                     const Divider(),
                     const SizedBox(height: 12),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
+                      children: <Widget>[
                         const Text(
                           'Pendiente',
                           style: TextStyle(fontWeight: FontWeight.w800),
@@ -613,13 +711,13 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
                   ],
                 ),
               ),
-              
               const SizedBox(height: 24),
-              // Validate Button
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _pendingAmount <= 0.01 ? _validatePayment : null,
+                  onPressed: _pendingAmount <= 0.01 && _editableLines.isNotEmpty
+                      ? _validatePayment
+                      : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: primaryColor,
                     foregroundColor: Colors.white,
@@ -643,7 +741,6 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
           ),
         ),
         const SizedBox(height: 16),
-        // Helper Message
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -652,12 +749,12 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
             border: Border.all(color: primaryColor.withValues(alpha: 0.1)),
           ),
           child: Row(
-            children: [
+            children: <Widget>[
               Icon(Icons.info_outline_rounded, size: 18, color: primaryColor),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Asegúrese de que el monto pendiente sea cero para finalizar.',
+                  'Puedes ajustar cantidades o quitar productos desde el resumen antes de validar.',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -687,15 +784,18 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isSelected ? primaryColor : Colors.grey[300]!,
+            color: isSelected ? primaryColor : const Color(0xFFD1D9E6),
             width: isSelected ? 2 : 1,
           ),
-          color: isSelected ? primaryColor.withValues(alpha: 0.05) : Colors.transparent,
+          color: isSelected
+              ? primaryColor.withValues(alpha: 0.05)
+              : Colors.transparent,
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 20, color: isSelected ? primaryColor : Colors.grey),
+          children: <Widget>[
+            Icon(icon,
+                size: 20, color: isSelected ? primaryColor : Colors.grey),
             const SizedBox(width: 8),
             Flexible(
               child: Text(
@@ -715,10 +815,15 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
     );
   }
 
-  Widget _buildBreakdownRow(String label, double amount, Color amountColor, bool isBold) {
+  Widget _buildBreakdownRow(
+    String label,
+    double amount,
+    Color amountColor,
+    bool isBold,
+  ) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
+      children: <Widget>[
         Text(
           label,
           style: TextStyle(
@@ -741,39 +846,28 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
 
   IconData _getMethodIcon(String method) {
     switch (method) {
-      case 'cash': return Icons.payments_outlined;
-      case 'card': return Icons.credit_card_rounded;
-      case 'bank': return Icons.account_balance_rounded;
-      case 'transfer': return Icons.swap_horiz_rounded;
-      default: return Icons.more_horiz_rounded;
+      case 'cash':
+        return Icons.payments_outlined;
+      case 'card':
+        return Icons.credit_card_rounded;
+      case 'bank':
+        return Icons.account_balance_rounded;
+      case 'transfer':
+        return Icons.swap_horiz_rounded;
+      case 'wallet':
+        return Icons.account_balance_wallet_outlined;
+      default:
+        return Icons.more_horiz_rounded;
     }
-  }
-
-  void _validatePayment() {
-    // Return the payment results
-    final Map<String, int> finalPayments = {};
-    
-    // Add main input
-    double current = double.tryParse(_amountCtrl.text) ?? 0;
-    if (current > 0) {
-      finalPayments[_selectedMethod] = (current * 100).round();
-    }
-    
-    // Add extra lines
-    for (var p in _payments) {
-      double amt = double.tryParse(p.controller.text) ?? 0;
-      if (amt > 0) {
-        finalPayments[p.method] = (finalPayments[p.method] ?? 0) + (amt * 100).round();
-      }
-    }
-
-    Navigator.pop(context, finalPayments);
   }
 }
 
 class _PaymentDraft {
+  _PaymentDraft({
+    required this.method,
+    required this.controller,
+  });
+
   String method;
   final TextEditingController controller;
-
-  _PaymentDraft({required this.method, required this.controller});
 }

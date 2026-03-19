@@ -547,6 +547,7 @@ class TpvLocalDataSource {
     String? associatedUserId,
   }) async {
     await _licenseService.requireWriteAccess();
+    await _requireDemoEmployeeSlotForActivation();
     final String cleanName = _normalizeEmployeeName(name);
     if (cleanName.isEmpty) {
       throw Exception('El nombre del empleado es obligatorio.');
@@ -620,6 +621,11 @@ class TpvLocalDataSource {
       name: cleanName,
       excludeEmployeeId: employeeId,
     );
+    final bool nextIsActive = isActive ?? existing.isActive;
+    if (!existing.isActive && nextIsActive) {
+      await _requireDemoEmployeeSlotForActivation(
+          excludeEmployeeId: employeeId);
+    }
 
     await (_db.update(_db.employees)
           ..where((Employees tbl) => tbl.id.equals(employeeId)))
@@ -731,6 +737,7 @@ class TpvLocalDataSource {
     if (terminal == null || !terminal.isActive) {
       throw Exception('El TPV seleccionado no es valido.');
     }
+    await _assertDemoSessionTerminalAllowed(terminal.id);
 
     final PosSession? open = await getOpenSessionForTerminal(terminalId);
     if (open != null) {
@@ -750,6 +757,12 @@ class TpvLocalDataSource {
         .get();
     if (employees.length != responsibleIds.length) {
       throw Exception('Hay empleados responsables invalidos o inactivos.');
+    }
+    final LicenseStatus licenseStatus = await _licenseService.current();
+    if (!licenseStatus.isFull && responsibleIds.length > 1) {
+      throw const LicenseException(
+        'Modo demo: cada turno permite un solo empleado responsable.',
+      );
     }
 
     final IpvReport? openIpv = await (_db.select(_db.ipvReports)
@@ -828,6 +841,69 @@ class TpvLocalDataSource {
       }
     });
     return sessionId;
+  }
+
+  Future<void> _assertDemoSessionTerminalAllowed(String terminalId) async {
+    final LicenseStatus licenseStatus = await _licenseService.current();
+    if (licenseStatus.isFull) {
+      return;
+    }
+
+    final PosTerminal? firstTerminal = await (_db.select(_db.posTerminals)
+          ..where(
+            (PosTerminals tbl) =>
+                tbl.isActive.equals(true) &
+                tbl.id.isNotNull() &
+                tbl.createdAt.isNotNull(),
+          )
+          ..orderBy(<OrderingTerm Function(PosTerminals)>[
+            (PosTerminals tbl) => OrderingTerm.asc(tbl.createdAt),
+            (PosTerminals tbl) => OrderingTerm.asc(tbl.name),
+          ])
+          ..limit(1))
+        .getSingleOrNull();
+
+    if (firstTerminal == null) {
+      return;
+    }
+    if (firstTerminal.id != terminalId) {
+      throw Exception(
+        'Modo demo: solo puedes iniciar sesion en el primer TPV registrado.',
+      );
+    }
+  }
+
+  Future<void> _requireDemoEmployeeSlotForActivation({
+    String? excludeEmployeeId,
+  }) async {
+    final LicenseStatus licenseStatus = await _licenseService.current();
+    if (licenseStatus.isFull) {
+      return;
+    }
+    final int activeEmployees = await _countActiveEmployees(
+      excludeEmployeeId: excludeEmployeeId,
+    );
+    if (activeEmployees >= DemoLicenseLimits.maxActiveEmployees) {
+      throw const LicenseException(
+        'Modo demo: solo puedes tener 1 empleado activo.',
+      );
+    }
+  }
+
+  Future<int> _countActiveEmployees({
+    String? excludeEmployeeId,
+  }) async {
+    final Expression<int> countExp = _db.employees.id.count();
+    Expression<bool> predicate = _db.employees.isActive.equals(true);
+    final String? cleanExclude = _normalizeOptional(excludeEmployeeId);
+    if (cleanExclude != null) {
+      predicate = predicate & _db.employees.id.equals(cleanExclude).not();
+    }
+    final TypedResult row = await (_db.selectOnly(_db.employees)
+          ..addColumns(<Expression<Object>>[countExp])
+          ..where(predicate))
+        .getSingle();
+    return row.read(countExp) ?? 0;
   }
 
   Future<void> closeSession({

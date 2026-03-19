@@ -71,6 +71,7 @@ class SaleService {
           if (terminal == null || !terminal.isActive) {
             throw const _SaleException('El TPV seleccionado no es valido.');
           }
+          await _assertDemoPosTerminalAllowed(terminal.id);
           terminalCurrencyCode = _normalizeCurrencyCode(terminal.currencyCode);
           if (terminal.warehouseId != input.warehouseId) {
             throw const _SaleException(
@@ -253,6 +254,8 @@ class SaleService {
                   saleId: saleId,
                   method: payment.method,
                   amountCents: payment.amountCents,
+                  sourceCurrencyCode: Value(payment.sourceCurrencyCode),
+                  sourceAmountCents: Value(payment.sourceAmountCents),
                 ),
               );
         }
@@ -328,6 +331,34 @@ class SaleService {
         'Modo demo: alcanzaste el limite de 5 ventas por dia.',
       );
     }
+  }
+
+  Future<void> _assertDemoPosTerminalAllowed(String terminalId) async {
+    final LicenseStatus status = await _licenseService.current();
+    if (status.isFull) {
+      return;
+    }
+
+    final PosTerminal? firstTerminal = await (_db.select(_db.posTerminals)
+          ..where(
+            (PosTerminals tbl) =>
+                tbl.isActive.equals(true) &
+                tbl.id.isNotNull() &
+                tbl.createdAt.isNotNull(),
+          )
+          ..orderBy(<OrderingTerm Function(PosTerminals)>[
+            (PosTerminals tbl) => OrderingTerm.asc(tbl.createdAt),
+            (PosTerminals tbl) => OrderingTerm.asc(tbl.name),
+          ])
+          ..limit(1))
+        .getSingleOrNull();
+
+    if (firstTerminal == null || firstTerminal.id == terminalId) {
+      return;
+    }
+    throw const _SaleException(
+      'Modo demo: las ventas POS solo estan disponibles en el primer TPV registrado.',
+    );
   }
 
   Future<void> _upsertStock({

@@ -31,8 +31,18 @@ class PosSaleReceiptPage extends StatelessWidget {
 
   String _formatDateTime(DateTime date) {
     const List<String> months = [
-      'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
-      'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic',
+      'Ene',
+      'Feb',
+      'Mar',
+      'Abr',
+      'May',
+      'Jun',
+      'Jul',
+      'Ago',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dic',
     ];
     final DateTime local = date.toLocal();
     final String month = months[local.month - 1];
@@ -78,6 +88,7 @@ class PosSaleReceiptPage extends StatelessWidget {
           children: [
             // Header
             _buildHeader(context, scheme, isDark),
+            if (receipt.isDemoMode) _buildDemoBanner(isDark),
 
             // Scrollable content
             Flexible(
@@ -194,6 +205,26 @@ class PosSaleReceiptPage extends StatelessWidget {
     );
   }
 
+  Widget _buildDemoBanner(bool isDark) {
+    final Color bg = isDark ? const Color(0xFF7C2D12) : const Color(0xFFFFEDD5);
+    final Color fg = isDark ? const Color(0xFFFED7AA) : const Color(0xFF9A3412);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+      color: bg,
+      child: Text(
+        'MODO DEMO • COMPROBANTE NO FISCAL',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+          color: fg,
+          letterSpacing: 0.8,
+        ),
+      ),
+    );
+  }
+
   Widget _buildGeneralDetails(ColorScheme scheme, bool isDark) {
     final Color labelColor = isDark ? Colors.white60 : const Color(0xFF64748B);
     final Color valueColor = isDark ? Colors.white : const Color(0xFF0F172A);
@@ -202,14 +233,15 @@ class PosSaleReceiptPage extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
       child: Column(
         children: [
-          _detailRow('Folio', '#${receipt.folio}', labelColor, valueColor, isBoldValue: true),
+          _detailRow('Folio', '#${receipt.folio}', labelColor, valueColor,
+              isBoldValue: true),
           const SizedBox(height: 12),
-          _detailRow('Fecha', _formatDateTime(receipt.createdAt), labelColor, valueColor),
+          _detailRow('Fecha', _formatDateTime(receipt.createdAt), labelColor,
+              valueColor),
           const SizedBox(height: 12),
           _detailRow('Cajero', receipt.cashierUsername, labelColor, valueColor),
           const SizedBox(height: 12),
           _detailRow('TPV', receipt.terminalName, labelColor, valueColor),
-        
         ],
       ),
     );
@@ -261,7 +293,8 @@ class PosSaleReceiptPage extends StatelessWidget {
 
   Widget _buildItemizedList(ColorScheme scheme, bool isDark) {
     final Color titleColor = isDark ? Colors.white : const Color(0xFF0F172A);
-    final Color subtitleColor = isDark ? Colors.white60 : const Color(0xFF64748B);
+    final Color subtitleColor =
+        isDark ? Colors.white60 : const Color(0xFF64748B);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
@@ -298,7 +331,7 @@ class PosSaleReceiptPage extends StatelessWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '${_formatQty(line.qty)} x ${_money(line.unitPriceCents)}',
+                          '${_formatQty(line.qty)} x ${line.unitPriceDisplay ?? _money(line.unitPriceCents)}',
                           style: TextStyle(
                             fontSize: 12,
                             color: subtitleColor,
@@ -308,7 +341,7 @@ class PosSaleReceiptPage extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    _money(line.lineTotalCents),
+                    line.lineTotalDisplay ?? _money(line.lineTotalCents),
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -332,7 +365,8 @@ class PosSaleReceiptPage extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
       child: Column(
         children: [
-          _detailRow('Subtotal', _money(receipt.subtotalCents), labelColor, valueColor),
+          _detailRow('Subtotal', _money(receipt.subtotalCents), labelColor,
+              valueColor),
           const SizedBox(height: 8),
           _detailRow(
             'Impuesto',
@@ -420,14 +454,16 @@ class PosSaleReceiptPage extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
-                          color: isDark ? Colors.white : const Color(0xFF0F172A),
+                          color:
+                              isDark ? Colors.white : const Color(0xFF0F172A),
                         ),
                       ),
                       Text(
                         'Pagado el ${_formatDateShort(receipt.createdAt)}',
                         style: TextStyle(
                           fontSize: 12,
-                          color: isDark ? Colors.white60 : const Color(0xFF64748B),
+                          color:
+                              isDark ? Colors.white60 : const Color(0xFF64748B),
                         ),
                       ),
                     ],
@@ -446,9 +482,11 @@ class PosSaleReceiptPage extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF16A34A).withValues(alpha: isDark ? 0.2 : 0.1),
+                        color: const Color(0xFF16A34A)
+                            .withValues(alpha: isDark ? 0.2 : 0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
@@ -456,7 +494,9 @@ class PosSaleReceiptPage extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
-                          color: isDark ? const Color(0xFF86EFAC) : const Color(0xFF15803D),
+                          color: isDark
+                              ? const Color(0xFF86EFAC)
+                              : const Color(0xFF15803D),
                         ),
                       ),
                     ),
@@ -490,7 +530,8 @@ class PosSaleReceiptPage extends StatelessWidget {
                 backgroundColor: const Color(0xFF1152D4),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
                 elevation: 4,
                 shadowColor: const Color(0xFF1152D4).withValues(alpha: 0.3),
               ),
@@ -516,11 +557,16 @@ class PosSaleReceiptPage extends StatelessWidget {
                 ),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
                   side: BorderSide(
-                    color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                    color: isDark
+                        ? const Color(0xFF334155)
+                        : const Color(0xFFE2E8F0),
                   ),
-                  foregroundColor: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
+                  foregroundColor: isDark
+                      ? const Color(0xFFCBD5E1)
+                      : const Color(0xFF475569),
                 ),
               ),
             ),

@@ -12,6 +12,7 @@ import '../../auth/presentation/auth_providers.dart';
 import '../../reportes/data/reportes_local_datasource.dart';
 import '../../reportes/presentation/reportes_providers.dart';
 import '../data/tpv_local_datasource.dart';
+import 'tpv_session_history_page.dart';
 import 'tpv_providers.dart';
 import 'widgets/tpv_terminal_card.dart';
 import 'widgets/tpv_form.dart';
@@ -100,8 +101,12 @@ class _TpvPageState extends ConsumerState<TpvPage> {
 
     final TpvLocalDataSource tpvDs = ref.read(tpvLocalDataSourceProvider);
     List<TpvEmployee> employees = <TpvEmployee>[];
+    bool allowMultipleResponsible = true;
     try {
       employees = await tpvDs.listActiveEmployees();
+      final licenseStatus =
+          await ref.read(offlineLicenseServiceProvider).current();
+      allowMultipleResponsible = licenseStatus.isFull;
     } catch (e) {
       _show('No se pudieron cargar empleados: $e');
       return;
@@ -120,6 +125,7 @@ class _TpvPageState extends ConsumerState<TpvPage> {
         return TpvOpenSessionDialog(
           terminal: terminal,
           employees: employees,
+          allowMultipleSelection: allowMultipleResponsible,
           onManageEmployees: () => Navigator.pop(context, 'manage_employees'),
         );
       },
@@ -472,182 +478,11 @@ class _TpvPageState extends ConsumerState<TpvPage> {
   }
 
   Future<void> _openHistory(TpvTerminalView terminal) async {
-    try {
-      final TpvLocalDataSource ds = ref.read(tpvLocalDataSourceProvider);
-      final List<TpvSessionWithUser> sessions =
-          await ds.listSessionHistory(terminal.terminal.id, limit: 40);
-      final Map<String, List<TpvSessionCashBreakdown>> breakdownBySession =
-          await ds.listCashBreakdownForSessions(
-        sessions.map((TpvSessionWithUser row) => row.session.id),
-      );
-      final TpvTerminalConfig config = ds.configFromTerminal(terminal.terminal);
-      if (!mounted) {
-        return;
-      }
-      await showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        builder: (BuildContext context) {
-          return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    'Historial de turnos - ${terminal.terminal.name}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 16,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  if (sessions.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Text('Sin sesiones registradas.'),
-                    )
-                  else
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxHeight: 420),
-                      child: ListView.separated(
-                        key: const PageStorageKey<String>(
-                          'tpv-history-sessions',
-                        ),
-                        shrinkWrap: true,
-                        cacheExtent: 320,
-                        itemCount: sessions.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (_, int index) {
-                          final TpvSessionWithUser row = sessions[index];
-                          final List<TpvSessionCashBreakdown> breakdown =
-                              breakdownBySession[row.session.id] ??
-                                  <TpvSessionCashBreakdown>[];
-                          final int breakdownTotal = breakdown.fold<int>(
-                            0,
-                            (int sum, TpvSessionCashBreakdown item) =>
-                                sum + item.subtotalCents,
-                          );
-                          return KeyedSubtree(
-                            key: ValueKey<String>(row.session.id),
-                            child: Card(
-                              margin: EdgeInsets.zero,
-                              child: Padding(
-                                padding: const EdgeInsets.all(10),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: <Widget>[
-                                    Row(
-                                      children: <Widget>[
-                                        Expanded(
-                                          child: Text(
-                                            row.user.username,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                        ),
-                                        Text(
-                                          row.session.status == 'open'
-                                              ? 'Abierta'
-                                              : 'Cerrada',
-                                          style: TextStyle(
-                                            color: row.session.status == 'open'
-                                                ? const Color(0xFF148A65)
-                                                : const Color(0xFF655D83),
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Apertura: ${_formatDateTime(row.session.openedAt)}',
-                                    ),
-                                    if (row.responsibleEmployees.isNotEmpty)
-                                      Text(
-                                        'Responsables: ${row.responsibleEmployees.map((TpvEmployee employee) => employee.name).join(', ')}',
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          color: Color(0xFF655D83),
-                                        ),
-                                      ),
-                                    if (row.session.closedAt != null)
-                                      Text(
-                                        'Cierre: ${_formatDateTime(row.session.closedAt!)}',
-                                      ),
-                                    if (row.session.closedAt != null)
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 6),
-                                        child: Text(
-                                          'Efectivo cierre: ${_formatCentsWithSymbol(row.session.closingCashCents ?? 0, config.currencySymbol)}',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                      ),
-                                    if (breakdown.isNotEmpty) ...<Widget>[
-                                      const SizedBox(height: 6),
-                                      const Text(
-                                        'Desglose por denominacion',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      ...breakdown
-                                          .map((TpvSessionCashBreakdown line) {
-                                        return Row(
-                                          children: <Widget>[
-                                            Expanded(
-                                              child: Text(
-                                                '${_formatCentsWithSymbol(line.denominationCents, config.currencySymbol)} x ${line.unitCount}',
-                                                style: const TextStyle(
-                                                    fontSize: 12),
-                                              ),
-                                            ),
-                                            Text(
-                                              _formatCentsWithSymbol(
-                                                line.subtotalCents,
-                                                config.currencySymbol,
-                                              ),
-                                              style:
-                                                  const TextStyle(fontSize: 12),
-                                            ),
-                                          ],
-                                        );
-                                      }),
-                                      const SizedBox(height: 2),
-                                      Align(
-                                        alignment: Alignment.centerRight,
-                                        child: Text(
-                                          'Total desglose: ${_formatCentsWithSymbol(breakdownTotal, config.currencySymbol)}',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          );
-        },
-      );
-    } catch (e) {
-      _show('No se pudo cargar historial: $e');
-    }
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => TpvSessionHistoryPage(terminal: terminal),
+      ),
+    );
   }
 
   Future<void> _openCurrentSessionIpv(TpvTerminalView terminal) async {
@@ -734,16 +569,6 @@ class _TpvPageState extends ConsumerState<TpvPage> {
     context.go('/ventas-pos');
   }
 
-  String _formatDateTime(DateTime date) {
-    final DateTime local = date.toLocal();
-    final String y = local.year.toString().padLeft(4, '0');
-    final String m = local.month.toString().padLeft(2, '0');
-    final String d = local.day.toString().padLeft(2, '0');
-    final String hh = local.hour.toString().padLeft(2, '0');
-    final String mm = local.minute.toString().padLeft(2, '0');
-    return '$y-$m-$d $hh:$mm';
-  }
-
   String _formatCentsWithSymbol(int cents, String symbol) {
     return '$symbol${(cents / 100).toStringAsFixed(2)}';
   }
@@ -776,10 +601,12 @@ class _TpvPageState extends ConsumerState<TpvPage> {
     final String query = _searchCtrl.text.trim().toLowerCase();
     return _terminals.where((TpvTerminalView terminal) {
       // Filter by tab
-      if (_selectedFilter == 'open' && terminal.openSession == null)
+      if (_selectedFilter == 'open' && terminal.openSession == null) {
         return false;
-      if (_selectedFilter == 'closed' && terminal.openSession != null)
+      }
+      if (_selectedFilter == 'closed' && terminal.openSession != null) {
         return false;
+      }
       // Filter by search
       if (query.isEmpty) return true;
       return terminal.terminal.name.toLowerCase().contains(query) ||

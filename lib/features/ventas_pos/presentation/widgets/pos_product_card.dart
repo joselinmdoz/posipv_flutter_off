@@ -58,12 +58,16 @@ class PosProductCard extends StatelessWidget {
                         ? const Color(0xFF1E293B)
                         : const Color(0xFFF1F5F9),
                     child: imagePath.isNotEmpty
-                        ? Image.file(
-                            File(imagePath),
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const Center(
-                              child: Icon(Icons.broken_image_outlined,
-                                  size: 24, color: Color(0xFF94A3B8)),
+                        ? Padding(
+                            padding: const EdgeInsets.all(6),
+                            child: Image.file(
+                              File(imagePath),
+                              fit: BoxFit.contain,
+                              alignment: Alignment.center,
+                              errorBuilder: (_, __, ___) => const Center(
+                                child: Icon(Icons.broken_image_outlined,
+                                    size: 24, color: Color(0xFF94A3B8)),
+                              ),
                             ),
                           )
                         : const Center(
@@ -82,7 +86,8 @@ class PosProductCard extends StatelessWidget {
                         color: Colors.white.withValues(alpha: 0.9),
                         borderRadius: BorderRadius.circular(4),
                         border: Border.all(
-                            color: const Color(0xFFF1F5F9).withValues(alpha: 0.5)),
+                            color:
+                                const Color(0xFFF1F5F9).withValues(alpha: 0.5)),
                       ),
                       child: Text(
                         product.sku,
@@ -160,42 +165,47 @@ class PosProductCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 6),
-                Row(
-                  children: <Widget>[
-                    // Price Display
-                    Expanded(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.baseline,
-                        textBaseline: TextBaseline.alphabetic,
-                        children: [
-                          Text(
-                            currencySymbol,
-                            style: const TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF64748B),
-                            ),
+                LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints constraints) {
+                    final Widget priceView = Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: <Widget>[
+                        Text(
+                          currencySymbol,
+                          style: const TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF64748B),
                           ),
-                          const SizedBox(width: 2),
-                          Text(
+                        ),
+                        const SizedBox(width: 2),
+                        Flexible(
+                          child: Text(
                             (product.priceCents / 100).toStringAsFixed(2),
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontWeight: FontWeight.w900,
                               fontSize: 15,
                               color: Color(0xFF0F172A),
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-                    // Quantity Controls
-                    Container(
+                        ),
+                      ],
+                    );
+
+                    final Widget qtyControls = Container(
                       padding: const EdgeInsets.all(2),
                       decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                        color: isDark
+                            ? const Color(0xFF1E293B)
+                            : const Color(0xFFF8FAFC),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                          color: isDark
+                              ? const Color(0xFF334155)
+                              : const Color(0xFFF1F5F9),
                         ),
                       ),
                       child: Row(
@@ -229,8 +239,29 @@ class PosProductCard extends StatelessWidget {
                           ),
                         ],
                       ),
-                    ),
-                  ],
+                    );
+
+                    if (constraints.maxWidth < 190) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          priceView,
+                          const SizedBox(height: 6),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: qtyControls,
+                          ),
+                        ],
+                      );
+                    }
+
+                    return Row(
+                      children: <Widget>[
+                        Expanded(child: priceView),
+                        qtyControls,
+                      ],
+                    );
+                  },
                 ),
               ],
             ),
@@ -272,15 +303,19 @@ class _PosQtyRoundedBtn extends StatelessWidget {
           border: filled
               ? null
               : Border.all(
-                  color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                  color: isDark
+                      ? const Color(0xFF334155)
+                      : const Color(0xFFE2E8F0),
                 ),
-          boxShadow: filled ? [
-            BoxShadow(
-              color: const Color(0xFF1152D4).withValues(alpha: 0.2),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            )
-          ] : null,
+          boxShadow: filled
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF1152D4).withValues(alpha: 0.2),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  )
+                ]
+              : null,
         ),
         child: Icon(
           icon,
