@@ -6,11 +6,14 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../../core/utils/perf_trace.dart';
+import '../../../shared/widgets/app_add_action_button.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../almacenes/presentation/almacenes_providers.dart';
+import '../../productos/presentation/productos_page.dart';
 import '../data/inventario_local_datasource.dart';
 import 'inventario_providers.dart';
 import 'widgets/inventory_filter_chips.dart';
+import 'widgets/inventory_movements_button.dart';
 import 'widgets/inventory_product_card.dart';
 import 'widgets/inventory_search_bar.dart';
 
@@ -231,7 +234,6 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-
   Future<void> _setStockFilter(InventoryListFilter filter) async {
     if (_stockFilter == filter) {
       return;
@@ -335,6 +337,20 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
     await _reloadInventory(showLoader: true);
   }
 
+  Future<void> _openCreateProductForm() async {
+    final String? result = await Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(
+        builder: (_) => const ProductFormPage(),
+        fullscreenDialog: true,
+      ),
+    );
+    if (result != 'saved' || !mounted) {
+      return;
+    }
+    await _reloadInventory(showLoader: true);
+    _show('Producto creado.');
+  }
+
   Widget _buildInventoryCard(InventoryView row) {
     return InventoryProductCard(
       row: row,
@@ -345,6 +361,13 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<int>(inventoryRefreshSignalProvider, (int? previous, int next) {
+      if (previous == null || previous == next || !mounted) {
+        return;
+      }
+      unawaited(_reloadInventory());
+    });
+
     final List<InventoryView> rows = _inventory;
     final ThemeData theme = Theme.of(context);
 
@@ -353,6 +376,7 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
       currentRoute: '/inventario',
       onRefresh: _bootstrap,
       showTopTabs: false,
+      showBottomNavigationBar: true,
       useDefaultActions: false,
       appBarActions: <Widget>[
         IconButton(
@@ -377,9 +401,10 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
           ),
         ),
       ],
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => context.go('/inventario-movimientos'),
-        child: const Icon(Icons.add_rounded, size: 34),
+      floatingActionButton: AppAddActionButton(
+        currentRoute: '/inventario',
+        iconSize: 34,
+        onPressed: _openCreateProductForm,
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -395,6 +420,10 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
                   InventoryFilterChips(
                     currentFilter: _stockFilter,
                     onFilterChanged: _setStockFilter,
+                  ),
+                  const SizedBox(height: 10),
+                  InventoryMovementsButton(
+                    onPressed: () => context.go('/inventario-movimientos'),
                   ),
                   if (_searching) ...<Widget>[
                     const SizedBox(height: 6),

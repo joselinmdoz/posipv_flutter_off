@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/db/app_database.dart';
+import '../../../configuracion/data/configuracion_local_datasource.dart';
+import '../../../configuracion/presentation/configuracion_providers.dart';
 import '../../data/tpv_local_datasource.dart';
 import '../tpv_providers.dart';
 
@@ -18,10 +20,12 @@ class TpvFormPage extends ConsumerStatefulWidget {
 class _TpvFormPageState extends ConsumerState<TpvFormPage> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _codeCtrl;
-  late final TextEditingController _currencyCodeCtrl;
-  late final TextEditingController _currencySymbolCtrl;
   late final TextEditingController _denominationsCtrl;
 
+  List<AppCurrencySetting> _currencyOptions = <AppCurrencySetting>[];
+  String? _selectedCurrencyCode;
+  String _selectedCurrencySymbolFallback =
+      TpvTerminalConfig.defaults.currencySymbol;
   String? _imagePath;
   bool _payCash = true;
   bool _payCard = false;
@@ -42,8 +46,8 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
 
     _nameCtrl = TextEditingController(text: widget.terminal?.name ?? '');
     _codeCtrl = TextEditingController(text: widget.terminal?.code ?? '');
-    _currencyCodeCtrl = TextEditingController(text: config.currencyCode);
-    _currencySymbolCtrl = TextEditingController(text: config.currencySymbol);
+    _selectedCurrencyCode = config.currencyCode.trim().toUpperCase();
+    _selectedCurrencySymbolFallback = config.currencySymbol;
     _denominationsCtrl = TextEditingController(
       text: config.cashDenominationsCents
           .map((int cents) =>
@@ -54,22 +58,91 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
     _payCard = config.paymentMethods.contains('card');
     _payTransfer = config.paymentMethods.contains('transfer');
     _payWallet = config.paymentMethods.contains('wallet');
-    
-    // imagePath is in terminal.terminal.imagePath (once drift regenerates, 
-    // but I added it to the table)
-    // Actually, I'll use a dynamic access or just ignore the error for now 
-    // as I know it's there.
     _imagePath = widget.terminal?.imagePath;
+    _loadCurrencyOptions();
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
     _codeCtrl.dispose();
-    _currencyCodeCtrl.dispose();
-    _currencySymbolCtrl.dispose();
     _denominationsCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadCurrencyOptions() async {
+    try {
+      final AppConfig config =
+          await ref.read(configuracionLocalDataSourceProvider).loadConfig();
+      if (!mounted) {
+        return;
+      }
+
+      final AppCurrencyConfig currencyConfig =
+          config.currencyConfig.normalized();
+      final List<AppCurrencySetting> options =
+          List<AppCurrencySetting>.from(currencyConfig.currencies);
+      String selected = (_selectedCurrencyCode ?? '').trim().toUpperCase();
+      if (selected.isEmpty) {
+        selected = currencyConfig.primaryCurrencyCode;
+      }
+
+      if (options.every((AppCurrencySetting item) => item.code != selected)) {
+        options.add(
+          AppCurrencySetting(
+            code: selected,
+            symbol: _selectedCurrencySymbolFallback,
+            rateToPrimary: 1,
+          ),
+        );
+      }
+
+      options.sort((AppCurrencySetting a, AppCurrencySetting b) {
+        if (a.code == currencyConfig.primaryCurrencyCode) {
+          return -1;
+        }
+        if (b.code == currencyConfig.primaryCurrencyCode) {
+          return 1;
+        }
+        return a.code.compareTo(b.code);
+      });
+
+      setState(() {
+        _currencyOptions = options;
+        _selectedCurrencyCode = selected;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      final String selected =
+          (_selectedCurrencyCode ?? '').trim().toUpperCase().isEmpty
+              ? TpvTerminalConfig.defaults.currencyCode
+              : (_selectedCurrencyCode ?? '').trim().toUpperCase();
+      setState(() {
+        _currencyOptions = <AppCurrencySetting>[
+          AppCurrencySetting(
+            code: selected,
+            symbol: _selectedCurrencySymbolFallback,
+            rateToPrimary: 1,
+          ),
+        ];
+        _selectedCurrencyCode = selected;
+      });
+    }
+  }
+
+  String _symbolForCurrencyCode(String rawCode) {
+    final String code = rawCode.trim().toUpperCase();
+    for (final AppCurrencySetting item in _currencyOptions) {
+      if (item.code == code) {
+        return item.symbol;
+      }
+    }
+    if (code == (_selectedCurrencyCode ?? '').trim().toUpperCase()) {
+      return _selectedCurrencySymbolFallback;
+    }
+    return TpvTerminalConfig.defaults.currencySymbol;
   }
 
   Future<void> _pickImage() async {
@@ -95,8 +168,9 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
   Future<void> _save() async {
     final String name = _nameCtrl.text.trim();
     final String code = _codeCtrl.text.trim();
-    final String currencyCode = _currencyCodeCtrl.text.trim().toUpperCase();
-    final String currencySymbol = _currencySymbolCtrl.text.trim();
+    final String currencyCode =
+        (_selectedCurrencyCode ?? '').trim().toUpperCase();
+    final String currencySymbol = _symbolForCurrencyCode(currencyCode);
     final List<String> methods = _selectedPaymentMethods();
     final List<int> denominations =
         _parseDenominationsInput(_denominationsCtrl.text);
@@ -179,6 +253,11 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final bool hasSelectedCurrency = _currencyOptions.any(
+      (AppCurrencySetting item) => item.code == _selectedCurrencyCode,
+    );
+    final String? selectedCurrencyValue =
+        hasSelectedCurrency ? _selectedCurrencyCode : null;
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -212,7 +291,8 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
                       image: DecorationImage(
                         image: _imagePath != null
                             ? FileImage(File(_imagePath!))
-                            : const AssetImage('assets/images/tpv_default.png') as ImageProvider,
+                            : const AssetImage('assets/images/tpv_default.png')
+                                as ImageProvider,
                         fit: BoxFit.cover,
                       ),
                     ),
@@ -234,7 +314,7 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
               ),
             ),
             const SizedBox(height: 32),
-            
+
             _buildSectionLabel('Información Básica'),
             const SizedBox(height: 16),
             _buildTextField(
@@ -261,29 +341,65 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
                 ),
               ],
             ),
-            
+
             const SizedBox(height: 32),
             _buildSectionLabel('Configuración Monetaria'),
             const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildTextField(
-                    controller: _currencyCodeCtrl,
-                    label: 'Moneda (ISO)',
-                    hint: 'USD',
+            DropdownButtonFormField<String>(
+              key: ValueKey<String?>(selectedCurrencyValue),
+              initialValue: selectedCurrencyValue,
+              isExpanded: true,
+              decoration: InputDecoration(
+                labelText: 'Moneda del TPV',
+                hintText: 'Selecciona la moneda',
+                prefixIcon:
+                    const Icon(Icons.currency_exchange_rounded, size: 20),
+                filled: true,
+                fillColor: Theme.of(context)
+                    .colorScheme
+                    .surfaceContainerHighest
+                    .withValues(alpha: 0.3),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide.none,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: const BorderSide(
+                    color: Color(0xFF1152D4),
+                    width: 1.5,
                   ),
                 ),
-                const SizedBox(width: 12),
-                SizedBox(
-                  width: 100,
-                  child: _buildTextField(
-                    controller: _currencySymbolCtrl,
-                    label: 'Símbolo',
-                    hint: r'$',
-                  ),
-                ),
-              ],
+              ),
+              items: _currencyOptions
+                  .map(
+                    (AppCurrencySetting currency) => DropdownMenuItem<String>(
+                      value: currency.code,
+                      child: Text('${currency.code} (${currency.symbol})'),
+                    ),
+                  )
+                  .toList(),
+              onChanged: _saving
+                  ? null
+                  : (String? value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return;
+                      }
+                      setState(() =>
+                          _selectedCurrencyCode = value.trim().toUpperCase());
+                    },
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Símbolo aplicado: ${_symbolForCurrencyCode(_selectedCurrencyCode ?? '')}',
+              style: TextStyle(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 20),
             _buildTextField(
@@ -292,20 +408,24 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
               hint: '100, 50, 20, 10...',
               icon: Icons.money_rounded,
             ),
-            
+
             const SizedBox(height: 32),
             _buildSectionLabel('Métodos de Pago'),
             const SizedBox(height: 12),
             Wrap(
               spacing: 12,
               children: [
-                _buildMethodChip('Efectivo', _payCash, (v) => setState(() => _payCash = v!)),
-                _buildMethodChip('Tarjeta', _payCard, (v) => setState(() => _payCard = v!)),
-                _buildMethodChip('Transferencia', _payTransfer, (v) => setState(() => _payTransfer = v!)),
-                _buildMethodChip('Wallet (NFC)', _payWallet, (v) => setState(() => _payWallet = v!)),
+                _buildMethodChip(
+                    'Efectivo', _payCash, (v) => setState(() => _payCash = v!)),
+                _buildMethodChip(
+                    'Tarjeta', _payCard, (v) => setState(() => _payCard = v!)),
+                _buildMethodChip('Transferencia', _payTransfer,
+                    (v) => setState(() => _payTransfer = v!)),
+                _buildMethodChip('Wallet (NFC)', _payWallet,
+                    (v) => setState(() => _payWallet = v!)),
               ],
             ),
-            
+
             const SizedBox(height: 48),
             SizedBox(
               width: double.infinity,
@@ -315,18 +435,21 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
                   backgroundColor: const Color(0xFF1152D4),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 18),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
                   elevation: 0,
                 ),
                 child: _saving
                     ? const SizedBox(
                         height: 20,
                         width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
                       )
                     : const Text(
                         'Guardar Configuración',
-                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                        style: TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 16),
                       ),
               ),
             ),
@@ -362,7 +485,10 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
         hintText: hint,
         prefixIcon: icon != null ? Icon(icon, size: 20) : null,
         filled: true,
-        fillColor: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+        fillColor: Theme.of(context)
+            .colorScheme
+            .surfaceContainerHighest
+            .withValues(alpha: 0.3),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide.none,
@@ -379,7 +505,8 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
     );
   }
 
-  Widget _buildMethodChip(String label, bool isSelected, Function(bool?) onSelected) {
+  Widget _buildMethodChip(
+      String label, bool isSelected, Function(bool?) onSelected) {
     return FilterChip(
       label: Text(label),
       selected: isSelected,

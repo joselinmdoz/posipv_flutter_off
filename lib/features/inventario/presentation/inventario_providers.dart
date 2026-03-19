@@ -11,3 +11,6 @@ final Provider<InventarioLocalDataSource> inventarioLocalDataSourceProvider =
     licenseService: ref.watch(offlineLicenseServiceProvider),
   );
 });
+
+final StateProvider<int> inventoryRefreshSignalProvider =
+    StateProvider<int>((_) => 0);

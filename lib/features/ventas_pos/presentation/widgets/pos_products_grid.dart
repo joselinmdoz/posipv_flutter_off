@@ -7,6 +7,7 @@ class PosProductsGrid extends StatelessWidget {
   final Map<String, double> qtyByProductId;
   final Map<String, double> stockByProductId;
   final String currencySymbol;
+  final String emptyMessage;
   final bool isPosting;
   final void Function(String productId, double delta) onQtyChanged;
 
@@ -16,6 +17,7 @@ class PosProductsGrid extends StatelessWidget {
     required this.qtyByProductId,
     required this.stockByProductId,
     required this.currencySymbol,
+    required this.emptyMessage,
     required this.isPosting,
     required this.onQtyChanged,
   });
@@ -30,7 +32,7 @@ class PosProductsGrid extends StatelessWidget {
             Icon(Icons.search_off_rounded,
                 size: 48, color: Colors.grey.withValues(alpha: 0.5)),
             const SizedBox(height: 12),
-            const Text('No hay productos que coincidan'),
+            Text(emptyMessage),
           ],
         ),
       );

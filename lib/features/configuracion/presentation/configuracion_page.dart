@@ -6,9 +6,13 @@ import '../../../core/licensing/license_models.dart';
 import '../../../core/licensing/license_providers.dart';
 import '../../../core/utils/perf_trace.dart';
 import '../../../shared/widgets/app_scaffold.dart';
+import '../../auth/presentation/auth_providers.dart';
 import '../data/configuracion_local_datasource.dart';
 import 'configuracion_providers.dart';
 import 'gestion_datos_page.dart';
+import 'widgets/business_name_dialog.dart';
+import 'widgets/config_option_tile.dart';
+import 'widgets/config_section_label.dart';
 
 class ConfiguracionPage extends ConsumerStatefulWidget {
   const ConfiguracionPage({super.key});
@@ -87,66 +91,31 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
     }
   }
 
-  Future<void> _openCurrencyDialog() async {
-    final TextEditingController businessCtrl = TextEditingController(
-      text: _config.businessName,
-    );
-    final TextEditingController currencyCtrl = TextEditingController(
-      text: _config.currencySymbol,
-    );
-    final bool? apply = await showDialog<bool>(
+  Future<void> _openBusinessDialog() async {
+    final String? businessName = await showDialog<String>(
       context: context,
       builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Configuración de moneda'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              TextField(
-                controller: businessCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Nombre comercial',
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: currencyCtrl,
-                maxLength: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Símbolo de moneda',
-                  hintText: r'$, USD, CUP',
-                ),
-              ),
-            ],
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Guardar'),
-            ),
-          ],
+        return BusinessNameDialog(
+          initialName: _config.businessName,
         );
       },
     );
+    if (businessName == null || !mounted) {
+      return;
+    }
 
-    if (apply != true || !mounted) {
-      return;
-    }
-    final String business = businessCtrl.text.trim();
-    final String currency = currencyCtrl.text.trim();
-    if (business.isEmpty || currency.isEmpty) {
-      _show('Nombre y símbolo de moneda son obligatorios.');
-      return;
-    }
     final AppConfig next = _config.copyWith(
-      businessName: business,
-      currencySymbol: currency,
+      businessName: businessName.trim(),
     );
-    await _save(next, okMessage: 'Moneda actualizada.');
+    await _save(next, okMessage: 'Informacion del negocio actualizada.');
+  }
+
+  Future<void> _openCurrencySettings() async {
+    await context.push('/configuracion-monedas');
+    if (!mounted) {
+      return;
+    }
+    await _loadConfig();
   }
 
   Future<void> _openThemeDialog() async {
@@ -264,11 +233,25 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
   @override
   Widget build(BuildContext context) {
     final LicenseStatus license = ref.watch(currentLicenseStatusProvider);
+    final AsyncValue<bool> appLockEnabledAsync =
+        ref.watch(appLockEnabledProvider);
+    final String securitySubtitle = appLockEnabledAsync.maybeWhen(
+      data: (bool value) => value ? 'Contrasena activada' : 'Sin contrasena',
+      orElse: () => 'Cargando estado...',
+    );
+    final AppCurrencyConfig currencyConfig =
+        _config.currencyConfig.normalized();
+    final int secondaryCount = currencyConfig.currencies.length > 1
+        ? currencyConfig.currencies.length - 1
+        : 0;
+    final String currencySubtitle =
+        '${currencyConfig.primaryCurrencyCode} principal • $secondaryCount secundarias';
 
     return AppScaffold(
       title: 'Ajustes',
       currentRoute: '/configuracion',
       showTopTabs: false,
+      showBottomNavigationBar: true,
       onRefresh: _loadConfig,
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -276,28 +259,35 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
               children: <Widget>[
                 if (_saving) const LinearProgressIndicator(minHeight: 3),
-                _section('Localización'),
-                _option(
+                const ConfigSectionLabel(text: 'Negocio'),
+                ConfigOptionTile(
+                  icon: Icons.storefront_outlined,
+                  title: 'Informacion del negocio',
+                  subtitle: _config.businessName,
+                  onTap: _saving ? null : _openBusinessDialog,
+                ),
+                const SizedBox(height: 14),
+                const ConfigSectionLabel(text: 'Localizacion'),
+                ConfigOptionTile(
                   icon: Icons.language_rounded,
                   title: 'Preferencia de idioma',
                   subtitle: 'Spanish (Español)',
                   onTap: _showSoon,
                 ),
-                _option(
+                ConfigOptionTile(
                   icon: Icons.currency_exchange_rounded,
-                  title: 'Configuración de moneda',
-                  subtitle:
-                      '${_config.businessName} • ${_config.currencySymbol}',
-                  onTap: _saving ? null : _openCurrencyDialog,
+                  title: 'Configuracion de moneda',
+                  subtitle: currencySubtitle,
+                  onTap: _saving ? null : _openCurrencySettings,
                 ),
-                _option(
+                ConfigOptionTile(
                   icon: Icons.date_range_rounded,
                   title: 'Ajustes de fecha',
                   onTap: _showSoon,
                 ),
                 const SizedBox(height: 14),
-                _section('General'),
-                _option(
+                const ConfigSectionLabel(text: 'General'),
+                ConfigOptionTile(
                   icon: Icons.palette_outlined,
                   title: 'Personalizar apariencia',
                   subtitle: _config.themePreference == AppThemePreference.dark
@@ -305,18 +295,18 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
                       : 'Claro',
                   onTap: _saving ? null : _openThemeDialog,
                 ),
-                _option(
+                ConfigOptionTile(
                   icon: Icons.storage_outlined,
                   title: 'Gestión de datos',
                   subtitle: 'Copias de seguridad y CSV',
                   onTap: _openDataManagement,
                 ),
-                // _option(
+                // ConfigOptionTile(
                 //   icon: Icons.sync_rounded,
                 //   title: 'Sincronización en línea',
                 //   onTap: _showSoon,
                 // ),
-                _option(
+                ConfigOptionTile(
                   icon: Icons.add_circle_outline_rounded,
                   title: 'Configuración de transacciones',
                   subtitle: _config.allowNegativeStock
@@ -324,65 +314,40 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
                       : 'Stock negativo bloqueado',
                   onTap: _saving ? null : _openTransactionsDialog,
                 ),
-                _option(
+                ConfigOptionTile(
                   icon: Icons.calendar_month_outlined,
                   title: 'Calendario',
                   onTap: _showSoon,
                 ),
-                _option(
+                ConfigOptionTile(
                   icon: Icons.notifications_none_rounded,
                   title: 'Notificación por teléfono',
                   onTap: _showSoon,
                 ),
-                _option(
+                ConfigOptionTile(
                   icon: Icons.fingerprint_rounded,
-                  title: 'Contraseña y huella digital',
-                  onTap: _showSoon,
+                  title: 'Seguridad',
+                  subtitle: securitySubtitle,
+                  onTap: () async {
+                    await context.push('/configuracion-seguridad');
+                    ref.invalidate(appLockEnabledProvider);
+                  },
                 ),
                 const SizedBox(height: 14),
-                _section('Acerca de'),
-                _option(
+                const ConfigSectionLabel(text: 'Acerca de'),
+                ConfigOptionTile(
                   icon: Icons.verified_user_outlined,
                   title: 'Licencia',
                   subtitle: license.statusLabel,
                   onTap: () => context.go('/licencia'),
                 ),
-                _option(
+                ConfigOptionTile(
                   icon: Icons.mail_outline_rounded,
                   title: 'Soporte',
                   onTap: _showSoon,
                 ),
               ],
             ),
-    );
-  }
-
-  Widget _section(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontWeight: FontWeight.w700,
-          color: Theme.of(context).colorScheme.primary,
-        ),
-      ),
-    );
-  }
-
-  Widget _option({
-    required IconData icon,
-    required String title,
-    String? subtitle,
-    VoidCallback? onTap,
-  }) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(icon),
-      title: Text(title),
-      subtitle: subtitle == null ? null : Text(subtitle),
-      trailing: const Icon(Icons.chevron_right_rounded),
-      onTap: onTap,
     );
   }
 }

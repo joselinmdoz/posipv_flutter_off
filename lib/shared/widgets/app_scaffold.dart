@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/licensing/license_models.dart';
 import '../../core/licensing/license_providers.dart';
 import '../../features/auth/presentation/auth_providers.dart';
+import 'app_bottom_navigation.dart';
 
 class AppScaffold extends ConsumerWidget {
   const AppScaffold({
@@ -20,6 +21,7 @@ class AppScaffold extends ConsumerWidget {
     this.showDrawer = true,
     this.appBarLeading,
     this.bottomNavigationBar,
+    this.showBottomNavigationBar,
   });
 
   final String title;
@@ -33,6 +35,7 @@ class AppScaffold extends ConsumerWidget {
   final bool showDrawer;
   final Widget? appBarLeading;
   final Widget? bottomNavigationBar;
+  final bool? showBottomNavigationBar;
 
   static const List<_NavItem> _navItems = <_NavItem>[
     _NavItem('Principal', '/home', Icons.home_rounded),
@@ -53,6 +56,19 @@ class AppScaffold extends ConsumerWidget {
     _NavItem('Ajustes', '/configuracion', Icons.settings_outlined),
   ];
 
+  static const List<_NavItem> _bottomNavItems = <_NavItem>[
+    _NavItem('Principal', '/home', Icons.home_rounded),
+    _NavItem('TPV', '/tpv', Icons.point_of_sale_rounded),
+    _NavItem('Ventas', '/ventas-directas', Icons.receipt_long_rounded),
+    _NavItem('Inventario', '/inventario', Icons.inventory_2_outlined),
+    _NavItem('Ajustes', '/configuracion', Icons.settings_outlined),
+  ];
+
+  static const Set<String> _bottomNavHiddenRoutes = <String>{
+    '/ventas-directas',
+    '/ventas-pos',
+  };
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final String activeRoute = currentRoute ?? _currentLocation(context);
@@ -64,6 +80,10 @@ class AppScaffold extends ConsumerWidget {
         : <Color>[theme.scaffoldBackgroundColor, const Color(0xFFFFFFFF)];
     final Widget? licenseBanner =
         _buildLicenseBanner(context, licenseStatus, activeRoute);
+    final bool hideBottomNavByRoute =
+        _bottomNavHiddenRoutes.contains(activeRoute);
+    final bool showBottomNav =
+        !hideBottomNavByRoute && (showBottomNavigationBar ?? showTopTabs);
 
     return Scaffold(
       drawer: showDrawer
@@ -79,8 +99,21 @@ class AppScaffold extends ConsumerWidget {
         actions: _buildAppBarActions(context, ref),
       ),
       bottomNavigationBar: bottomNavigationBar ??
-          (showTopTabs
-              ? _buildBottomNav(context, activeRoute, licenseStatus)
+          (showBottomNav
+              ? AppBottomNavigation(
+                  items: _bottomNavItems
+                      .map(
+                        (_NavItem item) => AppBottomNavigationItem(
+                          label: item.label,
+                          route: item.route,
+                          icon: item.icon,
+                        ),
+                      )
+                      .toList(),
+                  activeRoute: activeRoute,
+                  onRouteTap: (String route) =>
+                      _go(context, route, activeRoute, licenseStatus),
+                )
               : null),
       body: DecoratedBox(
         decoration: BoxDecoration(
@@ -147,165 +180,6 @@ class AppScaffold extends ConsumerWidget {
       actions.add(const SizedBox(width: 4));
     }
     return actions;
-  }
-
-  Widget _buildTopTabs(
-    BuildContext context,
-    String activeRoute,
-    LicenseStatus licenseStatus,
-  ) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme scheme = theme.colorScheme;
-    final bool isDark = theme.brightness == Brightness.dark;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(12, 2, 12, 10),
-      decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: theme.dividerColor)),
-      ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: _navItems.map((_NavItem item) {
-            final bool isActive = item.route == activeRoute;
-            return Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(14),
-                onTap: () => _go(
-                  context,
-                  item.route,
-                  activeRoute,
-                  licenseStatus,
-                ),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 160),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: isActive
-                        ? (isDark
-                            ? scheme.primary.withValues(alpha: 0.26)
-                            : scheme.primary.withValues(alpha: 0.15))
-                        : (isDark
-                            ? scheme.surface.withValues(alpha: 0.88)
-                            : scheme.surface),
-                    border: Border.all(
-                      color: isActive
-                          ? scheme.primary.withValues(alpha: 0.5)
-                          : scheme.outline.withValues(alpha: 0.8),
-                    ),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Icon(
-                        item.icon,
-                        size: 16,
-                        color:
-                            isActive ? scheme.primary : scheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        item.label,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: isActive ? scheme.primary : scheme.onSurface,
-                          fontWeight:
-                              isActive ? FontWeight.w700 : FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBottomNav(
-    BuildContext context,
-    String activeRoute,
-    LicenseStatus licenseStatus,
-  ) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme scheme = theme.colorScheme;
-    final bool isDark = theme.brightness == Brightness.dark;
-
-    // Filter only main navigation items for bottom nav
-    final List<_NavItem> bottomNavItems = <_NavItem>[
-      _navItems[0], // Principal
-      _navItems[1], // TPV
-      _navItems[3], // Ventas
-      _navItems[4], // Inventario
-      _navItems[11], // Ajustes
-    ];
-
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E293B) : Colors.white,
-        border: Border(
-          top: BorderSide(
-            color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-            width: 1,
-          ),
-        ),
-      ),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: bottomNavItems.map((_NavItem item) {
-              final bool isActive = item.route == activeRoute;
-              return Expanded(
-                child: InkWell(
-                  onTap: () =>
-                      _go(context, item.route, activeRoute, licenseStatus),
-                  borderRadius: BorderRadius.circular(12),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Icon(
-                          item.icon,
-                          size: 24,
-                          color: isActive
-                              ? const Color(0xFF1152D4)
-                              : (isDark
-                                  ? const Color(0xFF94A3B8)
-                                  : const Color(0xFF64748B)),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          item.label,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight:
-                                isActive ? FontWeight.w700 : FontWeight.w500,
-                            color: isActive
-                                ? const Color(0xFF1152D4)
-                                : (isDark
-                                    ? const Color(0xFF94A3B8)
-                                    : const Color(0xFF64748B)),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-      ),
-    );
   }
 
   Drawer _buildDrawer(
@@ -451,7 +325,7 @@ class AppScaffold extends ConsumerWidget {
   void _logout(BuildContext context, WidgetRef ref) {
     ref.read(localAuthServiceProvider).clearRememberedSession();
     ref.read(currentSessionProvider.notifier).state = null;
-    context.go('/login');
+    context.go('/splash');
   }
 
   void _go(

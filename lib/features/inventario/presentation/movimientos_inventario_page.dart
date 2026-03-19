@@ -6,10 +6,12 @@ import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_providers.dart';
 import '../../../core/utils/perf_trace.dart';
 import '../../../shared/models/user_session.dart';
+import '../../../shared/widgets/app_add_action_button.dart';
 import '../../../shared/widgets/app_scaffold.dart';
+import '../../configuracion/presentation/configuracion_providers.dart';
 import '../../almacenes/presentation/almacenes_providers.dart';
 import '../../auth/presentation/auth_providers.dart';
-import '../../productos/presentation/productos_providers.dart';
+import '../../ventas_pos/presentation/widgets/pos_inventory_movement_dialog.dart';
 import '../data/inventario_local_datasource.dart';
 import 'inventario_providers.dart';
 
@@ -27,7 +29,6 @@ class _MovimientosInventarioPageState
   final FocusNode _searchFocusNode = FocusNode();
 
   List<Warehouse> _warehouses = <Warehouse>[];
-  List<Product> _products = <Product>[];
   List<InventoryMovementReason> _reasons = <InventoryMovementReason>[];
   List<InventoryMovementView> _movements = <InventoryMovementView>[];
 
@@ -60,13 +61,10 @@ class _MovimientosInventarioPageState
     try {
       final Future<List<Warehouse>> warehousesFuture =
           ref.read(almacenesLocalDataSourceProvider).listActiveWarehouses();
-      final Future<List<Product>> productsFuture =
-          ref.read(productosLocalDataSourceProvider).listActiveProducts();
       final Future<List<InventoryMovementReason>> reasonsFuture =
           ref.read(inventarioLocalDataSourceProvider).listMovementReasons();
 
       final List<Warehouse> warehouses = await warehousesFuture;
-      final List<Product> products = await productsFuture;
       final List<InventoryMovementReason> reasons = await reasonsFuture;
       trace.mark('catalogos cargados');
       final String selectedReason = _selectedReasonCode == 'all' ||
@@ -88,7 +86,6 @@ class _MovimientosInventarioPageState
       }
       setState(() {
         _warehouses = warehouses;
-        _products = products;
         _reasons = reasons;
         _selectedReasonCode = selectedReason;
         _movements = movements;
@@ -130,247 +127,109 @@ class _MovimientosInventarioPageState
       _show('No hay almacenes disponibles.');
       return;
     }
-    if (_products.isEmpty) {
-      _show('No hay productos activos.');
-      return;
-    }
 
     final InventarioLocalDataSource ds =
         ref.read(inventarioLocalDataSourceProvider);
-    String selectedWarehouseId = _selectedWarehouseId ?? _warehouses.first.id;
-    String selectedProductId = _products.first.id;
-    String movementType = 'in';
-    List<InventoryMovementReason> reasons =
-        await ds.listManualMovementReasons(movementType: movementType);
-    String? selectedReasonCode = reasons.isEmpty ? null : reasons.first.code;
-    String movementQtyText = '';
-    String movementNoteText = '';
+    final String selectedWarehouseId =
+        _selectedWarehouseId ?? _warehouses.first.id;
 
-    bool submitted = false;
+    final List<InventoryView> adjustRows = await ds.listInventoryPage(
+      warehouseId: selectedWarehouseId,
+      limit: 5000,
+      offset: 0,
+    );
+    if (adjustRows.isEmpty) {
+      _show('No hay productos activos en este almacén.');
+      return;
+    }
+
+    final List<InventoryMovementReason> entryReasons =
+        await ds.listManualMovementReasons(movementType: 'in');
+    final List<InventoryMovementReason> outputReasons =
+        await ds.listManualMovementReasons(movementType: 'out');
+    if (entryReasons.isEmpty && outputReasons.isEmpty) {
+      _show('No hay motivos disponibles para registrar movimientos.');
+      return;
+    }
 
     if (!mounted) {
       return;
     }
 
-    await showModalBottomSheet<void>(
+    final config = ref.read(currentAppConfigProvider);
+    final Map<String, dynamic>? result = await showDialog<Map<String, dynamic>>(
       context: context,
-      isScrollControlled: true,
       builder: (BuildContext context) {
-        return FractionallySizedBox(
-          heightFactor: 0.92,
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-              child: StatefulBuilder(
-                builder: (BuildContext context, StateSetter setModalState) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      const Text(
-                        'Registrar movimiento',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Expanded(
-                        child: SingleChildScrollView(
-                          child: Column(
-                            children: <Widget>[
-                              DropdownButtonFormField<String>(
-                                initialValue: selectedWarehouseId,
-                                isExpanded: true,
-                                decoration:
-                                    const InputDecoration(labelText: 'Almacen'),
-                                items: _warehouses
-                                    .map(
-                                      (Warehouse w) => DropdownMenuItem<String>(
-                                        value: w.id,
-                                        child: Text(
-                                          w.name,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (String? value) {
-                                  if (value == null) {
-                                    return;
-                                  }
-                                  setModalState(
-                                      () => selectedWarehouseId = value);
-                                },
-                              ),
-                              const SizedBox(height: 10),
-                              DropdownButtonFormField<String>(
-                                initialValue: selectedProductId,
-                                isExpanded: true,
-                                decoration: const InputDecoration(
-                                    labelText: 'Producto'),
-                                items: _products
-                                    .map(
-                                      (Product p) => DropdownMenuItem<String>(
-                                        value: p.id,
-                                        child: Text(
-                                          '${p.sku} - ${p.name}',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (String? value) {
-                                  if (value == null) {
-                                    return;
-                                  }
-                                  setModalState(
-                                      () => selectedProductId = value);
-                                },
-                              ),
-                              const SizedBox(height: 10),
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: SegmentedButton<String>(
-                                  segments: const <ButtonSegment<String>>[
-                                    ButtonSegment<String>(
-                                      value: 'in',
-                                      label: Text('Entrada'),
-                                      icon: Icon(Icons.add_box_outlined),
-                                    ),
-                                    ButtonSegment<String>(
-                                      value: 'out',
-                                      label: Text('Salida'),
-                                      icon: Icon(
-                                        Icons.indeterminate_check_box_outlined,
-                                      ),
-                                    ),
-                                  ],
-                                  selected: <String>{movementType},
-                                  onSelectionChanged:
-                                      (Set<String> value) async {
-                                    final String nextType = value.first;
-                                    if (nextType == movementType) {
-                                      return;
-                                    }
-                                    final List<InventoryMovementReason>
-                                        nextReasons =
-                                        await ds.listManualMovementReasons(
-                                      movementType: nextType,
-                                    );
-                                    if (!context.mounted) {
-                                      return;
-                                    }
-                                    setModalState(() {
-                                      movementType = nextType;
-                                      reasons = nextReasons;
-                                      selectedReasonCode = reasons.isEmpty
-                                          ? null
-                                          : reasons.first.code;
-                                    });
-                                  },
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              DropdownButtonFormField<String>(
-                                initialValue: selectedReasonCode,
-                                isExpanded: true,
-                                decoration:
-                                    const InputDecoration(labelText: 'Motivo'),
-                                items: reasons
-                                    .map(
-                                      (InventoryMovementReason row) =>
-                                          DropdownMenuItem<String>(
-                                        value: row.code,
-                                        child: Text(row.label),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (String? value) {
-                                  setModalState(
-                                      () => selectedReasonCode = value);
-                                },
-                              ),
-                              const SizedBox(height: 10),
-                              TextField(
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                  decimal: true,
-                                ),
-                                decoration: const InputDecoration(
-                                  labelText: 'Cantidad',
-                                  hintText: '0.00',
-                                ),
-                                onChanged: (String value) =>
-                                    movementQtyText = value,
-                              ),
-                              const SizedBox(height: 10),
-                              TextField(
-                                decoration: const InputDecoration(
-                                  labelText: 'Nota (opcional)',
-                                ),
-                                onChanged: (String value) =>
-                                    movementNoteText = value,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed: () async {
-                            if (selectedReasonCode == null) {
-                              _show('Selecciona un motivo valido.');
-                              return;
-                            }
-                            final double? qty = double.tryParse(
-                              movementQtyText.trim().replaceAll(',', '.'),
-                            );
-                            if (qty == null || qty <= 0) {
-                              _show('Cantidad invalida.');
-                              return;
-                            }
-
-                            try {
-                              await ds.createManualMovement(
-                                productId: selectedProductId,
-                                warehouseId: selectedWarehouseId,
-                                type: movementType,
-                                qty: qty,
-                                reasonCode: selectedReasonCode!,
-                                userId: session.userId,
-                                note: movementNoteText,
-                              );
-                              submitted = true;
-                              if (!context.mounted) {
-                                return;
-                              }
-                              Navigator.of(context).pop();
-                            } catch (e) {
-                              _show('No se pudo registrar movimiento: $e');
-                            }
-                          },
-                          child: const Text('Guardar movimiento'),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ),
+        return PosInventoryMovementDialog(
+          adjustRows: adjustRows,
+          entryReasons: entryReasons,
+          outputReasons: outputReasons,
+          currencySymbol: config.currencySymbol,
+          warehouseOptions: _warehouses
+              .map(
+                (Warehouse row) => InventoryMovementWarehouseOption(
+                  id: row.id,
+                  name: row.name,
+                ),
+              )
+              .toList(),
+          initialWarehouseId: selectedWarehouseId,
+          loadAdjustRowsForWarehouse: (String warehouseId) {
+            return ds.listInventoryPage(
+              warehouseId: warehouseId,
+              limit: 5000,
+              offset: 0,
+            );
+          },
+          priceLabelBuilder: (InventoryView row) {
+            final String currencyCode = row.currencyCode.trim().toUpperCase();
+            return '$currencyCode ${(row.priceCents / 100).toStringAsFixed(2)}';
+          },
         );
       },
     );
 
-    if (!submitted || !mounted) {
+    if (result == null || !mounted) {
       return;
     }
-    await _bootstrap();
-    _show('Movimiento registrado.');
+
+    final String safeProductId = result['productId'] as String;
+    final bool isEntry = result['isEntry'] as bool;
+    final double qty = result['qty'] as double;
+    final String safeReasonCode = result['reasonCode'] as String;
+    final String note = (result['note'] as String).trim();
+    final String safeWarehouseId =
+        ((result['warehouseId'] as String?) ?? selectedWarehouseId).trim();
+    final double currentQty = (result['currentStock'] as double?) ?? 0;
+
+    if (!isEntry && qty > currentQty) {
+      _show('La salida supera el stock disponible.');
+      return;
+    }
+
+    try {
+      await ds.createManualMovement(
+        productId: safeProductId,
+        warehouseId: safeWarehouseId,
+        type: isEntry ? 'in' : 'out',
+        qty: qty,
+        reasonCode: safeReasonCode,
+        userId: session.userId,
+        note: note.isEmpty
+            ? (isEntry
+                ? 'Entrada manual inventario'
+                : 'Salida manual inventario')
+            : note,
+      );
+      if (mounted) {
+        setState(() => _selectedWarehouseId = safeWarehouseId);
+      }
+      ref.read(inventoryRefreshSignalProvider.notifier).state += 1;
+      await _bootstrap();
+      _show('Movimiento registrado.');
+    } catch (e) {
+      _show('No se pudo registrar movimiento: $e');
+    }
   }
 
   Future<void> _openReasonsManager() async {
@@ -859,26 +718,30 @@ class _MovimientosInventarioPageState
 
   Widget _movementCard(InventoryMovementView movement) {
     final ThemeData theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
     final bool isIn = movement.movementType == 'in';
     final bool neutral = _isNeutralMovement(movement);
+
     final Color tone = neutral
-        ? (theme.brightness == Brightness.dark
-            ? const Color(0xFF334155)
-            : const Color(0xFFF1F5F9))
+        ? (isDark
+            ? const Color(0x4D1E293B)
+            : const Color(0xFFF1F5F9)) // slate-800/30 : slate-100
         : isIn
-            ? (theme.brightness == Brightness.dark
-                ? const Color(0xFF14532D)
-                : const Color(0xFFDCFCE7))
-            : (theme.brightness == Brightness.dark
-                ? const Color(0xFF7F1D1D)
-                : const Color(0xFFFEE2E2));
+            ? (isDark
+                ? const Color(0x4D14532D)
+                : const Color(0xFFDCFCE7)) // green-900/30 : green-100
+            : (isDark
+                ? const Color(0x4D7F1D1D)
+                : const Color(0xFFFEE2E2)); // red-900/30 : red-100
     final Color ink = neutral
-        ? theme.colorScheme.onSurfaceVariant
+        ? (isDark
+            ? const Color(0xFF94A3B8)
+            : const Color(0xFF475569)) // slate-400 : slate-600
         : isIn
-            ? const Color(0xFF16A34A)
-            : const Color(0xFFDC2626);
+            ? const Color(0xFF16A34A) // green-600
+            : const Color(0xFFDC2626); // red-600
     final IconData icon = neutral
-        ? Icons.swap_horiz_rounded
+        ? Icons.sync_alt_rounded
         : isIn
             ? Icons.south_west_rounded
             : Icons.north_east_rounded;
@@ -897,12 +760,15 @@ class _MovimientosInventarioPageState
         color: theme.cardColor,
         border: Border(
           bottom: BorderSide(
-            color: theme.colorScheme.outline.withValues(alpha: 0.45),
+            color: isDark
+                ? const Color(0xFF1E293B)
+                : const Color(
+                    0xFFF1F5F9), // border-slate-800 : border-slate-100
           ),
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         child: Row(
           children: <Widget>[
             Container(
@@ -934,7 +800,9 @@ class _MovimientosInventarioPageState
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: theme.colorScheme.onSurfaceVariant,
+                      color: isDark
+                          ? const Color(0xFF64748B)
+                          : const Color(0xFF64748B), // slate-500
                       fontSize: 12,
                     ),
                   ),
@@ -957,9 +825,10 @@ class _MovimientosInventarioPageState
                 Text(
                   _formatTimeShort(movement.createdAt),
                   style: TextStyle(
-                    color: theme.colorScheme.onSurfaceVariant,
+                    color: isDark
+                        ? const Color(0xFF94A3B8)
+                        : const Color(0xFF94A3B8), // slate-400
                     fontSize: 10,
-                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
@@ -1047,10 +916,9 @@ class _MovimientosInventarioPageState
         ),
       ],
       floatingActionButton: license.canWrite
-          ? FloatingActionButton(
+          ? AppAddActionButton(
+              currentRoute: '/inventario-movimientos',
               onPressed: _openMovementForm,
-              backgroundColor: const Color(0xFF1152D4),
-              child: const Icon(Icons.add_rounded, color: Colors.white),
             )
           : null,
       body: _loading
@@ -1063,48 +931,16 @@ class _MovimientosInventarioPageState
                 ),
                 slivers: <Widget>[
                   SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                      child: TextField(
-                        controller: _searchCtrl,
-                        focusNode: _searchFocusNode,
-                        decoration: InputDecoration(
-                          hintText: 'Buscar SKU, Referencia o Fecha',
-                          prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                          filled: true,
-                          fillColor: theme.cardColor,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide.none,
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide.none,
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide(
-                              color: theme.colorScheme.primary.withValues(alpha: 0.2),
-                              width: 2,
-                            ),
-                          ),
-                        ),
-                        onChanged: (_) => setState(() {}),
-                      ),
-                    ),
-                  ),
-                  SliverToBoxAdapter(
                     child: Container(
                       width: double.infinity,
                       decoration: BoxDecoration(
-                        color: theme.colorScheme.surface,
+                        color: theme.appBarTheme.backgroundColor ??
+                            theme.colorScheme.surface,
                         border: Border(
                           bottom: BorderSide(
-                            color: theme.colorScheme.outline.withValues(alpha: 0.4),
+                            color: theme.brightness == Brightness.dark
+                                ? const Color(0xFF1E293B) // slate-800
+                                : const Color(0xFFE2E8F0), // slate-200
                           ),
                         ),
                       ),
@@ -1134,6 +970,49 @@ class _MovimientosInventarioPageState
                       ),
                     ),
                   ),
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: TextField(
+                        controller: _searchCtrl,
+                        focusNode: _searchFocusNode,
+                        decoration: InputDecoration(
+                          hintText: 'Buscar SKU, Referencia o Fecha',
+                          hintStyle: TextStyle(
+                            fontSize: 14,
+                            color: theme.brightness == Brightness.dark
+                                ? const Color(0xFF94A3B8) // slate-400
+                                : const Color(0xFF94A3B8),
+                          ),
+                          prefixIcon: const Icon(Icons.search_rounded,
+                              size: 20, color: Color(0xFF94A3B8)),
+                          filled: true,
+                          fillColor: theme.cardColor,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 40, // accommodate prefix icon properly
+                            vertical: 12,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide.none,
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(
+                              color: theme.colorScheme.primary
+                                  .withValues(alpha: 0.2),
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ),
+                  ),
                   if (groups.isEmpty)
                     SliverFillRemaining(
                       hasScrollBody: false,
@@ -1154,19 +1033,17 @@ class _MovimientosInventarioPageState
                           for (final _MovementDateGroup group in groups) {
                             if (index == itemIndex) {
                               return Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  16,
-                                  16,
-                                  16,
-                                  8,
-                                ),
+                                padding:
+                                    const EdgeInsets.fromLTRB(16, 8, 16, 4),
                                 child: Text(
-                                  _formatDateGroup(group.date),
+                                  _formatDateGroup(group.date).toUpperCase(),
                                   style: TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: 0.8,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.5,
                                     fontSize: 12,
-                                    color: theme.colorScheme.onSurfaceVariant,
+                                    color: theme.brightness == Brightness.dark
+                                        ? const Color(0xFF64748B) // slate-500
+                                        : const Color(0xFF94A3B8), // slate-400
                                   ),
                                 ),
                               );
@@ -1183,7 +1060,8 @@ class _MovimientosInventarioPageState
                         },
                         childCount: groups.fold<int>(
                           0,
-                          (int sum, _MovementDateGroup g) => sum + 1 + g.items.length,
+                          (int sum, _MovementDateGroup g) =>
+                              sum + 1 + g.items.length,
                         ),
                       ),
                     ),

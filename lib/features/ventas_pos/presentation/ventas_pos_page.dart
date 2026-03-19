@@ -61,6 +61,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
   String? _terminalName;
   String? _openSessionId;
   TpvTerminalConfig _terminalConfig = TpvTerminalConfig.defaults;
+  String _terminalCurrencyCode = TpvTerminalConfig.defaults.currencyCode;
   String _currencySymbol = AppConfig.defaultCurrencySymbol;
   bool _allowNegativeStock = false;
   bool _loading = true;
@@ -191,11 +192,11 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       final List<Product> products = await ref
           .read(productosLocalDataSourceProvider)
           .listActiveProductsByIds(warehouseProductIds);
-      
+
       final List<String> realCats = await ref
           .read(productosLocalDataSourceProvider)
           .listCatalogValues(ProductCatalogKind.category);
-      
+
       trace.mark('productos + categorias cargados');
 
       if (!mounted) {
@@ -203,6 +204,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       }
 
       setState(() {
+        _terminalCurrencyCode = terminalConfig.currencyCode;
         _applyStockedProducts(
           products: products,
           warehouseProductIds: warehouseProductIds,
@@ -250,6 +252,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     _terminalName = null;
     _openSessionId = null;
     _terminalConfig = TpvTerminalConfig.defaults;
+    _terminalCurrencyCode = TpvTerminalConfig.defaults.currencyCode;
     _currencySymbol = currencySymbol;
     _allowNegativeStock = allowNegativeStock;
   }
@@ -259,12 +262,16 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     required Set<String> warehouseProductIds,
     required Map<String, double> stockByProductId,
   }) {
-    _products = products;
-    _visibleProducts = _filterProducts(products, _searchCtrl.text);
+    final List<Product> filteredByCurrency = products
+        .where((Product product) => _matchesTerminalCurrency(product))
+        .toList();
+
+    _products = filteredByCurrency;
+    _visibleProducts = _filterProducts(filteredByCurrency, _searchCtrl.text);
     _productsById
       ..clear()
       ..addEntries(
-        products.map(
+        filteredByCurrency.map(
           (Product product) => MapEntry<String, Product>(product.id, product),
         ),
       );
@@ -275,6 +282,15 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       ..clear()
       ..addAll(stockByProductId);
     _sanitizeCartForWarehouseStock();
+  }
+
+  bool _matchesTerminalCurrency(Product product) {
+    final String terminalCurrency = _terminalCurrencyCode.trim().toUpperCase();
+    if (terminalCurrency.isEmpty) {
+      return true;
+    }
+    final String productCurrency = product.currencyCode.trim().toUpperCase();
+    return productCurrency == terminalCurrency;
   }
 
   Future<void> _reloadPosInventory() async {
@@ -331,7 +347,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
 
   List<Product> _filterProducts(List<Product> products, String queryText) {
     final String query = queryText.trim().toLowerCase();
-    
+
     return products.where((Product product) {
       // Filter by category
       bool categoryMatch = true;
@@ -346,6 +362,19 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
 
       return categoryMatch && searchMatch;
     }).toList();
+  }
+
+  String _emptyProductsMessage() {
+    final bool hasActiveFilter =
+        _searchCtrl.text.trim().isNotEmpty || _selectedCategory != 'Todos';
+    if (hasActiveFilter) {
+      return 'No hay productos que coincidan.';
+    }
+    final String terminalCurrency = _terminalCurrencyCode.trim().toUpperCase();
+    if (terminalCurrency.isEmpty) {
+      return 'No hay productos disponibles.';
+    }
+    return 'No hay productos en $terminalCurrency para este TPV.';
   }
 
   List<_CartLine> get _cartLines {
@@ -503,6 +532,15 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     if (!_warehouseProductIds.contains(matched.id)) {
       _show(
         'El producto ${matched.name} no pertenece al almacen de este TPV.',
+      );
+      return;
+    }
+    if (!_matchesTerminalCurrency(matched)) {
+      final String productCurrency = matched.currencyCode.trim().toUpperCase();
+      final String terminalCurrency =
+          _terminalCurrencyCode.trim().toUpperCase();
+      _show(
+        'El producto ${matched.name} esta en $productCurrency y este TPV opera en $terminalCurrency.',
       );
       return;
     }
@@ -926,7 +964,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       );
       ref.read(currentSessionProvider.notifier).state =
           userSession.copyWith(clearActiveTerminal: true);
-      
+
       // Invalidate TPV terminals to force refresh when returning to TPV selection
       ref.invalidate(tpvTerminalsProvider);
 
@@ -945,7 +983,6 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       }
     }
   }
-
 
   Product? _findProductById(String productId) {
     return _productsById[productId];
@@ -986,7 +1023,6 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-
   // ── Action Buttons ──────────────────────────────────────────────────────
 
   Widget _appBarActionButton({
@@ -1008,11 +1044,6 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     );
   }
 
-
-
-
-
-
   @override
   Widget build(BuildContext context) {
     final license = ref.watch(currentLicenseStatusProvider);
@@ -1026,6 +1057,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       useDefaultActions: false,
       showDrawer: false,
       showTopTabs: false,
+      showBottomNavigationBar: false,
       appBarLeading: IconButton(
         tooltip: 'Atrás',
         onPressed: () => context.go('/tpv'),
@@ -1054,7 +1086,6 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
         const SizedBox(width: 8),
       ],
       floatingActionButton: null,
-      bottomNavigationBar: null,
       body: license.canSell
           ? (_loading
               ? const Center(child: CircularProgressIndicator())
@@ -1084,6 +1115,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
                               qtyByProductId: _qtyByProductId,
                               stockByProductId: _stockByProductId,
                               currencySymbol: _currencySymbol,
+                              emptyMessage: _emptyProductsMessage(),
                               isPosting: _posting,
                               onQtyChanged: _changeQty,
                             ),

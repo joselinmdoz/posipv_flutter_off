@@ -38,6 +38,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
   final Map<String, Product> _productsById = <String, Product>{};
   String? _selectedWarehouseId;
   String _currencySymbol = AppConfig.defaultCurrencySymbol;
+  AppCurrencyConfig _currencyConfig = AppCurrencyConfig.defaults;
   bool _allowNegativeStock = false;
   bool _loading = true;
   bool _posting = false;
@@ -143,7 +144,8 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
           stockByProductId: warehouseData.stockByProductId,
           availableIds: warehouseData.availableIds,
         );
-        _currencySymbol = config.currencySymbol;
+        _currencyConfig = config.currencyConfig.normalized();
+        _currencySymbol = _currencyConfig.primaryCurrency.symbol;
         _allowNegativeStock = config.allowNegativeStock;
         _loading = false;
       });
@@ -411,7 +413,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
   int _subtotalFromLines(List<_DirectCartLine> lines) {
     int subtotal = 0;
     for (final _DirectCartLine line in lines) {
-      subtotal += (line.qty * line.product.priceCents).round();
+      subtotal += (line.qty * _unitPricePrimaryCents(line.product)).round();
     }
     return subtotal;
   }
@@ -419,7 +421,8 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
   int _taxFromLines(List<_DirectCartLine> lines) {
     int tax = 0;
     for (final _DirectCartLine line in lines) {
-      final int lineSubtotal = (line.qty * line.product.priceCents).round();
+      final int lineSubtotal =
+          (line.qty * _unitPricePrimaryCents(line.product)).round();
       tax += (lineSubtotal * line.product.taxRateBps / 10000).round();
     }
     return tax;
@@ -431,6 +434,45 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
       return 0;
     }
     return gross - discountCents;
+  }
+
+  int _unitPricePrimaryCents(Product product) {
+    return _toPrimaryCents(
+      amountCents: product.priceCents,
+      currencyCode: product.currencyCode,
+    );
+  }
+
+  int _toPrimaryCents({
+    required int amountCents,
+    required String currencyCode,
+  }) {
+    final String code = currencyCode.trim().toUpperCase();
+    if (code.isEmpty || code == _currencyConfig.primaryCurrencyCode) {
+      return amountCents;
+    }
+    final AppCurrencySetting? currency = _currencyConfig.currencyByCode(code);
+    final double rateToPrimary = currency?.rateToPrimary ?? 1;
+    if (!rateToPrimary.isFinite || rateToPrimary <= 0) {
+      return amountCents;
+    }
+    return (amountCents / rateToPrimary).round();
+  }
+
+  int _fromPrimaryCents({
+    required int amountCents,
+    required String currencyCode,
+  }) {
+    final String code = currencyCode.trim().toUpperCase();
+    if (code.isEmpty || code == _currencyConfig.primaryCurrencyCode) {
+      return amountCents;
+    }
+    final AppCurrencySetting? currency = _currencyConfig.currencyByCode(code);
+    final double rateToPrimary = currency?.rateToPrimary ?? 1;
+    if (!rateToPrimary.isFinite || rateToPrimary <= 0) {
+      return amountCents;
+    }
+    return (amountCents * rateToPrimary).round();
   }
 
   Future<void> _openCartSheet() async {
@@ -570,7 +612,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
                       dense: true,
                       title: Text(line.product.name),
                       subtitle: Text(
-                        '${line.product.sku} • ${_money(line.product.priceCents)}',
+                        '${line.product.sku} • ${_moneyByCurrency(line.product.priceCents, currencyCode: line.product.currencyCode)}',
                       ),
                       trailing: SizedBox(
                         width: 138,
@@ -640,6 +682,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
 
     final String defaultMethod =
         _paymentMethods.contains('cash') ? 'cash' : _paymentMethods.first;
+    String selectedCurrencyCode = _currencyConfig.primaryCurrencyCode;
     final TextEditingController discountCtrl = TextEditingController();
     final List<_DirectPaymentLineDraft> drafts = <_DirectPaymentLineDraft>[
       _DirectPaymentLineDraft(method: defaultMethod)
@@ -664,14 +707,22 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
                       _moneyTextToCents(discountCtrl.text) ?? 0;
                   final int total =
                       discountCents >= gross ? 0 : gross - discountCents;
+                  final int totalInSelectedCurrency = _fromPrimaryCents(
+                    amountCents: total,
+                    currencyCode: selectedCurrencyCode,
+                  );
 
                   final Map<String, int> paymentByMethod = <String, int>{};
                   for (final _DirectPaymentLineDraft draft in drafts) {
-                    final int cents =
+                    final int enteredCents =
                         _moneyTextToCents(draft.amountCtrl.text) ?? 0;
-                    if (cents <= 0) {
+                    if (enteredCents <= 0) {
                       continue;
                     }
+                    final int cents = _toPrimaryCents(
+                      amountCents: enteredCents,
+                      currencyCode: selectedCurrencyCode,
+                    );
                     paymentByMethod[draft.method] =
                         (paymentByMethod[draft.method] ?? 0) + cents;
                   }
@@ -680,7 +731,10 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
                     0,
                     (int sum, int value) => sum + value,
                   );
-                  final int pending = (total - paid) > 0 ? (total - paid) : 0;
+                  final int delta = paid - total;
+                  final int pending = delta < 0 ? -delta : 0;
+                  final int overpaid = delta > 0 ? delta : 0;
+                  final bool settled = delta.abs() <= 1;
 
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -698,6 +752,38 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: <Widget>[
+                              DropdownButtonFormField<String>(
+                                initialValue: selectedCurrencyCode,
+                                decoration: const InputDecoration(
+                                  labelText: 'Moneda de cobro',
+                                ),
+                                items: _currencyConfig.currencies
+                                    .map(
+                                      (AppCurrencySetting currency) =>
+                                          DropdownMenuItem<String>(
+                                        value: currency.code,
+                                        child: Text(
+                                          '${currency.code} (${currency.symbol})',
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (String? value) {
+                                  if (value == null ||
+                                      value == selectedCurrencyCode) {
+                                    return;
+                                  }
+                                  setModalState(() {
+                                    selectedCurrencyCode = value;
+                                    _syncSinglePaymentLineToTotal(
+                                      drafts: drafts,
+                                      totalCents: total,
+                                      currencyCode: selectedCurrencyCode,
+                                    );
+                                  });
+                                },
+                              ),
+                              const SizedBox(height: 12),
                               const Text(
                                 'Lineas de pago',
                                 style: TextStyle(fontWeight: FontWeight.w700),
@@ -747,6 +833,9 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
                                           ),
                                           decoration: const InputDecoration(
                                             hintText: '0.00',
+                                          ).copyWith(
+                                            prefixText:
+                                                '${_currencyConfig.symbolForCode(selectedCurrencyCode)} ',
                                           ),
                                           onChanged: (_) =>
                                               setModalState(() {}),
@@ -775,6 +864,8 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
                                                   _syncSinglePaymentLineToTotal(
                                                     drafts: drafts,
                                                     totalCents: currentTotal,
+                                                    currencyCode:
+                                                        selectedCurrencyCode,
                                                   );
                                                 });
                                               },
@@ -824,22 +915,69 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
                                     _syncSinglePaymentLineToTotal(
                                       drafts: drafts,
                                       totalCents: nextTotal,
+                                      currencyCode: selectedCurrencyCode,
                                     );
                                   });
                                 },
                               ),
                               const SizedBox(height: 8),
-                              _summaryRow('Subtotal', _money(subtotal)),
-                              _summaryRow('Impuesto', _money(tax)),
-                              _summaryRow('Total', _money(total), isBold: true),
-                              _summaryRow('Pagado', _money(paid)),
+                              _summaryRow(
+                                'Subtotal',
+                                _moneyWithConversion(
+                                  subtotal,
+                                  currencyCode: selectedCurrencyCode,
+                                ),
+                              ),
+                              _summaryRow(
+                                'Impuesto',
+                                _moneyWithConversion(
+                                  tax,
+                                  currencyCode: selectedCurrencyCode,
+                                ),
+                              ),
+                              _summaryRow(
+                                'Total',
+                                _moneyWithConversion(
+                                  total,
+                                  currencyCode: selectedCurrencyCode,
+                                ),
+                                isBold: true,
+                              ),
+                              if (selectedCurrencyCode !=
+                                  _currencyConfig.primaryCurrencyCode)
+                                _summaryRow(
+                                  'Total en $selectedCurrencyCode',
+                                  _moneyByCurrency(
+                                    totalInSelectedCurrency,
+                                    currencyCode: selectedCurrencyCode,
+                                  ),
+                                ),
+                              _summaryRow(
+                                'Pagado',
+                                _moneyWithConversion(
+                                  paid,
+                                  currencyCode: selectedCurrencyCode,
+                                ),
+                              ),
                               _summaryRow(
                                 'Pendiente',
-                                _money(pending),
-                                valueColor: pending == 0
+                                _moneyWithConversion(
+                                  pending,
+                                  currencyCode: selectedCurrencyCode,
+                                ),
+                                valueColor: settled
                                     ? const Color(0xFF148A65)
                                     : const Color(0xFFB13B5A),
                               ),
+                              if (overpaid > 0)
+                                _summaryRow(
+                                  'Sobrepago',
+                                  _moneyWithConversion(
+                                    overpaid,
+                                    currencyCode: selectedCurrencyCode,
+                                  ),
+                                  valueColor: const Color(0xFFB13B5A),
+                                ),
                             ],
                           ),
                         ),
@@ -867,11 +1005,21 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
                                     _show('Debes ingresar al menos un pago.');
                                     return;
                                   }
-                                  if (paid != total) {
+                                  if (delta.abs() > 1) {
                                     _show(
-                                      'La suma de pagos debe ser igual al total de la venta.',
+                                      'La suma de pagos debe ser igual al total de la venta (considerando conversion de moneda).',
                                     );
                                     return;
+                                  }
+                                  if (delta != 0) {
+                                    final String methodToAdjust =
+                                        paymentByMethod.keys.first;
+                                    paymentByMethod[methodToAdjust] =
+                                        paymentByMethod[methodToAdjust]! -
+                                            delta;
+                                    paymentByMethod.removeWhere(
+                                      (String _, int value) => value <= 0,
+                                    );
                                   }
                                   submittedDiscountCents = discountCents;
                                   submittedPayments = paymentByMethod;
@@ -945,7 +1093,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
           (_DirectCartLine line) => SaleItemInput(
             productId: line.product.id,
             qty: line.qty,
-            unitPriceCents: line.product.priceCents,
+            unitPriceCents: _unitPricePrimaryCents(line.product),
             taxRateBps: line.product.taxRateBps,
           ),
         )
@@ -1009,11 +1157,16 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
   void _syncSinglePaymentLineToTotal({
     required List<_DirectPaymentLineDraft> drafts,
     required int totalCents,
+    required String currencyCode,
   }) {
     if (drafts.length != 1) {
       return;
     }
-    final String next = (totalCents / 100).toStringAsFixed(2);
+    final int displayedTotal = _fromPrimaryCents(
+      amountCents: totalCents,
+      currencyCode: currencyCode,
+    );
+    final String next = (displayedTotal / 100).toStringAsFixed(2);
     if (drafts.first.amountCtrl.text == next) {
       return;
     }
@@ -1041,6 +1194,36 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
     final String value =
         '$_currencySymbol${(absCents / 100).toStringAsFixed(2)}';
     return negative ? '-$value' : value;
+  }
+
+  String _moneyByCurrency(
+    int cents, {
+    required String currencyCode,
+  }) {
+    final bool negative = cents < 0;
+    final int absCents = cents.abs();
+    final String symbol = _currencyConfig.symbolForCode(currencyCode);
+    final String value = '$symbol${(absCents / 100).toStringAsFixed(2)}';
+    return negative ? '-$value' : value;
+  }
+
+  String _moneyWithConversion(
+    int primaryCents, {
+    required String currencyCode,
+  }) {
+    final String primary = _money(primaryCents);
+    if (currencyCode == _currencyConfig.primaryCurrencyCode) {
+      return primary;
+    }
+    final int converted = _fromPrimaryCents(
+      amountCents: primaryCents,
+      currencyCode: currencyCode,
+    );
+    final String extra = _moneyByCurrency(
+      converted,
+      currencyCode: currencyCode,
+    );
+    return '$primary ($extra)';
   }
 
   String _formatQty(double qty) {
@@ -1366,7 +1549,10 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
             ),
             const SizedBox(height: 4),
             Text(
-              _money(product.priceCents),
+              _moneyByCurrency(
+                product.priceCents,
+                currencyCode: product.currencyCode,
+              ),
               style: TextStyle(
                 fontWeight: FontWeight.w900,
                 fontSize: 12.8,
@@ -1486,6 +1672,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
       title: 'Ventas Directas',
       currentRoute: '/ventas-directas',
       onRefresh: _bootstrap,
+      showBottomNavigationBar: false,
       floatingActionButton: license.canSell ? _floatingButtons() : null,
       body: license.canSell
           ? (_loading

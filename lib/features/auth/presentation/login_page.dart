@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../shared/models/user_session.dart';
 import 'auth_providers.dart';
+import 'widgets/login_unlock_form.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
@@ -12,69 +14,84 @@ class LoginPage extends ConsumerStatefulWidget {
 }
 
 class _LoginPageState extends ConsumerState<LoginPage> {
-  final TextEditingController _usernameCtrl = TextEditingController();
   final TextEditingController _passwordCtrl = TextEditingController();
-  bool _rememberSession = true;
-  bool _checkingRememberedSession = true;
+  bool _checkingLockStatus = true;
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await ref.read(localAuthServiceProvider).ensureDefaultAdmin();
-      await _tryRestoreRememberedSession();
+      await _prepareScreen();
     });
   }
 
   @override
   void dispose() {
-    _usernameCtrl.dispose();
     _passwordCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _tryRestoreRememberedSession() async {
-    final session =
-        await ref.read(localAuthServiceProvider).restoreRememberedSession();
-    if (!mounted) {
-      return;
+  Future<void> _prepareScreen() async {
+    final authService = ref.read(localAuthServiceProvider);
+    try {
+      await authService.ensureDefaultAdmin();
+      final bool appLockEnabled = await authService.isAppLockEnabled();
+      if (!mounted) {
+        return;
+      }
+
+      if (!appLockEnabled) {
+        final session = await authService.createOfflineSession();
+        if (!mounted) {
+          return;
+        }
+        ref.read(currentSessionProvider.notifier).state = session;
+        context.go('/home');
+        return;
+      }
+
+      setState(() => _checkingLockStatus = false);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _checkingLockStatus = false);
+      _showError('No se pudo preparar el acceso offline: $error');
     }
-    if (session != null) {
-      ref.read(currentSessionProvider.notifier).state = session;
-      context.go('/home');
-      return;
-    }
-    setState(() => _checkingRememberedSession = false);
   }
 
-  Future<void> _login() async {
-    final String username = _usernameCtrl.text.trim();
+  Future<void> _unlock() async {
     final String password = _passwordCtrl.text;
-    if (username.isEmpty || password.isEmpty) {
-      _showError('Completa usuario y contrasena.');
+    if (password.trim().isEmpty) {
+      _showError('Completa la contrasena.');
       return;
     }
 
     setState(() => _isLoading = true);
-    final session = await ref.read(localAuthServiceProvider).login(
-          username: username,
-          password: password,
-        );
+    UserSession? session;
+    try {
+      session = await ref
+          .read(localAuthServiceProvider)
+          .unlockWithAppPassword(password);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+      _showError('No se pudo validar el acceso: $error');
+      return;
+    }
     if (mounted) {
       setState(() => _isLoading = false);
     }
 
     if (session == null) {
-      _showError('Credenciales invalidas.');
+      _showError('Contrasena invalida.');
       return;
     }
 
     ref.read(currentSessionProvider.notifier).state = session;
-    await ref.read(localAuthServiceProvider).persistSession(
-          session: session,
-          rememberOnDevice: _rememberSession,
-        );
+    _passwordCtrl.clear();
     if (mounted) {
       context.go('/home');
     }
@@ -88,7 +105,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_checkingRememberedSession) {
+    if (_checkingLockStatus) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
@@ -100,45 +117,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           constraints: const BoxConstraints(maxWidth: 360),
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                TextField(
-                  controller: _usernameCtrl,
-                  decoration: const InputDecoration(labelText: 'Usuario'),
-                  textInputAction: TextInputAction.next,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _passwordCtrl,
-                  obscureText: true,
-                  decoration: const InputDecoration(labelText: 'Contrasena'),
-                  onSubmitted: (_) => _login(),
-                ),
-                const SizedBox(height: 12),
-                CheckboxListTile(
-                  value: _rememberSession,
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  title: const Text('Recordar sesion en este dispositivo'),
-                  onChanged: _isLoading
-                      ? null
-                      : (bool? value) {
-                          setState(() => _rememberSession = value ?? false);
-                        },
-                  controlAffinity: ListTileControlAffinity.leading,
-                ),
-                const SizedBox(height: 12),
-                FilledButton(
-                  onPressed: _isLoading ? null : _login,
-                  child: Text(_isLoading ? 'Validando...' : 'Entrar'),
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Usuario inicial: admin / admin123',
-                  style: TextStyle(fontSize: 12),
-                ),
-              ],
+            child: LoginUnlockForm(
+              passwordController: _passwordCtrl,
+              isLoading: _isLoading,
+              onSubmit: _unlock,
             ),
           ),
         ),

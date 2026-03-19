@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,6 +6,7 @@ import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_providers.dart';
 import '../../../core/utils/perf_trace.dart';
 import '../../../shared/models/user_session.dart';
+import '../../../shared/widgets/app_add_action_button.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../reportes/data/reportes_local_datasource.dart';
@@ -15,7 +15,6 @@ import '../data/tpv_local_datasource.dart';
 import 'tpv_providers.dart';
 import 'widgets/tpv_terminal_card.dart';
 import 'widgets/tpv_form.dart';
-import 'widgets/tpv_employee_avatar.dart';
 import 'widgets/tpv_open_session_dialog.dart';
 import '../../reportes/presentation/widgets/ipv_reporte_detail_page.dart';
 
@@ -777,8 +776,10 @@ class _TpvPageState extends ConsumerState<TpvPage> {
     final String query = _searchCtrl.text.trim().toLowerCase();
     return _terminals.where((TpvTerminalView terminal) {
       // Filter by tab
-      if (_selectedFilter == 'open' && terminal.openSession == null) return false;
-      if (_selectedFilter == 'closed' && terminal.openSession != null) return false;
+      if (_selectedFilter == 'open' && terminal.openSession == null)
+        return false;
+      if (_selectedFilter == 'closed' && terminal.openSession != null)
+        return false;
       // Filter by search
       if (query.isEmpty) return true;
       return terminal.terminal.name.toLowerCase().contains(query) ||
@@ -819,8 +820,6 @@ class _TpvPageState extends ConsumerState<TpvPage> {
     );
   }
 
-
-
   @override
   Widget build(BuildContext context) {
     // Listen to changes in the TPV list provider to trigger a refresh
@@ -830,7 +829,7 @@ class _TpvPageState extends ConsumerState<TpvPage> {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final List<TpvTerminalView> filteredTerminals = _getFilteredTerminals();
-    
+
     // Count terminals by status
     final int totalCount = _terminals.length;
 
@@ -852,13 +851,10 @@ class _TpvPageState extends ConsumerState<TpvPage> {
         ),
       ],
       floatingActionButton: license.canWrite
-          ? FloatingActionButton(
+          ? AppAddActionButton(
+              currentRoute: '/tpv',
+              iconSize: 28,
               onPressed: () => _openForm(),
-              backgroundColor: const Color(0xFF1152D4),
-              foregroundColor: Colors.white,
-              shape: const CircleBorder(),
-              elevation: 4,
-              child: const Icon(Icons.add_rounded, size: 28),
             )
           : null,
       body: _loading
@@ -915,25 +911,31 @@ class _TpvPageState extends ConsumerState<TpvPage> {
                             padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
                             child: Container(
                               decoration: BoxDecoration(
-                                color: theme.brightness == Brightness.dark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                                color: theme.brightness == Brightness.dark
+                                    ? const Color(0xFF1E293B)
+                                    : const Color(0xFFF1F5F9),
                                 borderRadius: BorderRadius.circular(16),
                               ),
                               child: TextField(
                                 controller: _searchCtrl,
                                 onChanged: (_) => setState(() {}),
                                 decoration: InputDecoration(
-                                  hintText: 'Buscar terminal por nombre o código...',
+                                  hintText:
+                                      'Buscar terminal por nombre o código...',
                                   hintStyle: TextStyle(
-                                    color: scheme.onSurfaceVariant.withValues(alpha: 0.4),
+                                    color: scheme.onSurfaceVariant
+                                        .withValues(alpha: 0.4),
                                     fontSize: 14,
                                   ),
                                   prefixIcon: Icon(
                                     Icons.search_rounded,
-                                    color: scheme.onSurfaceVariant.withValues(alpha: 0.4),
+                                    color: scheme.onSurfaceVariant
+                                        .withValues(alpha: 0.4),
                                     size: 20,
                                   ),
                                   border: InputBorder.none,
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 16, vertical: 14),
                                 ),
                               ),
                             ),
@@ -948,11 +950,14 @@ class _TpvPageState extends ConsumerState<TpvPage> {
                                   Icon(
                                     Icons.terminal_rounded,
                                     size: 64,
-                                    color: scheme.onSurfaceVariant.withValues(alpha: 0.1),
+                                    color: scheme.onSurfaceVariant
+                                        .withValues(alpha: 0.1),
                                   ),
                                   const SizedBox(height: 16),
                                   Text(
-                                    _searchCtrl.text.isEmpty ? 'No hay terminales' : 'Sin resultados',
+                                    _searchCtrl.text.isEmpty
+                                        ? 'No hay terminales'
+                                        : 'Sin resultados',
                                     style: TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w600,
@@ -974,12 +979,15 @@ class _TpvPageState extends ConsumerState<TpvPage> {
                                     key: ValueKey<String>(terminal.terminal.id),
                                     terminal: terminal,
                                     isDark: theme.brightness == Brightness.dark,
-                                    onEdit: () => _openForm(terminal: terminal.terminal),
+                                    onEdit: () =>
+                                        _openForm(terminal: terminal.terminal),
                                     onGoToPos: () => _goToPos(terminal),
                                     onOpenSession: () => _openSession(terminal),
-                                    onCloseSession: () => _closeSession(terminal),
+                                    onCloseSession: () =>
+                                        _closeSession(terminal),
                                     onHistory: () => _openHistory(terminal),
-                                    onIpv: () => _openCurrentSessionIpv(terminal),
+                                    onIpv: () =>
+                                        _openCurrentSessionIpv(terminal),
                                   );
                                 },
                                 childCount: filteredTerminals.length,
@@ -995,4 +1003,3 @@ class _TpvPageState extends ConsumerState<TpvPage> {
     );
   }
 }
-

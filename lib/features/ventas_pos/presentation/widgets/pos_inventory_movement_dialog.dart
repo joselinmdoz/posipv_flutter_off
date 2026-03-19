@@ -2,11 +2,26 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../../inventario/data/inventario_local_datasource.dart';
 
+class InventoryMovementWarehouseOption {
+  const InventoryMovementWarehouseOption({
+    required this.id,
+    required this.name,
+  });
+
+  final String id;
+  final String name;
+}
+
 class PosInventoryMovementDialog extends StatefulWidget {
   final List<InventoryView> adjustRows;
   final List<InventoryMovementReason> entryReasons;
   final List<InventoryMovementReason> outputReasons;
   final String currencySymbol;
+  final String Function(InventoryView row)? priceLabelBuilder;
+  final List<InventoryMovementWarehouseOption> warehouseOptions;
+  final String? initialWarehouseId;
+  final Future<List<InventoryView>> Function(String warehouseId)?
+      loadAdjustRowsForWarehouse;
 
   const PosInventoryMovementDialog({
     super.key,
@@ -14,6 +29,10 @@ class PosInventoryMovementDialog extends StatefulWidget {
     required this.entryReasons,
     required this.outputReasons,
     required this.currencySymbol,
+    this.priceLabelBuilder,
+    this.warehouseOptions = const <InventoryMovementWarehouseOption>[],
+    this.initialWarehouseId,
+    this.loadAdjustRowsForWarehouse,
   });
 
   @override
@@ -23,25 +42,39 @@ class PosInventoryMovementDialog extends StatefulWidget {
 
 class _PosInventoryMovementDialogState
     extends State<PosInventoryMovementDialog> {
+  late List<InventoryView> _adjustRows;
+  String? _selectedWarehouseId;
   late String _selectedProductId;
   late bool _isEntry;
   late String? _selectedReasonCode;
   final TextEditingController _qtyCtrl = TextEditingController();
   final TextEditingController _noteCtrl = TextEditingController();
+  bool _loadingRows = false;
 
   final Map<String, InventoryView> _rowByProductId = {};
 
   @override
   void initState() {
     super.initState();
-    for (final row in widget.adjustRows) {
-      _rowByProductId[row.productId] = row;
+    _adjustRows = List<InventoryView>.from(widget.adjustRows);
+    _selectedWarehouseId = widget.initialWarehouseId;
+    if (widget.warehouseOptions.isNotEmpty) {
+      final bool hasSelected = widget.warehouseOptions.any(
+        (InventoryMovementWarehouseOption row) =>
+            row.id == _selectedWarehouseId,
+      );
+      if (!hasSelected) {
+        _selectedWarehouseId = widget.warehouseOptions.first.id;
+      }
     }
+    _reindexRows();
 
-    _selectedProductId = widget.adjustRows.first.productId;
+    _selectedProductId = _adjustRows.isEmpty ? '' : _adjustRows.first.productId;
     _isEntry = widget.entryReasons.isNotEmpty || widget.outputReasons.isEmpty;
     _selectedReasonCode = _isEntry
-        ? (widget.entryReasons.isNotEmpty ? widget.entryReasons.first.code : null)
+        ? (widget.entryReasons.isNotEmpty
+            ? widget.entryReasons.first.code
+            : null)
         : (widget.outputReasons.isNotEmpty
             ? widget.outputReasons.first.code
             : null);
@@ -57,16 +90,17 @@ class _PosInventoryMovementDialogState
   @override
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final Color primaryColor = const Color(0xFF1152D4);
-    
-    
+    const Color primaryColor = Color(0xFF1152D4);
+
     final List<InventoryMovementReason> selectableReasons =
         _isEntry ? widget.entryReasons : widget.outputReasons;
 
     final InventoryView? selectedProduct = _rowByProductId[_selectedProductId];
     final double currentStock = selectedProduct?.qty ?? 0;
-    final String productPrice =
-        '${widget.currencySymbol}${(selectedProduct?.priceCents ?? 0) / 100}';
+    final String productPrice = selectedProduct == null
+        ? '${widget.currencySymbol}0.00'
+        : (widget.priceLabelBuilder?.call(selectedProduct) ??
+            '${widget.currencySymbol}${(selectedProduct.priceCents / 100).toStringAsFixed(2)}');
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -100,7 +134,7 @@ class _PosInventoryMovementDialogState
                       color: primaryColor.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Icon(Icons.inventory_2_rounded,
+                    child: const Icon(Icons.inventory_2_rounded,
                         color: primaryColor, size: 24),
                   ),
                   const SizedBox(width: 12),
@@ -132,6 +166,61 @@ class _PosInventoryMovementDialogState
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Select Product
+                    if (widget.warehouseOptions.isNotEmpty) ...[
+                      const Text(
+                        'Seleccionar Almacén',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.grey,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? const Color(0xFF1E293B)
+                              : const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isDark
+                                ? const Color(0xFF334155)
+                                : const Color(0xFFE2E8F0),
+                          ),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: _selectedWarehouseId,
+                            isExpanded: true,
+                            icon: _loadingRows
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.keyboard_arrow_down_rounded),
+                            items: widget.warehouseOptions
+                                .map((InventoryMovementWarehouseOption row) {
+                              return DropdownMenuItem<String>(
+                                value: row.id,
+                                child: Text(
+                                  row.name,
+                                  style: const TextStyle(fontSize: 14),
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: _loadingRows
+                                ? null
+                                : (String? val) => _onWarehouseChanged(val),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                    ],
+
                     const Text(
                       'Seleccionar Producto',
                       style: TextStyle(
@@ -144,18 +233,24 @@ class _PosInventoryMovementDialogState
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                        color: isDark
+                            ? const Color(0xFF1E293B)
+                            : const Color(0xFFF8FAFC),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                          color: isDark
+                              ? const Color(0xFF334155)
+                              : const Color(0xFFE2E8F0),
                         ),
                       ),
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<String>(
-                          value: _selectedProductId,
+                          value: _rowByProductId.containsKey(_selectedProductId)
+                              ? _selectedProductId
+                              : null,
                           isExpanded: true,
                           icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                          items: widget.adjustRows.map((row) {
+                          items: _adjustRows.map((row) {
                             return DropdownMenuItem<String>(
                               value: row.productId,
                               child: Text(
@@ -164,15 +259,37 @@ class _PosInventoryMovementDialogState
                               ),
                             );
                           }).toList(),
-                          onChanged: (val) {
-                            if (val != null) {
-                              setState(() => _selectedProductId = val);
-                            }
-                          },
+                          onChanged: _loadingRows
+                              ? null
+                              : (val) {
+                                  if (val != null) {
+                                    setState(() => _selectedProductId = val);
+                                  }
+                                },
                         ),
                       ),
                     ),
                     const SizedBox(height: 24),
+
+                    if (_adjustRows.isEmpty)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? const Color(0xFF1E293B)
+                              : const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isDark
+                                ? const Color(0xFF334155)
+                                : const Color(0xFFE2E8F0),
+                          ),
+                        ),
+                        child: const Text(
+                          'No hay productos disponibles para este almacén.',
+                        ),
+                      ),
 
                     // Product Card
                     if (selectedProduct != null)
@@ -181,7 +298,8 @@ class _PosInventoryMovementDialogState
                         decoration: BoxDecoration(
                           color: primaryColor.withValues(alpha: 0.05),
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: primaryColor.withValues(alpha: 0.1)),
+                          border: Border.all(
+                              color: primaryColor.withValues(alpha: 0.1)),
                         ),
                         child: Row(
                           children: [
@@ -189,10 +307,14 @@ class _PosInventoryMovementDialogState
                               width: 64,
                               height: 64,
                               decoration: BoxDecoration(
-                                color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                                color: isDark
+                                    ? const Color(0xFF1E293B)
+                                    : Colors.white,
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
-                                  color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                                  color: isDark
+                                      ? const Color(0xFF334155)
+                                      : const Color(0xFFF1F5F9),
                                 ),
                               ),
                               child: ClipRRect(
@@ -206,7 +328,8 @@ class _PosInventoryMovementDialogState
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
                                       Expanded(
                                         child: Text(
@@ -223,15 +346,20 @@ class _PosInventoryMovementDialogState
                                         padding: const EdgeInsets.symmetric(
                                             horizontal: 8, vertical: 4),
                                         decoration: BoxDecoration(
-                                          color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                                          borderRadius: BorderRadius.circular(6),
+                                          color: isDark
+                                              ? const Color(0xFF1E293B)
+                                              : Colors.white,
+                                          borderRadius:
+                                              BorderRadius.circular(6),
                                           border: Border.all(
-                                            color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                                            color: isDark
+                                                ? const Color(0xFF334155)
+                                                : const Color(0xFFE2E8F0),
                                           ),
                                         ),
                                         child: Text(
                                           'SKU: ${selectedProduct.sku}',
-                                          style: TextStyle(
+                                          style: const TextStyle(
                                             fontSize: 10,
                                             fontWeight: FontWeight.w800,
                                             color: primaryColor,
@@ -241,30 +369,49 @@ class _PosInventoryMovementDialogState
                                     ],
                                   ),
                                   const SizedBox(height: 8),
-                                  Row(
+                                  Wrap(
+                                    spacing: 16,
+                                    runSpacing: 6,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
                                     children: [
-                                      Icon(Icons.payments_outlined,
-                                          size: 14, color: Colors.grey[500]),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        productPrice,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.grey[600],
-                                        ),
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.payments_outlined,
+                                            size: 14,
+                                            color: Colors.grey[500],
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            productPrice,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.grey[600],
+                                            ),
+                                          ),
+                                        ],
                                       ),
-                                      const SizedBox(width: 16),
-                                      Icon(Icons.layers_outlined,
-                                          size: 14, color: Colors.grey[500]),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        'Stock: ${currentStock.toStringAsFixed(0)} uds',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.grey[600],
-                                        ),
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.layers_outlined,
+                                            size: 14,
+                                            color: Colors.grey[500],
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            'Stock: ${currentStock.toStringAsFixed(0)} uds',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.grey[600],
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ],
                                   ),
@@ -289,7 +436,9 @@ class _PosInventoryMovementDialogState
                     Container(
                       padding: const EdgeInsets.all(4),
                       decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                        color: isDark
+                            ? const Color(0xFF1E293B)
+                            : const Color(0xFFF1F5F9),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(
@@ -337,24 +486,33 @@ class _PosInventoryMovementDialogState
                               const SizedBox(height: 8),
                               TextField(
                                 controller: _qtyCtrl,
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                        decimal: true),
                                 decoration: InputDecoration(
                                   hintText: '0',
                                   filled: true,
-                                  fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                                  fillColor: isDark
+                                      ? const Color(0xFF1E293B)
+                                      : const Color(0xFFF8FAFC),
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12),
                                     borderSide: BorderSide(
-                                      color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                                      color: isDark
+                                          ? const Color(0xFF334155)
+                                          : const Color(0xFFE2E8F0),
                                     ),
                                   ),
                                   enabledBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12),
                                     borderSide: BorderSide(
-                                      color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                                      color: isDark
+                                          ? const Color(0xFF334155)
+                                          : const Color(0xFFE2E8F0),
                                     ),
                                   ),
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 16, vertical: 12),
                                 ),
                               ),
                             ],
@@ -375,19 +533,25 @@ class _PosInventoryMovementDialogState
                               ),
                               const SizedBox(height: 8),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 16),
                                 decoration: BoxDecoration(
-                                  color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                                  color: isDark
+                                      ? const Color(0xFF1E293B)
+                                      : const Color(0xFFF8FAFC),
                                   borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
-                                    color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                                    color: isDark
+                                        ? const Color(0xFF334155)
+                                        : const Color(0xFFE2E8F0),
                                   ),
                                 ),
                                 child: DropdownButtonHideUnderline(
                                   child: DropdownButton<String>(
                                     value: _selectedReasonCode,
                                     isExpanded: true,
-                                    icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                                    icon: const Icon(
+                                        Icons.keyboard_arrow_down_rounded),
                                     items: selectableReasons.map((reason) {
                                       return DropdownMenuItem<String>(
                                         value: reason.code,
@@ -399,7 +563,8 @@ class _PosInventoryMovementDialogState
                                     }).toList(),
                                     onChanged: (val) {
                                       if (val != null) {
-                                        setState(() => _selectedReasonCode = val);
+                                        setState(
+                                            () => _selectedReasonCode = val);
                                       }
                                     },
                                   ),
@@ -426,19 +591,26 @@ class _PosInventoryMovementDialogState
                       controller: _noteCtrl,
                       maxLines: 2,
                       decoration: InputDecoration(
-                        hintText: 'Escribe un comentario sobre este movimiento...',
+                        hintText:
+                            'Escribe un comentario sobre este movimiento...',
                         filled: true,
-                        fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                        fillColor: isDark
+                            ? const Color(0xFF1E293B)
+                            : const Color(0xFFF8FAFC),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide(
-                            color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                            color: isDark
+                                ? const Color(0xFF334155)
+                                : const Color(0xFFE2E8F0),
                           ),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide(
-                            color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                            color: isDark
+                                ? const Color(0xFF334155)
+                                : const Color(0xFFE2E8F0),
                           ),
                         ),
                         contentPadding: const EdgeInsets.all(16),
@@ -453,10 +625,14 @@ class _PosInventoryMovementDialogState
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: isDark ? Colors.white.withValues(alpha: 0.02) : const Color(0xFFF8FAFC),
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.02)
+                    : const Color(0xFFF8FAFC),
                 border: Border(
                   top: BorderSide(
-                    color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                    color: isDark
+                        ? const Color(0xFF334155)
+                        : const Color(0xFFF1F5F9),
                   ),
                 ),
               ),
@@ -475,12 +651,13 @@ class _PosInventoryMovementDialogState
                   ),
                   const SizedBox(width: 12),
                   ElevatedButton.icon(
-                    onPressed: _handleApply,
+                    onPressed: _loadingRows ? null : _handleApply,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: primaryColor,
                       foregroundColor: Colors.white,
                       elevation: 0,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 12),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -513,8 +690,81 @@ class _PosInventoryMovementDialogState
     });
   }
 
+  void _reindexRows() {
+    _rowByProductId
+      ..clear()
+      ..addEntries(_adjustRows.map(
+        (InventoryView row) =>
+            MapEntry<String, InventoryView>(row.productId, row),
+      ));
+  }
+
+  Future<void> _onWarehouseChanged(String? warehouseId) async {
+    if (warehouseId == null ||
+        warehouseId.trim().isEmpty ||
+        warehouseId == _selectedWarehouseId ||
+        widget.loadAdjustRowsForWarehouse == null) {
+      return;
+    }
+    setState(() {
+      _selectedWarehouseId = warehouseId;
+      _loadingRows = true;
+    });
+
+    try {
+      final List<InventoryView> rows =
+          await widget.loadAdjustRowsForWarehouse!(warehouseId);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _adjustRows = rows;
+        _reindexRows();
+        if (_adjustRows.isEmpty) {
+          _selectedProductId = '';
+        } else {
+          final bool containsSelected =
+              _rowByProductId.containsKey(_selectedProductId);
+          if (!containsSelected) {
+            _selectedProductId = _adjustRows.first.productId;
+          }
+        }
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          const SnackBar(content: Text('No se pudo cargar el almacén.')),
+        );
+    } finally {
+      if (mounted) {
+        setState(() => _loadingRows = false);
+      }
+    }
+  }
+
   void _handleApply() {
-    final double? qty = double.tryParse(_qtyCtrl.text);
+    if (widget.warehouseOptions.isNotEmpty &&
+        (_selectedWarehouseId == null ||
+            _selectedWarehouseId!.trim().isEmpty)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Selecciona un almacén.')),
+      );
+      return;
+    }
+    if (_selectedProductId.trim().isEmpty ||
+        !_rowByProductId.containsKey(_selectedProductId)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Selecciona un producto.')),
+      );
+      return;
+    }
+
+    final double? qty =
+        double.tryParse(_qtyCtrl.text.trim().replaceAll(',', '.'));
     if (qty == null || qty <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Ingresa una cantidad valida.')),
@@ -528,10 +778,13 @@ class _PosInventoryMovementDialogState
       return;
     }
 
+    final double currentStock = _rowByProductId[_selectedProductId]?.qty ?? 0;
     Navigator.pop(context, {
+      'warehouseId': _selectedWarehouseId,
       'productId': _selectedProductId,
       'isEntry': _isEntry,
       'qty': qty,
+      'currentStock': currentStock,
       'reasonCode': _selectedReasonCode,
       'note': _noteCtrl.text.trim(),
     });
@@ -596,7 +849,9 @@ class _MovementTypeBtn extends StatelessWidget {
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                color: isSelected ? (isDark ? Colors.white : Colors.black87) : Colors.grey,
+                color: isSelected
+                    ? (isDark ? Colors.white : Colors.black87)
+                    : Colors.grey,
               ),
             ),
           ],

@@ -74,6 +74,26 @@ class AuthLocalDataSource {
     return user;
   }
 
+  Future<User?> findPreferredActiveUser() async {
+    final List<User> users = await (_db.select(_db.users)
+          ..where((Users tbl) => tbl.isActive.equals(true)))
+        .get();
+    if (users.isEmpty) {
+      return null;
+    }
+
+    users.sort((User a, User b) {
+      final bool aIsAdmin = a.role.trim().toLowerCase() == 'admin';
+      final bool bIsAdmin = b.role.trim().toLowerCase() == 'admin';
+      if (aIsAdmin != bIsAdmin) {
+        return aIsAdmin ? -1 : 1;
+      }
+      return a.createdAt.compareTo(b.createdAt);
+    });
+
+    return users.first;
+  }
+
   String _newSalt() {
     final List<int> bytes = List<int>.generate(16, (_) => _random.nextInt(256));
     return base64UrlEncode(bytes);

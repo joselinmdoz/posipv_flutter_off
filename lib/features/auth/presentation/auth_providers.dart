@@ -15,5 +15,10 @@ final Provider<LocalAuthService> localAuthServiceProvider =
   return LocalAuthService(ref.watch(authLocalDataSourceProvider));
 });
 
+final FutureProvider<bool> appLockEnabledProvider =
+    FutureProvider<bool>((ref) async {
+  return ref.watch(localAuthServiceProvider).isAppLockEnabled();
+});
+
 final StateProvider<UserSession?> currentSessionProvider =
     StateProvider<UserSession?>((_) => null);

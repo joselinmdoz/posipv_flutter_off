@@ -4,6 +4,8 @@ import '../features/almacenes/presentation/almacenes_page.dart';
 import '../features/auth/presentation/login_page.dart';
 import '../features/auth/presentation/splash_page.dart';
 import '../features/configuracion/presentation/configuracion_page.dart';
+import '../features/configuracion/presentation/currency_settings_page.dart';
+import '../features/configuracion/presentation/security_page.dart';
 import '../features/home/presentation/home_page.dart';
 import '../features/inventario/presentation/inventario_page.dart';
 import '../features/inventario/presentation/movimientos_inventario_page.dart';
@@ -85,6 +87,14 @@ final GoRouter appRouter = GoRouter(
           builder: (context, state) => const LicenciaPage(),
         ),
       ],
+    ),
+    GoRoute(
+      path: '/configuracion-seguridad',
+      builder: (context, state) => const SecurityPage(),
+    ),
+    GoRoute(
+      path: '/configuracion-monedas',
+      builder: (context, state) => const CurrencySettingsPage(),
     ),
   ],
 );

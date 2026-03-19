@@ -3,18 +3,21 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_providers.dart';
 import '../../../core/utils/perf_trace.dart';
+import '../../../shared/widgets/app_add_action_button.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../../shared/widgets/code_scanner_page.dart';
+import '../../configuracion/data/configuracion_local_datasource.dart';
+import '../../configuracion/presentation/configuracion_providers.dart';
 import '../data/productos_local_datasource.dart';
 import '../domain/product_qr_codec.dart';
 import 'productos_providers.dart';
+import 'widgets/product_card.dart';
 
-const List<String> _kCurrencies = <String>['USD', 'EUR', 'MXN', 'CUP'];
+const List<String> _kFallbackCurrencies = <String>['USD', 'EUR', 'MXN', 'CUP'];
 
 class ProductosPage extends ConsumerStatefulWidget {
   const ProductosPage({super.key});
@@ -132,7 +135,7 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
     final bool isEditing = product != null;
     final String? result = await Navigator.of(context).push<String>(
       MaterialPageRoute<String>(
-        builder: (_) => _ProductFormPage(product: product),
+        builder: (_) => ProductFormPage(product: product),
         fullscreenDialog: true,
       ),
     );
@@ -150,277 +153,6 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
     }
   }
 
-  String _moneyByCurrency(int cents, String currencyCode) {
-    return '$currencyCode ${(cents / 100).toStringAsFixed(2)}';
-  }
-
-  Widget _buildImageContent(String? path) {
-    final ThemeData theme = Theme.of(context);
-    final bool isDark = theme.brightness == Brightness.dark;
-    final Color placeholder =
-        isDark ? const Color(0xFF233044) : const Color(0xFFEAF0F7);
-    final Color placeholderIcon =
-        isDark ? const Color(0xFF9FB0C8) : const Color(0xFF6D809A);
-
-    if (path == null || path.isEmpty) {
-      return Container(
-        color: placeholder,
-        child: Icon(
-          Icons.inventory_2_outlined,
-          color: placeholderIcon,
-        ),
-      );
-    }
-
-    if (path.startsWith('http')) {
-      return Image.network(
-        path,
-        fit: BoxFit.cover,
-        cacheWidth: 480,
-        errorBuilder: (_, __, ___) => Container(
-          color: placeholder,
-          child: Icon(Icons.broken_image_outlined, color: placeholderIcon),
-        ),
-      );
-    }
-
-    return Image.file(
-      File(path),
-      fit: BoxFit.cover,
-      cacheWidth: 480,
-      errorBuilder: (_, __, ___) => Container(
-        color: placeholder,
-        child: Icon(Icons.broken_image_outlined, color: placeholderIcon),
-      ),
-    );
-  }
-
-  Future<void> _showProductQr(Product product) async {
-    final String qrData = buildProductQrData(product);
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (BuildContext context) {
-        final ThemeData theme = Theme.of(context);
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                const Text(
-                  'QR del producto',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: QrImageView(
-                    data: qrData,
-                    version: QrVersions.auto,
-                    size: 220,
-                    backgroundColor: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  '${product.name}\nID: ${product.id}\nPrecio: ${_moneyByCurrency(product.priceCents, product.currencyCode)}',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Este QR contiene: id, codigo, nombre, precio de venta y moneda.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildProductCard(Product product) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme scheme = theme.colorScheme;
-    final bool isDark = theme.brightness == Brightness.dark;
-    final String barcode = (product.barcode ?? '').trim();
-    final Color accent = scheme.primary;
-
-    return Card(
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: scheme.outline.withValues(alpha: isDark ? 0.8 : 0.9),
-        ),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () => _openProductForm(product: product),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: scheme.outline.withValues(alpha: 0.85),
-                      ),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: SizedBox(
-                        width: 52,
-                        height: 52,
-                        child: _buildImageContent(product.imagePath),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          product.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 14,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Cod: ${product.sku}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: scheme.onSurfaceVariant,
-                            fontSize: 10.6,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        if (barcode.isNotEmpty)
-                          Text(
-                            'Bar: $barcode',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: scheme.onSurfaceVariant,
-                              fontSize: 9.8,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  Material(
-                    color: accent.withValues(alpha: isDark ? 0.28 : 0.12),
-                    borderRadius: BorderRadius.circular(10),
-                    child: IconButton(
-                      tooltip: 'Ver QR',
-                      visualDensity: VisualDensity.compact,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 30,
-                        height: 30,
-                      ),
-                      padding: EdgeInsets.zero,
-                      splashRadius: 16,
-                      onPressed: () => _showProductQr(product),
-                      icon: const Icon(Icons.qr_code_2_rounded, size: 18),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: <Widget>[
-                  _metaPill(product.category),
-                  _metaPill(product.productType),
-                  _metaPill(product.unitMeasure),
-                ],
-              ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.fromLTRB(8, 7, 8, 7),
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: isDark ? 0.2 : 0.08),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: accent.withValues(alpha: isDark ? 0.45 : 0.28),
-                  ),
-                ),
-                child: Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Text(
-                        _moneyByCurrency(
-                            product.priceCents, product.currencyCode),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: accent,
-                          fontSize: 13.2,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      'Costo ${_moneyByCurrency(product.costPriceCents, product.currencyCode)}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: scheme.onSurfaceVariant,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _metaPill(String text) {
-    final ThemeData theme = Theme.of(context);
-    final Color accent = theme.colorScheme.primary;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(
-        color: accent.withValues(
-            alpha: theme.brightness == Brightness.dark ? 0.22 : 0.1),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 9.2,
-          color: theme.colorScheme.onSurfaceVariant,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-
   void _show(String message) {
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
@@ -435,9 +167,9 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
       currentRoute: '/productos',
       onRefresh: _loadProducts,
       floatingActionButton: license.canWrite
-          ? FloatingActionButton.small(
+          ? AppAddActionButton(
+              currentRoute: '/productos',
               onPressed: () => _openProductForm(),
-              child: const Icon(Icons.add_rounded),
             )
           : null,
       body: _loading
@@ -457,21 +189,24 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
                       key: const PageStorageKey<String>('productos-grid'),
                       controller: _scrollController,
                       cacheExtent: 200,
-                      padding: const EdgeInsets.fromLTRB(8, 10, 8, 90),
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
                       physics: const AlwaysScrollableScrollPhysics(),
                       itemCount: _products.length,
                       gridDelegate:
                           const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 2,
-                        mainAxisSpacing: 8,
-                        crossAxisSpacing: 8,
-                        mainAxisExtent: 176,
+                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 12,
+                        mainAxisExtent: 178,
                       ),
                       itemBuilder: (_, int index) {
                         final Product product = _products[index];
                         return KeyedSubtree(
                           key: ValueKey<String>(product.id),
-                          child: _buildProductCard(product),
+                          child: ProductCard(
+                            product: product,
+                            onTap: () => _openProductForm(product: product),
+                          ),
                         );
                       },
                     ),
@@ -480,16 +215,16 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
   }
 }
 
-class _ProductFormPage extends ConsumerStatefulWidget {
-  const _ProductFormPage({this.product});
+class ProductFormPage extends ConsumerStatefulWidget {
+  const ProductFormPage({super.key, this.product});
 
   final Product? product;
 
   @override
-  ConsumerState<_ProductFormPage> createState() => _ProductFormPageState();
+  ConsumerState<ProductFormPage> createState() => _ProductFormPageState();
 }
 
-class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
+class _ProductFormPageState extends ConsumerState<ProductFormPage> {
   final ImagePicker _imagePicker = ImagePicker();
 
   late final TextEditingController _nameCtrl;
@@ -509,6 +244,13 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
     'Metro',
     'Paquete',
   ];
+  List<String> _currencyOptions = <String>[..._kFallbackCurrencies];
+  Map<String, String> _currencySymbolsByCode = <String, String>{
+    'USD': r'$',
+    'EUR': '€',
+    'MXN': r'$',
+    'CUP': '₱',
+  };
 
   late String _selectedType;
   late String _selectedCategory;
@@ -545,7 +287,7 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
     _selectedType = product?.productType ?? _typeOptions.first;
     _selectedCategory = product?.category ?? _categoryOptions.first;
     _selectedUnit = product?.unitMeasure ?? _unitOptions.first;
-    _selectedCurrency = product?.currencyCode ?? _kCurrencies.first;
+    _selectedCurrency = product?.currencyCode ?? _kFallbackCurrencies.first;
     _selectedImagePath = product?.imagePath;
 
     _loadCatalogs();
@@ -579,17 +321,38 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
   Future<void> _loadCatalogs() async {
     final ProductosLocalDataSource ds =
         ref.read(productosLocalDataSourceProvider);
+    final ConfiguracionLocalDataSource configDs =
+        ref.read(configuracionLocalDataSourceProvider);
     try {
-      final List<List<String>> catalogs = await Future.wait<List<String>>(
+      final Future<List<List<String>>> catalogsFuture =
+          Future.wait<List<String>>(
         <Future<List<String>>>[
           ds.listCatalogValues(ProductCatalogKind.type),
           ds.listCatalogValues(ProductCatalogKind.category),
           ds.listCatalogValues(ProductCatalogKind.unit),
         ],
       );
+      final Future<AppConfig> configFuture = configDs.loadConfig();
+
+      final List<List<String>> catalogs = await catalogsFuture;
+      final AppConfig config = await configFuture;
       final List<String> types = catalogs[0];
       final List<String> categories = catalogs[1];
       final List<String> units = catalogs[2];
+      final AppCurrencyConfig currencyConfig =
+          config.currencyConfig.normalized();
+      final List<String> activeCurrencyCodes = currencyConfig.currencies
+          .map((AppCurrencySetting currency) => currency.code)
+          .toList();
+      final List<String> mergedCurrencies = _mergeWithCurrent(
+        activeCurrencyCodes,
+        _selectedCurrency,
+        fallback: currencyConfig.primaryCurrencyCode,
+      );
+      final Map<String, String> symbolsByCode = <String, String>{
+        for (final AppCurrencySetting currency in currencyConfig.currencies)
+          currency.code: currency.symbol,
+      };
 
       if (!mounted) {
         return;
@@ -616,6 +379,13 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
           current: _selectedCategory,
           options: _categoryOptions,
           fallback: 'General',
+        );
+        _currencyOptions = mergedCurrencies;
+        _currencySymbolsByCode = symbolsByCode;
+        _selectedCurrency = _resolveSelected(
+          current: _selectedCurrency,
+          options: _currencyOptions,
+          fallback: currencyConfig.primaryCurrencyCode,
         );
         _selectedUnit = _resolveSelected(
           current: _selectedUnit,
@@ -1196,7 +966,12 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
   }
 
   String _currencySymbolFor(String code) {
-    switch (code.toUpperCase()) {
+    final String normalized = code.toUpperCase();
+    final String? configured = _currencySymbolsByCode[normalized];
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured;
+    }
+    switch (normalized) {
       case 'USD':
         return r'$';
       case 'CUP':
@@ -1350,6 +1125,15 @@ class _ProductFormPageState extends ConsumerState<_ProductFormPage> {
     final String symbol = _currencySymbolFor(_selectedCurrency);
     return Column(
       children: <Widget>[
+        _catalogDropdownField(
+          label: 'Moneda de precios',
+          options: _currencyOptions,
+          selected: _selectedCurrency,
+          onChanged: (String value) {
+            setState(() => _selectedCurrency = value);
+          },
+        ),
+        const SizedBox(height: 12),
         _buildFieldLabel('Precio Coste'),
         TextField(
           controller: _costCtrl,

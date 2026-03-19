@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
 import 'package:flutter/material.dart';
 
@@ -28,12 +30,275 @@ enum AppThemePreference {
   }
 }
 
+class AppExchangeRateHistoryEntry {
+  const AppExchangeRateHistoryEntry({
+    required this.currencyCode,
+    required this.baseCurrencyCode,
+    required this.rateToBase,
+    required this.changedAt,
+  });
+
+  final String currencyCode;
+  final String baseCurrencyCode;
+  final double rateToBase;
+  final DateTime changedAt;
+
+  factory AppExchangeRateHistoryEntry.fromJson(Map<String, Object?> json) {
+    final String currencyCode = (json['currencyCode'] as String? ?? '').trim();
+    final String baseCurrencyCode =
+        (json['baseCurrencyCode'] as String? ?? '').trim();
+    final double rateToBase = _asDouble(json['rateToBase']) ?? 1;
+    final DateTime changedAt =
+        DateTime.tryParse((json['changedAt'] as String? ?? '').trim()) ??
+            DateTime.now().toUtc();
+    return AppExchangeRateHistoryEntry(
+      currencyCode: currencyCode,
+      baseCurrencyCode: baseCurrencyCode,
+      rateToBase: rateToBase,
+      changedAt: changedAt,
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'currencyCode': currencyCode,
+      'baseCurrencyCode': baseCurrencyCode,
+      'rateToBase': rateToBase,
+      'changedAt': changedAt.toUtc().toIso8601String(),
+    };
+  }
+}
+
+class AppCurrencySetting {
+  const AppCurrencySetting({
+    required this.code,
+    required this.symbol,
+    required this.rateToPrimary,
+  });
+
+  final String code;
+  final String symbol;
+  final double rateToPrimary;
+
+  factory AppCurrencySetting.fromJson(Map<String, Object?> json) {
+    return AppCurrencySetting(
+      code: (json['code'] as String? ?? '').trim(),
+      symbol: (json['symbol'] as String? ?? '').trim(),
+      rateToPrimary: _asDouble(json['rateToPrimary']) ?? 1,
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'code': code,
+      'symbol': symbol,
+      'rateToPrimary': rateToPrimary,
+    };
+  }
+
+  AppCurrencySetting copyWith({
+    String? code,
+    String? symbol,
+    double? rateToPrimary,
+  }) {
+    return AppCurrencySetting(
+      code: code ?? this.code,
+      symbol: symbol ?? this.symbol,
+      rateToPrimary: rateToPrimary ?? this.rateToPrimary,
+    );
+  }
+}
+
+class AppCurrencyConfig {
+  const AppCurrencyConfig({
+    required this.primaryCurrencyCode,
+    required this.currencies,
+    required this.rateHistory,
+  });
+
+  static const AppCurrencyConfig defaults = AppCurrencyConfig(
+    primaryCurrencyCode: 'USD',
+    currencies: <AppCurrencySetting>[
+      AppCurrencySetting(code: 'USD', symbol: r'$', rateToPrimary: 1),
+    ],
+    rateHistory: <AppExchangeRateHistoryEntry>[],
+  );
+
+  final String primaryCurrencyCode;
+  final List<AppCurrencySetting> currencies;
+  final List<AppExchangeRateHistoryEntry> rateHistory;
+
+  factory AppCurrencyConfig.fromJson(Map<String, Object?> json) {
+    final List<AppCurrencySetting> currencies = <AppCurrencySetting>[];
+    final Object? rawCurrencies = json['currencies'];
+    if (rawCurrencies is List) {
+      for (final Object? item in rawCurrencies) {
+        if (item is Map) {
+          currencies.add(
+            AppCurrencySetting.fromJson(item.cast<String, Object?>()),
+          );
+        }
+      }
+    }
+
+    final List<AppExchangeRateHistoryEntry> history =
+        <AppExchangeRateHistoryEntry>[];
+    final Object? rawHistory = json['rateHistory'];
+    if (rawHistory is List) {
+      for (final Object? item in rawHistory) {
+        if (item is Map) {
+          history.add(
+            AppExchangeRateHistoryEntry.fromJson(
+              item.cast<String, Object?>(),
+            ),
+          );
+        }
+      }
+    }
+
+    return AppCurrencyConfig(
+      primaryCurrencyCode:
+          (json['primaryCurrencyCode'] as String? ?? '').trim(),
+      currencies: currencies,
+      rateHistory: history,
+    ).normalized();
+  }
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'primaryCurrencyCode': primaryCurrencyCode,
+      'currencies':
+          currencies.map((AppCurrencySetting c) => c.toJson()).toList(),
+      'rateHistory': rateHistory
+          .map((AppExchangeRateHistoryEntry h) => h.toJson())
+          .toList(),
+    };
+  }
+
+  AppCurrencyConfig copyWith({
+    String? primaryCurrencyCode,
+    List<AppCurrencySetting>? currencies,
+    List<AppExchangeRateHistoryEntry>? rateHistory,
+  }) {
+    return AppCurrencyConfig(
+      primaryCurrencyCode: primaryCurrencyCode ?? this.primaryCurrencyCode,
+      currencies: currencies ?? this.currencies,
+      rateHistory: rateHistory ?? this.rateHistory,
+    ).normalized();
+  }
+
+  AppCurrencySetting get primaryCurrency {
+    return currencyByCode(primaryCurrencyCode) ??
+        const AppCurrencySetting(
+          code: 'USD',
+          symbol: r'$',
+          rateToPrimary: 1,
+        );
+  }
+
+  AppCurrencySetting? currencyByCode(String code) {
+    final String target = _sanitizeCurrencyCode(code);
+    for (final AppCurrencySetting currency in currencies) {
+      if (_sanitizeCurrencyCode(currency.code) == target) {
+        return currency;
+      }
+    }
+    return null;
+  }
+
+  String symbolForCode(String code) {
+    return currencyByCode(code)?.symbol ?? _defaultSymbolForCode(code);
+  }
+
+  AppCurrencyConfig normalized() {
+    final Map<String, AppCurrencySetting> byCode =
+        <String, AppCurrencySetting>{};
+
+    for (final AppCurrencySetting raw in currencies) {
+      final String code = _sanitizeCurrencyCode(raw.code);
+      if (code.isEmpty || byCode.containsKey(code)) {
+        continue;
+      }
+      final String symbol = _sanitizeCurrencySymbol(
+        raw.symbol,
+        fallback: _defaultSymbolForCode(code),
+      );
+      final double rate = raw.rateToPrimary.isFinite && raw.rateToPrimary > 0
+          ? raw.rateToPrimary
+          : 1;
+      byCode[code] = AppCurrencySetting(
+        code: code,
+        symbol: symbol,
+        rateToPrimary: rate,
+      );
+    }
+
+    String normalizedPrimary = _sanitizeCurrencyCode(primaryCurrencyCode);
+    if (normalizedPrimary.isEmpty) {
+      normalizedPrimary = 'USD';
+    }
+
+    if (!byCode.containsKey(normalizedPrimary)) {
+      byCode[normalizedPrimary] = AppCurrencySetting(
+        code: normalizedPrimary,
+        symbol: _defaultSymbolForCode(normalizedPrimary),
+        rateToPrimary: 1,
+      );
+    }
+
+    byCode[normalizedPrimary] = byCode[normalizedPrimary]!.copyWith(
+      rateToPrimary: 1,
+      symbol: _sanitizeCurrencySymbol(
+        byCode[normalizedPrimary]!.symbol,
+        fallback: _defaultSymbolForCode(normalizedPrimary),
+      ),
+    );
+
+    final List<AppCurrencySetting> normalizedCurrencies = byCode.values.toList()
+      ..sort((AppCurrencySetting a, AppCurrencySetting b) {
+        if (a.code == normalizedPrimary) {
+          return -1;
+        }
+        if (b.code == normalizedPrimary) {
+          return 1;
+        }
+        return a.code.compareTo(b.code);
+      });
+
+    final List<AppExchangeRateHistoryEntry> normalizedHistory =
+        rateHistory.where((AppExchangeRateHistoryEntry entry) {
+      final String code = _sanitizeCurrencyCode(entry.currencyCode);
+      final String base = _sanitizeCurrencyCode(entry.baseCurrencyCode);
+      return code.isNotEmpty &&
+          base.isNotEmpty &&
+          entry.rateToBase.isFinite &&
+          entry.rateToBase > 0;
+    }).toList()
+          ..sort(
+            (AppExchangeRateHistoryEntry a, AppExchangeRateHistoryEntry b) =>
+                b.changedAt.compareTo(a.changedAt),
+          );
+
+    final List<AppExchangeRateHistoryEntry> boundedHistory =
+        normalizedHistory.length <= 200
+            ? normalizedHistory
+            : normalizedHistory.sublist(0, 200);
+
+    return AppCurrencyConfig(
+      primaryCurrencyCode: normalizedPrimary,
+      currencies: normalizedCurrencies,
+      rateHistory: boundedHistory,
+    );
+  }
+}
+
 class AppConfig {
   const AppConfig({
     required this.businessName,
     required this.currencySymbol,
     required this.allowNegativeStock,
     required this.themePreference,
+    required this.currencyConfig,
   });
 
   static const String defaultBusinessName = 'Mi Negocio';
@@ -44,24 +309,31 @@ class AppConfig {
     currencySymbol: defaultCurrencySymbol,
     allowNegativeStock: false,
     themePreference: AppThemePreference.light,
+    currencyConfig: AppCurrencyConfig.defaults,
   );
 
   final String businessName;
   final String currencySymbol;
   final bool allowNegativeStock;
   final AppThemePreference themePreference;
+  final AppCurrencyConfig currencyConfig;
 
   AppConfig copyWith({
     String? businessName,
     String? currencySymbol,
     bool? allowNegativeStock,
     AppThemePreference? themePreference,
+    AppCurrencyConfig? currencyConfig,
   }) {
+    final AppCurrencyConfig nextCurrencyConfig =
+        (currencyConfig ?? this.currencyConfig).normalized();
     return AppConfig(
       businessName: businessName ?? this.businessName,
-      currencySymbol: currencySymbol ?? this.currencySymbol,
+      currencySymbol:
+          currencySymbol ?? nextCurrencyConfig.primaryCurrency.symbol,
       allowNegativeStock: allowNegativeStock ?? this.allowNegativeStock,
       themePreference: themePreference ?? this.themePreference,
+      currencyConfig: nextCurrencyConfig,
     );
   }
 }
@@ -73,6 +345,7 @@ class ConfiguracionLocalDataSource {
 
   static const String _kBusinessName = 'business_name';
   static const String _kCurrencySymbol = 'currency_symbol';
+  static const String _kCurrencyConfigJson = 'currency_config_json_v1';
   static const String _kAllowNegativeStock = 'allow_negative_stock';
   static const String _kThemePreference = 'theme_preference';
 
@@ -83,6 +356,7 @@ class ConfiguracionLocalDataSource {
                 tbl.key.isIn(<String>[
                   _kBusinessName,
                   _kCurrencySymbol,
+                  _kCurrencyConfigJson,
                   _kAllowNegativeStock,
                   _kThemePreference,
                 ]) &
@@ -95,21 +369,30 @@ class ConfiguracionLocalDataSource {
       for (final AppSetting row in rows) row.key: row.value,
     };
 
+    final AppCurrencyConfig currencyConfig = _parseCurrencyConfig(values);
     return AppConfig(
       businessName: values[_kBusinessName] ?? AppConfig.defaultBusinessName,
-      currencySymbol: _sanitizeCurrency(values[_kCurrencySymbol]),
+      currencySymbol: currencyConfig.primaryCurrency.symbol,
       allowNegativeStock: values[_kAllowNegativeStock] == '1',
       themePreference:
           AppThemePreference.fromStorage(values[_kThemePreference]),
+      currencyConfig: currencyConfig,
     );
   }
 
   Future<void> saveConfig(AppConfig config) async {
+    final AppCurrencyConfig normalizedCurrencies =
+        config.currencyConfig.normalized();
     await _db.transaction(() async {
       await _upsert(_kBusinessName, config.businessName.trim());
-      await _upsert(_kCurrencySymbol, _sanitizeCurrency(config.currencySymbol));
       await _upsert(
-          _kAllowNegativeStock, config.allowNegativeStock ? '1' : '0');
+          _kCurrencySymbol, normalizedCurrencies.primaryCurrency.symbol);
+      await _upsert(
+          _kCurrencyConfigJson, jsonEncode(normalizedCurrencies.toJson()));
+      await _upsert(
+        _kAllowNegativeStock,
+        config.allowNegativeStock ? '1' : '0',
+      );
       await _upsert(_kThemePreference, config.themePreference.storageValue);
     });
   }
@@ -124,6 +407,41 @@ class ConfiguracionLocalDataSource {
     return config.currencySymbol;
   }
 
+  Future<AppCurrencyConfig> loadCurrencyConfig() async {
+    final AppConfig config = await loadConfig();
+    return config.currencyConfig;
+  }
+
+  AppCurrencyConfig _parseCurrencyConfig(Map<String, String> values) {
+    final String? rawConfig = values[_kCurrencyConfigJson];
+    if (rawConfig != null && rawConfig.trim().isNotEmpty) {
+      try {
+        final Object? decoded = jsonDecode(rawConfig);
+        if (decoded is Map) {
+          return AppCurrencyConfig.fromJson(decoded.cast<String, Object?>())
+              .normalized();
+        }
+      } catch (_) {}
+    }
+
+    final String legacySymbol = _sanitizeCurrencySymbol(
+      values[_kCurrencySymbol],
+      fallback: AppConfig.defaultCurrencySymbol,
+    );
+    final String legacyCode = _currencyCodeFromSymbol(legacySymbol);
+    return AppCurrencyConfig(
+      primaryCurrencyCode: legacyCode,
+      currencies: <AppCurrencySetting>[
+        AppCurrencySetting(
+          code: legacyCode,
+          symbol: legacySymbol,
+          rateToPrimary: 1,
+        ),
+      ],
+      rateHistory: const <AppExchangeRateHistoryEntry>[],
+    ).normalized();
+  }
+
   Future<void> _upsert(String key, String value) {
     return _db.into(_db.appSettings).insertOnConflictUpdate(
           AppSettingsCompanion.insert(
@@ -133,15 +451,62 @@ class ConfiguracionLocalDataSource {
           ),
         );
   }
+}
 
-  String _sanitizeCurrency(String? value) {
-    final String v = (value ?? AppConfig.defaultCurrencySymbol).trim();
-    if (v.isEmpty) {
-      return AppConfig.defaultCurrencySymbol;
-    }
-    if (v.length > 3) {
-      return v.substring(0, 3);
-    }
-    return v;
+double? _asDouble(Object? value) {
+  if (value is num) {
+    return value.toDouble();
+  }
+  if (value is String) {
+    return double.tryParse(value.trim().replaceAll(',', '.'));
+  }
+  return null;
+}
+
+String _sanitizeCurrencyCode(String? value) {
+  final String cleaned = (value ?? '').trim().toUpperCase();
+  if (cleaned.isEmpty) {
+    return '';
+  }
+  if (cleaned.length > 3) {
+    return cleaned.substring(0, 3);
+  }
+  return cleaned;
+}
+
+String _sanitizeCurrencySymbol(
+  String? value, {
+  required String fallback,
+}) {
+  final String cleaned = (value ?? '').trim();
+  if (cleaned.isEmpty) {
+    return fallback;
+  }
+  return cleaned.length <= 3 ? cleaned : cleaned.substring(0, 3);
+}
+
+String _currencyCodeFromSymbol(String symbol) {
+  switch (symbol.trim()) {
+    case '€':
+      return 'EUR';
+    case '₱':
+      return 'CUP';
+    case r'$':
+    default:
+      return 'USD';
+  }
+}
+
+String _defaultSymbolForCode(String code) {
+  switch (_sanitizeCurrencyCode(code)) {
+    case 'EUR':
+      return '€';
+    case 'CUP':
+      return '₱';
+    case 'MXN':
+      return r'$';
+    case 'USD':
+    default:
+      return r'$';
   }
 }

@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'auth_providers.dart';
+import 'widgets/splash_background_decoration.dart';
+import 'widgets/splash_loading_indicator.dart';
+
 class SplashPage extends ConsumerStatefulWidget {
   const SplashPage({super.key});
 
@@ -9,7 +13,8 @@ class SplashPage extends ConsumerStatefulWidget {
   ConsumerState<SplashPage> createState() => _SplashPageState();
 }
 
-class _SplashPageState extends ConsumerState<SplashPage> with SingleTickerProviderStateMixin {
+class _SplashPageState extends ConsumerState<SplashPage>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
   late Animation<double> _opacityAnimation;
@@ -41,13 +46,35 @@ class _SplashPageState extends ConsumerState<SplashPage> with SingleTickerProvid
   }
 
   Future<void> _initApp() async {
-    // Simular un tiempo de carga mínimo para que se vea el splash
     await Future.delayed(const Duration(milliseconds: 2500));
     if (!mounted) return;
-    
-    // Aquí podrías verificar si hay una sesión activa, etc.
-    // Por ahora vamos al login como estaba por defecto
-    context.go('/login');
+
+    final authService = ref.read(localAuthServiceProvider);
+    try {
+      await authService.ensureDefaultAdmin();
+      final bool appLockEnabled = await authService.isAppLockEnabled();
+      if (!mounted) {
+        return;
+      }
+
+      if (appLockEnabled) {
+        ref.read(currentSessionProvider.notifier).state = null;
+        context.go('/login');
+        return;
+      }
+
+      final session = await authService.createOfflineSession();
+      if (!mounted) {
+        return;
+      }
+      ref.read(currentSessionProvider.notifier).state = session;
+      context.go('/home');
+    } catch (error) {
+      debugPrint('No se pudo inicializar sesion offline: $error');
+      if (mounted) {
+        context.go('/login');
+      }
+    }
   }
 
   @override
@@ -81,17 +108,19 @@ class _SplashPageState extends ConsumerState<SplashPage> with SingleTickerProvid
             Positioned(
               top: -100,
               right: -100,
-              child: _CircularDecoration(
+              child: SplashBackgroundDecoration(
                 size: 300,
-                color: const Color(0xFF3B82F6).withValues(alpha: isDark ? 0.05 : 0.1),
+                color: const Color(0xFF3B82F6)
+                    .withValues(alpha: isDark ? 0.05 : 0.1),
               ),
             ),
             Positioned(
               bottom: -50,
               left: -50,
-              child: _CircularDecoration(
+              child: SplashBackgroundDecoration(
                 size: 200,
-                color: const Color(0xFF60A5FA).withValues(alpha: isDark ? 0.05 : 0.1),
+                color: const Color(0xFF60A5FA)
+                    .withValues(alpha: isDark ? 0.05 : 0.1),
               ),
             ),
 
@@ -112,7 +141,9 @@ class _SplashPageState extends ConsumerState<SplashPage> with SingleTickerProvid
                   child: Container(
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
-                      color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.white,
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.05)
+                          : Colors.white,
                       borderRadius: BorderRadius.circular(40),
                       boxShadow: [
                         BoxShadow(
@@ -130,7 +161,7 @@ class _SplashPageState extends ConsumerState<SplashPage> with SingleTickerProvid
                   ),
                 ),
                 const SizedBox(height: 60),
-                const _ModernLoadingIndicator(),
+                const SplashLoadingIndicator(),
                 const SizedBox(height: 32),
                 Text(
                   'POSIPV',
@@ -151,85 +182,6 @@ class _SplashPageState extends ConsumerState<SplashPage> with SingleTickerProvid
                   ),
                 ),
               ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CircularDecoration extends StatelessWidget {
-  final double size;
-  final Color color;
-
-  const _CircularDecoration({required this.size, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: color,
-      ),
-    );
-  }
-}
-
-class _ModernLoadingIndicator extends StatefulWidget {
-  const _ModernLoadingIndicator();
-
-  @override
-  State<_ModernLoadingIndicator> createState() => _ModernLoadingIndicatorState();
-}
-
-class _ModernLoadingIndicatorState extends State<_ModernLoadingIndicator> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 1),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return RotationTransition(
-      turns: _controller,
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: Colors.blue.withValues(alpha: 0.1),
-            width: 4,
-          ),
-        ),
-        child: Stack(
-          children: [
-            Positioned(
-              top: 0,
-              left: 14,
-              child: Container(
-                width: 8,
-                height: 8,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Color(0xFF3B82F6),
-                ),
-              ),
             ),
           ],
         ),

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_providers.dart';
 import '../../../core/utils/perf_trace.dart';
+import '../../../shared/widgets/app_add_action_button.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../tpv/presentation/tpv_providers.dart';
 import '../data/almacenes_local_datasource.dart';
@@ -79,7 +80,6 @@ class _AlmacenesPageState extends ConsumerState<AlmacenesPage> {
     );
     await _loadWarehouses();
   }
-
 
   Future<void> _confirmDelete(Warehouse warehouse) async {
     final bool? confirm = await showDialog<bool>(
@@ -248,10 +248,12 @@ class _AlmacenesPageState extends ConsumerState<AlmacenesPage> {
                         children: <TextSpan>[
                           TextSpan(text: '${wws.totalProducts} productos '),
                           TextSpan(
-                            text: '(${wws.totalQuantity.toStringAsFixed(0)} total)',
+                            text:
+                                '(${wws.totalQuantity.toStringAsFixed(0)} total)',
                             style: TextStyle(
                               fontSize: 11,
-                              color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
+                              color: scheme.onSurfaceVariant
+                                  .withValues(alpha: 0.6),
                             ),
                           ),
                         ],
@@ -286,7 +288,8 @@ class _AlmacenesPageState extends ConsumerState<AlmacenesPage> {
                     value: 'delete',
                     child: Row(
                       children: [
-                        Icon(Icons.delete_outline_rounded, size: 20, color: Colors.red),
+                        Icon(Icons.delete_outline_rounded,
+                            size: 20, color: Colors.red),
                         SizedBox(width: 12),
                         Text('Eliminar', style: TextStyle(color: Colors.red)),
                       ],
@@ -326,35 +329,31 @@ class _AlmacenesPageState extends ConsumerState<AlmacenesPage> {
         ),
       ],
       floatingActionButton: license.canWrite
-          ? Container(
+          ? AppAddActionButton(
+              currentRoute: '/almacenes',
+              iconSize: 32,
               margin: const EdgeInsets.only(bottom: 20, right: 10),
-              child: FloatingActionButton(
-                onPressed: () async {
-                  final NavigatorState navigator = Navigator.of(context);
-                  final ScaffoldMessengerState messenger =
-                      ScaffoldMessenger.of(context);
-                  final bool? created = await navigator.push<bool>(
-                    MaterialPageRoute<bool>(
-                      builder: (_) => const _WarehouseFormPage(),
-                      fullscreenDialog: true,
-                    ),
-                  );
-                  if (created == true) {
-                    await _loadWarehouses();
-                    if (mounted) {
-                      messenger.showSnackBar(
-                        const SnackBar(
-                          content: Text('Registro creado correctamente.'),
-                        ),
-                      );
-                    }
+              onPressed: () async {
+                final NavigatorState navigator = Navigator.of(context);
+                final ScaffoldMessengerState messenger =
+                    ScaffoldMessenger.of(context);
+                final bool? created = await navigator.push<bool>(
+                  MaterialPageRoute<bool>(
+                    builder: (_) => const _WarehouseFormPage(),
+                    fullscreenDialog: true,
+                  ),
+                );
+                if (created == true) {
+                  await _loadWarehouses();
+                  if (mounted) {
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text('Registro creado correctamente.'),
+                      ),
+                    );
                   }
-                },
-                elevation: 4,
-                backgroundColor: const Color(0xFF1152D4),
-                shape: const CircleBorder(),
-                child: const Icon(Icons.add_rounded, size: 32, color: Colors.white),
-              ),
+                }
+              },
             )
           : null,
       body: _loading
@@ -371,7 +370,8 @@ class _AlmacenesPageState extends ConsumerState<AlmacenesPage> {
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                       child: Container(
                         decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                          color:
+                              isDark ? const Color(0xFF1E293B) : Colors.white,
                           borderRadius: BorderRadius.circular(12),
                           boxShadow: <BoxShadow>[
                             BoxShadow(
@@ -387,12 +387,14 @@ class _AlmacenesPageState extends ConsumerState<AlmacenesPage> {
                           decoration: InputDecoration(
                             hintText: 'Buscar almacenes por nombre o tipo...',
                             hintStyle: TextStyle(
-                              color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                              color: scheme.onSurfaceVariant
+                                  .withValues(alpha: 0.5),
                               fontSize: 14,
                             ),
                             prefixIcon: Icon(
                               Icons.search_rounded,
-                              color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                              color: scheme.onSurfaceVariant
+                                  .withValues(alpha: 0.5),
                             ),
                             border: InputBorder.none,
                             contentPadding: const EdgeInsets.symmetric(
@@ -413,7 +415,8 @@ class _AlmacenesPageState extends ConsumerState<AlmacenesPage> {
                             Icon(
                               Icons.warehouse_outlined,
                               size: 64,
-                              color: scheme.onSurfaceVariant.withValues(alpha: 0.2),
+                              color: scheme.onSurfaceVariant
+                                  .withValues(alpha: 0.2),
                             ),
                             const SizedBox(height: 16),
                             Text(
@@ -564,13 +567,17 @@ class _WarehouseFormPageState extends ConsumerState<_WarehouseFormPage> {
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
                   borderSide: BorderSide(
-                    color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                    color: isDark
+                        ? const Color(0xFF334155)
+                        : const Color(0xFFE2E8F0),
                   ),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
                   borderSide: BorderSide(
-                    color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                    color: isDark
+                        ? const Color(0xFF334155)
+                        : const Color(0xFFE2E8F0),
                   ),
                 ),
               ),
@@ -705,12 +712,20 @@ class _TypeOption extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: isSelected ? color : (isDark ? const Color(0xFF334155) : const Color(0xFFF8FAFC)),
+                color: isSelected
+                    ? color
+                    : (isDark
+                        ? const Color(0xFF334155)
+                        : const Color(0xFFF8FAFC)),
                 shape: BoxShape.circle,
               ),
               child: Icon(
                 icon,
-                color: isSelected ? Colors.white : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                color: isSelected
+                    ? Colors.white
+                    : (isDark
+                        ? const Color(0xFF94A3B8)
+                        : const Color(0xFF64748B)),
                 size: 24,
               ),
             ),
@@ -720,7 +735,11 @@ class _TypeOption extends StatelessWidget {
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w800,
-                color: isSelected ? color : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                color: isSelected
+                    ? color
+                    : (isDark
+                        ? const Color(0xFF94A3B8)
+                        : const Color(0xFF64748B)),
               ),
             ),
           ],
@@ -876,7 +895,9 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
                 color: isDark ? const Color(0xFF1E293B) : Colors.white,
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(
-                  color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                  color: isDark
+                      ? const Color(0xFF334155)
+                      : const Color(0xFFE2E8F0),
                 ),
                 boxShadow: <BoxShadow>[
                   BoxShadow(
@@ -962,13 +983,21 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                               colors: isCentral
-                                  ? <Color>[const Color(0xFF148A65), const Color(0xFF0D6B4E)]
-                                  : <Color>[const Color(0xFF1152D4), const Color(0xFF0A3C9F)],
+                                  ? <Color>[
+                                      const Color(0xFF148A65),
+                                      const Color(0xFF0D6B4E)
+                                    ]
+                                  : <Color>[
+                                      const Color(0xFF1152D4),
+                                      const Color(0xFF0A3C9F)
+                                    ],
                             ),
                             borderRadius: BorderRadius.circular(20),
                             boxShadow: <BoxShadow>[
                               BoxShadow(
-                                color: (isCentral ? const Color(0xFF148A65) : const Color(0xFF1152D4))
+                                color: (isCentral
+                                        ? const Color(0xFF148A65)
+                                        : const Color(0xFF1152D4))
                                     .withValues(alpha: 0.3),
                                 blurRadius: 10,
                                 offset: const Offset(0, 4),
@@ -1038,7 +1067,9 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
                 color: isDark ? const Color(0xFF1E293B) : Colors.white,
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(
-                  color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                  color: isDark
+                      ? const Color(0xFF334155)
+                      : const Color(0xFFE2E8F0),
                 ),
               ),
               child: Column(
@@ -1070,9 +1101,12 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
                       ),
                       const Spacer(),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                          color: isDark
+                              ? const Color(0xFF0F172A)
+                              : const Color(0xFFF1F5F9),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
@@ -1103,7 +1137,8 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
                             Icon(
                               Icons.inventory_2_outlined,
                               size: 48,
-                              color: scheme.onSurfaceVariant.withValues(alpha: 0.2),
+                              color: scheme.onSurfaceVariant
+                                  .withValues(alpha: 0.2),
                             ),
                             const SizedBox(height: 12),
                             Text(
@@ -1153,7 +1188,8 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
                                         'SKU: ${item.product.sku}',
                                         style: TextStyle(
                                           fontSize: 12,
-                                          color: theme.colorScheme.onSurfaceVariant,
+                                          color: theme
+                                              .colorScheme.onSurfaceVariant,
                                         ),
                                       ),
                                     ],
@@ -1248,7 +1284,11 @@ class _TypeChip extends StatelessWidget {
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w800,
-              color: isSelected ? color : (isDark ? const Color(0xFF64748B) : const Color(0xFF64748B)),
+              color: isSelected
+                  ? color
+                  : (isDark
+                      ? const Color(0xFF64748B)
+                      : const Color(0xFF64748B)),
             ),
           ),
         ),

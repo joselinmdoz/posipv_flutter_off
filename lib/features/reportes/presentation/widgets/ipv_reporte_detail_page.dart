@@ -11,7 +11,8 @@ class IpvReporteDetailPage extends ConsumerStatefulWidget {
   const IpvReporteDetailPage({super.key, required this.summary});
 
   @override
-  ConsumerState<IpvReporteDetailPage> createState() => _IpvReporteDetailPageState();
+  ConsumerState<IpvReporteDetailPage> createState() =>
+      _IpvReporteDetailPageState();
 }
 
 class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
@@ -31,9 +32,11 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
   Future<void> _loadDetail() async {
     final PerfTrace trace = PerfTrace('ipv_detail.load');
     setState(() => _loading = true);
-    final ReportesLocalDataSource ds = ref.read(reportesLocalDataSourceProvider);
+    final ReportesLocalDataSource ds =
+        ref.read(reportesLocalDataSourceProvider);
     try {
-      final IpvReportDetailStat? detail = await ds.loadIpvReportDetail(widget.summary.reportId);
+      final IpvReportDetailStat? detail =
+          await ds.loadIpvReportDetail(widget.summary.reportId);
       if (!mounted) return;
       setState(() {
         _detail = detail;
@@ -51,7 +54,8 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
   }
 
   Future<void> _exportFormat(String format) async {
-    final ReportesLocalDataSource ds = ref.read(reportesLocalDataSourceProvider);
+    final ReportesLocalDataSource ds =
+        ref.read(reportesLocalDataSourceProvider);
     try {
       final String path = format == 'pdf'
           ? await ds.exportIpvReportPdf(widget.summary.reportId)
@@ -75,12 +79,37 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
   }
 
   String _monthName(int month) {
-    const List<String> months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    const List<String> months = [
+      'Enero',
+      'Febrero',
+      'Marzo',
+      'Abril',
+      'Mayo',
+      'Junio',
+      'Julio',
+      'Agosto',
+      'Septiembre',
+      'Octubre',
+      'Noviembre',
+      'Diciembre'
+    ];
     return months[month - 1];
   }
 
   String _moneyWithSymbol(int cents, String symbol) {
     return '$symbol${(cents / 100).toStringAsFixed(2)}';
+  }
+
+  int _lineTotalAmountCents(IpvReportLineStat line) {
+    return (line.salesQty * line.salePriceCents).round();
+  }
+
+  int _tableTotalAmountCents(IpvReportDetailStat detail) {
+    int total = 0;
+    for (final IpvReportLineStat line in detail.lines) {
+      total += _lineTotalAmountCents(line);
+    }
+    return total;
   }
 
   @override
@@ -89,7 +118,8 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
     final bool isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+      backgroundColor:
+          isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
       appBar: AppBar(
         backgroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
         elevation: 0,
@@ -124,7 +154,8 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
               'Informe de Inventario, Ventas y Precios',
               style: TextStyle(
                 fontSize: 12,
-                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                color:
+                    isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
                 fontWeight: FontWeight.normal,
               ),
             ),
@@ -149,6 +180,9 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
   }
 
   Widget _buildContent(BuildContext context, bool isDark) {
+    final IpvReportDetailStat detail = _detail!;
+    final int tableTotalAmountCents = _tableTotalAmountCents(detail);
+
     return ListView(
       padding: EdgeInsets.zero,
       children: [
@@ -169,7 +203,9 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
           margin: const EdgeInsets.symmetric(horizontal: 16),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1E293B).withValues(alpha: 0.5) : const Color(0xFFF8FAFC),
+            color: isDark
+                ? const Color(0xFF1E293B).withValues(alpha: 0.5)
+                : const Color(0xFFF8FAFC),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
@@ -194,14 +230,17 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
-                          color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                          color: isDark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF64748B),
                         ),
                       ),
                       Text(
                         _formatDateTime(widget.summary.openedAt),
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: isDark ? Colors.white : const Color(0xFF0F172A),
+                          color:
+                              isDark ? Colors.white : const Color(0xFF0F172A),
                         ),
                       ),
                     ],
@@ -209,9 +248,12 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
                 ],
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF059669).withValues(alpha: 0.3) : const Color(0xFFDCFCE7),
+                  color: isDark
+                      ? const Color(0xFF059669).withValues(alpha: 0.3)
+                      : const Color(0xFFDCFCE7),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
@@ -219,7 +261,9 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
-                    color: isDark ? const Color(0xFF34D399) : const Color(0xFF15803D),
+                    color: isDark
+                        ? const Color(0xFF34D399)
+                        : const Color(0xFF15803D),
                     letterSpacing: 1,
                   ),
                 ),
@@ -227,9 +271,9 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
             ],
           ),
         ),
-        
+
         const SizedBox(height: 24),
-        
+
         // Exportar Reporte
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -255,19 +299,23 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                      color: isDark
+                          ? const Color(0xFF1E293B)
+                          : const Color(0xFFF1F5F9),
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.description_rounded, color: Colors.green),
+                        const Icon(Icons.description_rounded,
+                            color: Colors.green),
                         const SizedBox(width: 8),
                         Text(
                           'CSV',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            color: isDark ? Colors.white : const Color(0xFF0F172A),
+                            color:
+                                isDark ? Colors.white : const Color(0xFF0F172A),
                           ),
                         ),
                       ],
@@ -283,19 +331,23 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                      color: isDark
+                          ? const Color(0xFF1E293B)
+                          : const Color(0xFFF1F5F9),
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.picture_as_pdf_rounded, color: Colors.red),
+                        const Icon(Icons.picture_as_pdf_rounded,
+                            color: Colors.red),
                         const SizedBox(width: 8),
                         Text(
                           'PDF',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            color: isDark ? Colors.white : const Color(0xFF0F172A),
+                            color:
+                                isDark ? Colors.white : const Color(0xFF0F172A),
                           ),
                         ),
                       ],
@@ -306,9 +358,9 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
             ],
           ),
         ),
-        
+
         const SizedBox(height: 24),
-        
+
         // Detalle de Productos (Tabla Horizontal)
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -328,7 +380,8 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
           child: Container(
             decoration: BoxDecoration(
               border: Border.all(
-                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                color:
+                    isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
               ),
               borderRadius: BorderRadius.circular(16),
             ),
@@ -337,47 +390,113 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: DataTable(
-                  headingRowColor: WidgetStateProperty.all(isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC)),
-                  dataRowColor: WidgetStateProperty.all(isDark ? const Color(0xFF0F172A) : Colors.white),
+                  headingRowColor: WidgetStateProperty.all(isDark
+                      ? const Color(0xFF1E293B)
+                      : const Color(0xFFF8FAFC)),
+                  dataRowColor: WidgetStateProperty.all(
+                      isDark ? const Color(0xFF0F172A) : Colors.white),
                   columnSpacing: 24,
                   horizontalMargin: 16,
                   dividerThickness: 1,
                   columns: const [
-                    DataColumn(label: Text('SKU / PRODUCTO', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                    DataColumn(label: Text('STOCK INIC.', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)), numeric: true),
-                    DataColumn(label: Text('ENTRADAS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)), numeric: true),
-                    DataColumn(label: Text('SALIDAS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)), numeric: true),
-                    DataColumn(label: Text('VENTAS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)), numeric: true),
-                    DataColumn(label: Text('STOCK FINAL', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)), numeric: true),
-                    DataColumn(label: Text('PRECIO', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)), numeric: true),
-                    DataColumn(label: Text('TOTAL', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)), numeric: true),
+                    DataColumn(
+                        label: Text('SKU / PRODUCTO',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 12))),
+                    DataColumn(
+                        label: Text('STOCK INIC.',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 12)),
+                        numeric: true),
+                    DataColumn(
+                        label: Text('ENTRADAS',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 12)),
+                        numeric: true),
+                    DataColumn(
+                        label: Text('SALIDAS',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 12)),
+                        numeric: true),
+                    DataColumn(
+                        label: Text('VENTAS',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 12)),
+                        numeric: true),
+                    DataColumn(
+                        label: Text('STOCK FINAL',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 12)),
+                        numeric: true),
+                    DataColumn(
+                        label: Text('PRECIO',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 12)),
+                        numeric: true),
+                    DataColumn(
+                        label: Text('TOTAL',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 12)),
+                        numeric: true),
                   ],
-                  rows: _detail!.lines.map((line) {
+                  rows: detail.lines.map((line) {
+                    final int lineTotalAmountCents =
+                        _lineTotalAmountCents(line);
                     return DataRow(
                       cells: [
                         DataCell(Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Text(line.sku, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                            Text(line.productName, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                            Text(line.sku,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 14)),
+                            Text(line.productName,
+                                style: const TextStyle(
+                                    fontSize: 12, color: Colors.grey)),
                           ],
                         )),
                         DataCell(Text(line.startQty.toStringAsFixed(0))),
-                        DataCell(Text(line.entriesQty == 0 ? '-' : '+${line.entriesQty.toStringAsFixed(0)}', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold))),
-                        DataCell(Text(line.outputsQty == 0 ? '-' : '-${line.outputsQty.toStringAsFixed(0)}', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold))),
-                        DataCell(Text(line.salesQty.toStringAsFixed(0), style: const TextStyle(fontWeight: FontWeight.bold))),
-                        DataCell(Text(line.finalQty.toStringAsFixed(0), style: const TextStyle(fontWeight: FontWeight.w500))),
-                        DataCell(Text(_moneyWithSymbol(line.salePriceCents, widget.summary.currencySymbol))),
-                        DataCell(Text(_moneyWithSymbol(line.totalAmountCents, widget.summary.currencySymbol), style: const TextStyle(fontWeight: FontWeight.bold))),
+                        DataCell(Text(
+                            line.entriesQty == 0
+                                ? '-'
+                                : '+${line.entriesQty.toStringAsFixed(0)}',
+                            style: const TextStyle(
+                                color: Colors.green,
+                                fontWeight: FontWeight.bold))),
+                        DataCell(Text(
+                            line.outputsQty == 0
+                                ? '-'
+                                : '-${line.outputsQty.toStringAsFixed(0)}',
+                            style: const TextStyle(
+                                color: Colors.red,
+                                fontWeight: FontWeight.bold))),
+                        DataCell(Text(line.salesQty.toStringAsFixed(0),
+                            style:
+                                const TextStyle(fontWeight: FontWeight.bold))),
+                        DataCell(Text(line.finalQty.toStringAsFixed(0),
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w500))),
+                        DataCell(Text(_moneyWithSymbol(line.salePriceCents,
+                            widget.summary.currencySymbol))),
+                        DataCell(Text(
+                            _moneyWithSymbol(lineTotalAmountCents,
+                                widget.summary.currencySymbol),
+                            style:
+                                const TextStyle(fontWeight: FontWeight.bold))),
                       ],
                     );
                   }).toList()
                     ..add(
                       DataRow(
-                        color: WidgetStateProperty.all(isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC)),
+                        color: WidgetStateProperty.all(isDark
+                            ? const Color(0xFF1E293B)
+                            : const Color(0xFFF8FAFC)),
                         cells: [
-                          const DataCell(Text('TOTAL GENERAL', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey))),
+                          const DataCell(Text('TOTAL GENERAL',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey))),
                           const DataCell(Text('')),
                           const DataCell(Text('')),
                           const DataCell(Text('')),
@@ -385,8 +504,12 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
                           const DataCell(Text('')),
                           const DataCell(Text('')),
                           DataCell(Text(
-                            _moneyWithSymbol(widget.summary.totalAmountCents, widget.summary.currencySymbol),
-                            style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF1152D4), fontSize: 16),
+                            _moneyWithSymbol(tableTotalAmountCents,
+                                widget.summary.currencySymbol),
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                                color: Color(0xFF1152D4),
+                                fontSize: 16),
                           )),
                         ],
                       ),

@@ -48,6 +48,7 @@ class SaleService {
             isDirectSale ? 'sale_direct' : 'sale_pos';
         final String movementNotePrefix =
             isDirectSale ? 'Venta directa' : 'Venta POS';
+        String? terminalCurrencyCode;
         String? saleTerminalId = input.terminalId?.trim();
         String? saleTerminalSessionId = input.terminalSessionId?.trim();
         if (saleTerminalId != null && saleTerminalId.isEmpty) {
@@ -69,6 +70,7 @@ class SaleService {
           if (terminal == null || !terminal.isActive) {
             throw const _SaleException('El TPV seleccionado no es valido.');
           }
+          terminalCurrencyCode = _normalizeCurrencyCode(terminal.currencyCode);
           if (terminal.warehouseId != input.warehouseId) {
             throw const _SaleException(
               'El TPV no corresponde al almacen seleccionado.',
@@ -122,6 +124,17 @@ class SaleService {
               .getSingleOrNull();
           if (product == null || !product.isActive) {
             throw _SaleException('Producto invalido: ${item.productId}.');
+          }
+          if (!isDirectSale &&
+              terminalCurrencyCode != null &&
+              terminalCurrencyCode.isNotEmpty) {
+            final String productCurrencyCode =
+                _normalizeCurrencyCode(product.currencyCode);
+            if (productCurrencyCode != terminalCurrencyCode) {
+              throw _SaleException(
+                'El producto ${product.name} esta en $productCurrencyCode y este TPV opera en $terminalCurrencyCode.',
+              );
+            }
           }
 
           final StockBalance? balance = await (_db.select(_db.stockBalances)
@@ -275,6 +288,10 @@ class SaleService {
         'No se pudo registrar la venta: $e',
       );
     }
+  }
+
+  String _normalizeCurrencyCode(String? value) {
+    return (value ?? '').trim().toUpperCase();
   }
 
   String _buildFolio(DateTime now) {

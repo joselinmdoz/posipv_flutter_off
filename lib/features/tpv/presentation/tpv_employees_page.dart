@@ -1,9 +1,9 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../core/licensing/license_providers.dart';
+import '../../../shared/widgets/app_add_action_button.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../data/tpv_local_datasource.dart';
 import 'tpv_providers.dart';
@@ -192,10 +192,9 @@ class _TpvEmployeesPageState extends ConsumerState<TpvEmployeesPage> {
         ),
       ],
       floatingActionButton: license.canWrite
-          ? FloatingActionButton(
+          ? AppAddActionButton(
+              currentRoute: '/tpv-empleados',
               onPressed: () => _openForm(),
-              backgroundColor: const Color(0xFF1152D4),
-              child: const Icon(Icons.add_rounded, color: Colors.white),
             )
           : null,
       body: _loading
@@ -216,11 +215,16 @@ class _TpvEmployeesPageState extends ConsumerState<TpvEmployeesPage> {
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
                     child: Row(
                       children: <Widget>[
-                        _buildFilterTab(label: 'Todos', value: 'all', theme: theme),
+                        _buildFilterTab(
+                            label: 'Todos', value: 'all', theme: theme),
                         const SizedBox(width: 24),
-                        _buildFilterTab(label: 'Activos', value: 'active', theme: theme),
+                        _buildFilterTab(
+                            label: 'Activos', value: 'active', theme: theme),
                         const SizedBox(width: 24),
-                        _buildFilterTab(label: 'Inactivos', value: 'inactive', theme: theme),
+                        _buildFilterTab(
+                            label: 'Inactivos',
+                            value: 'inactive',
+                            theme: theme),
                       ],
                     ),
                   ),
@@ -234,21 +238,29 @@ class _TpvEmployeesPageState extends ConsumerState<TpvEmployeesPage> {
                       prefixIcon: const Icon(Icons.search_rounded, size: 20),
                       filled: true,
                       fillColor: theme.cardColor,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide.none),
                     ),
                     onChanged: (_) => setState(() {}),
                   ),
                 ),
                 Expanded(
                   child: filteredEmployees.isEmpty
-                      ? Center(child: Text('No hay empleados.', style: TextStyle(color: theme.colorScheme.onSurfaceVariant)))
+                      ? Center(
+                          child: Text('No hay empleados.',
+                              style: TextStyle(
+                                  color: theme.colorScheme.onSurfaceVariant)))
                       : ListView.builder(
-                          key: const PageStorageKey<String>('tpv-employees-list'),
+                          key: const PageStorageKey<String>(
+                              'tpv-employees-list'),
                           cacheExtent: 360,
                           padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
                           itemCount: filteredEmployees.length,
-                          itemBuilder: (_, int index) => _employeeCard(filteredEmployees[index], theme),
+                          itemBuilder: (_, int index) =>
+                              _employeeCard(filteredEmployees[index], theme),
                         ),
                 ),
               ],
@@ -258,9 +270,16 @@ class _TpvEmployeesPageState extends ConsumerState<TpvEmployeesPage> {
 
   Widget _employeeCard(TpvEmployee employee, ThemeData theme) {
     final bool isActive = employee.isActive;
-    final String genderLabel = employee.sex != null && employee.sex!.isNotEmpty ? 'Género: ${_sexLabel(employee.sex!)}' : '';
-    final String ciLabel = (employee.identityNumber ?? '').isNotEmpty ? 'CI: ${employee.identityNumber}' : '';
-    final String infoText = [if (genderLabel.isNotEmpty) genderLabel, if (ciLabel.isNotEmpty) ciLabel].join(' • ');
+    final String genderLabel = employee.sex != null && employee.sex!.isNotEmpty
+        ? 'Género: ${_sexLabel(employee.sex!)}'
+        : '';
+    final String ciLabel = (employee.identityNumber ?? '').isNotEmpty
+        ? 'CI: ${employee.identityNumber}'
+        : '';
+    final String infoText = [
+      if (genderLabel.isNotEmpty) genderLabel,
+      if (ciLabel.isNotEmpty) ciLabel
+    ].join(' • ');
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -268,7 +287,8 @@ class _TpvEmployeesPageState extends ConsumerState<TpvEmployeesPage> {
       decoration: BoxDecoration(
         color: theme.cardColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.2)),
+        border:
+            Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.2)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -279,7 +299,9 @@ class _TpvEmployeesPageState extends ConsumerState<TpvEmployeesPage> {
             child: TpvEmployeeAvatar(
               imagePath: employee.imagePath,
               radius: 32,
-              backgroundColor: isActive ? const Color(0xFF1152D4).withValues(alpha: 0.1) : theme.colorScheme.surfaceContainerHighest,
+              backgroundColor: isActive
+                  ? const Color(0xFF1152D4).withValues(alpha: 0.1)
+                  : theme.colorScheme.surfaceContainerHighest,
               iconColor: isActive ? const Color(0xFF1152D4) : Colors.grey,
             ),
           ),
@@ -290,25 +312,64 @@ class _TpvEmployeesPageState extends ConsumerState<TpvEmployeesPage> {
               children: <Widget>[
                 Row(
                   children: [
-                    Expanded(child: Text(employee.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                    Expanded(
+                        child: Text(employee.name,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w700, fontSize: 16),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis)),
                     const SizedBox(width: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(color: isActive ? const Color(0xFFDCFCE7) : theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(999)),
-                      child: Text(isActive ? 'Activo' : 'Inactivo', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: isActive ? const Color(0xFF15803D) : theme.colorScheme.onSurfaceVariant)),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                          color: isActive
+                              ? const Color(0xFFDCFCE7)
+                              : theme.colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(999)),
+                      child: Text(isActive ? 'Activo' : 'Inactivo',
+                          style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: isActive
+                                  ? const Color(0xFF15803D)
+                                  : theme.colorScheme.onSurfaceVariant)),
                     ),
                   ],
                 ),
-                if (infoText.isNotEmpty) Text(infoText, style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurfaceVariant)),
-                if ((employee.associatedUsername ?? '').isNotEmpty) Text('@${employee.associatedUsername}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Color(0xFF1152D4))),
+                if (infoText.isNotEmpty)
+                  Text(infoText,
+                      style: TextStyle(
+                          fontSize: 14,
+                          color: theme.colorScheme.onSurfaceVariant)),
+                if ((employee.associatedUsername ?? '').isNotEmpty)
+                  Text('@${employee.associatedUsername}',
+                      style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF1152D4))),
               ],
             ),
           ),
           const SizedBox(width: 8),
           Column(
             children: <Widget>[
-              IconButton(tooltip: 'Editar', onPressed: () => _openForm(employee: employee), icon: Icon(Icons.edit_outlined, color: theme.colorScheme.onSurfaceVariant, size: 20)),
-              IconButton(tooltip: isActive ? 'Desactivar' : 'Activar', onPressed: () => _toggleEmployee(employee), icon: Icon(isActive ? Icons.block_rounded : Icons.check_circle_outline, color: isActive ? theme.colorScheme.onSurfaceVariant : const Color(0xFF1152D4), size: 20)),
+              IconButton(
+                  tooltip: 'Editar',
+                  onPressed: () => _openForm(employee: employee),
+                  icon: Icon(Icons.edit_outlined,
+                      color: theme.colorScheme.onSurfaceVariant, size: 20)),
+              IconButton(
+                  tooltip: isActive ? 'Desactivar' : 'Activar',
+                  onPressed: () => _toggleEmployee(employee),
+                  icon: Icon(
+                      isActive
+                          ? Icons.block_rounded
+                          : Icons.check_circle_outline,
+                      color: isActive
+                          ? theme.colorScheme.onSurfaceVariant
+                          : const Color(0xFF1152D4),
+                      size: 20)),
             ],
           ),
         ],
@@ -321,7 +382,8 @@ class _TpvEmployeeFormPage extends ConsumerStatefulWidget {
   const _TpvEmployeeFormPage({this.employee});
   final TpvEmployee? employee;
   @override
-  ConsumerState<_TpvEmployeeFormPage> createState() => _TpvEmployeeFormPageState();
+  ConsumerState<_TpvEmployeeFormPage> createState() =>
+      _TpvEmployeeFormPageState();
 }
 
 class _TpvEmployeeFormPageState extends ConsumerState<_TpvEmployeeFormPage> {
@@ -342,7 +404,8 @@ class _TpvEmployeeFormPageState extends ConsumerState<_TpvEmployeeFormPage> {
   void initState() {
     super.initState();
     _nameCtrl = TextEditingController(text: widget.employee?.name ?? '');
-    _identityCtrl = TextEditingController(text: widget.employee?.identityNumber ?? '');
+    _identityCtrl =
+        TextEditingController(text: widget.employee?.identityNumber ?? '');
     _addressCtrl = TextEditingController(text: widget.employee?.address ?? '');
     _selectedSex = widget.employee?.sex;
     _selectedUserId = widget.employee?.associatedUserId;
@@ -360,11 +423,14 @@ class _TpvEmployeeFormPageState extends ConsumerState<_TpvEmployeeFormPage> {
 
   Future<void> _loadUsers() async {
     try {
-      final options = await ref.read(tpvLocalDataSourceProvider).listActiveUserOptions();
+      final options =
+          await ref.read(tpvLocalDataSourceProvider).listActiveUserOptions();
       if (!mounted) return;
       setState(() {
         _userOptions = options;
-        if (_selectedUserId != null && options.every((row) => row.id != _selectedUserId)) _selectedUserId = null;
+        if (_selectedUserId != null &&
+            options.every((row) => row.id != _selectedUserId))
+          _selectedUserId = null;
         _loadingUsers = false;
       });
     } catch (_) {
@@ -378,30 +444,72 @@ class _TpvEmployeeFormPageState extends ConsumerState<_TpvEmployeeFormPage> {
   }
 
   Future<void> _pickImage() async {
-    final action = await showModalBottomSheet<_EmployeeImageAction>(context: context, builder: (BuildContext context) {
-      return SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-        ListTile(leading: const Icon(Icons.photo_library_outlined), title: const Text('Galeria'), onTap: () => Navigator.of(context).pop(_EmployeeImageAction.gallery)),
-        ListTile(leading: const Icon(Icons.photo_camera_outlined), title: const Text('Camara'), onTap: () => Navigator.of(context).pop(_EmployeeImageAction.camera)),
-        if ((_imagePath ?? '').isNotEmpty) ListTile(leading: const Icon(Icons.delete_outline_rounded), title: const Text('Quitar imagen'), onTap: () => Navigator.of(context).pop(_EmployeeImageAction.remove)),
-      ]));
-    });
+    final action = await showModalBottomSheet<_EmployeeImageAction>(
+        context: context,
+        builder: (BuildContext context) {
+          return SafeArea(
+              child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+            ListTile(
+                leading: const Icon(Icons.photo_library_outlined),
+                title: const Text('Galeria'),
+                onTap: () =>
+                    Navigator.of(context).pop(_EmployeeImageAction.gallery)),
+            ListTile(
+                leading: const Icon(Icons.photo_camera_outlined),
+                title: const Text('Camara'),
+                onTap: () =>
+                    Navigator.of(context).pop(_EmployeeImageAction.camera)),
+            if ((_imagePath ?? '').isNotEmpty)
+              ListTile(
+                  leading: const Icon(Icons.delete_outline_rounded),
+                  title: const Text('Quitar imagen'),
+                  onTap: () =>
+                      Navigator.of(context).pop(_EmployeeImageAction.remove)),
+          ]));
+        });
     if (action == null) return;
-    if (action == _EmployeeImageAction.remove) { setState(() => _imagePath = null); return; }
-    final file = await _imagePicker.pickImage(source: action == _EmployeeImageAction.camera ? ImageSource.camera : ImageSource.gallery, imageQuality: 85, maxWidth: 1400);
+    if (action == _EmployeeImageAction.remove) {
+      setState(() => _imagePath = null);
+      return;
+    }
+    final file = await _imagePicker.pickImage(
+        source: action == _EmployeeImageAction.camera
+            ? ImageSource.camera
+            : ImageSource.gallery,
+        imageQuality: 85,
+        maxWidth: 1400);
     if (file == null || !mounted) return;
     setState(() => _imagePath = file.path);
   }
 
   Future<void> _save() async {
     final name = _nameCtrl.text.trim();
-    if (name.isEmpty) { _show('El nombre es obligatorio.'); return; }
+    if (name.isEmpty) {
+      _show('El nombre es obligatorio.');
+      return;
+    }
     setState(() => _saving = true);
     try {
       final ds = ref.read(tpvLocalDataSourceProvider);
       if (_isEditing) {
-        await ds.updateEmployee(employeeId: widget.employee!.id, name: name, code: widget.employee!.code, sex: _selectedSex, identityNumber: _identityCtrl.text, address: _addressCtrl.text, imagePath: _imagePath, associatedUserId: _selectedUserId, isActive: widget.employee!.isActive);
+        await ds.updateEmployee(
+            employeeId: widget.employee!.id,
+            name: name,
+            code: widget.employee!.code,
+            sex: _selectedSex,
+            identityNumber: _identityCtrl.text,
+            address: _addressCtrl.text,
+            imagePath: _imagePath,
+            associatedUserId: _selectedUserId,
+            isActive: widget.employee!.isActive);
       } else {
-        await ds.createEmployee(name: name, sex: _selectedSex, identityNumber: _identityCtrl.text, address: _addressCtrl.text, imagePath: _imagePath, associatedUserId: _selectedUserId);
+        await ds.createEmployee(
+            name: name,
+            sex: _selectedSex,
+            identityNumber: _identityCtrl.text,
+            address: _addressCtrl.text,
+            imagePath: _imagePath,
+            associatedUserId: _selectedUserId);
       }
       if (!mounted) return;
       Navigator.of(context).pop('saved');
@@ -413,7 +521,9 @@ class _TpvEmployeeFormPageState extends ConsumerState<_TpvEmployeeFormPage> {
 
   void _show(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -422,21 +532,89 @@ class _TpvEmployeeFormPageState extends ConsumerState<_TpvEmployeeFormPage> {
     final isDark = theme.brightness == Brightness.dark;
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
-      appBar: AppBar(backgroundColor: theme.scaffoldBackgroundColor, centerTitle: true, title: Text(_isEditing ? 'Editar empleado' : 'Nuevo empleado'), leading: IconButton(onPressed: _saving ? null : () => Navigator.of(context).pop(), icon: const Icon(Icons.arrow_back_rounded))),
+      appBar: AppBar(
+          backgroundColor: theme.scaffoldBackgroundColor,
+          centerTitle: true,
+          title: Text(_isEditing ? 'Editar empleado' : 'Nuevo empleado'),
+          leading: IconButton(
+              onPressed: _saving ? null : () => Navigator.of(context).pop(),
+              icon: const Icon(Icons.arrow_back_rounded))),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-          Center(child: GestureDetector(onTap: _saving ? null : _pickImage, child: TpvEmployeeAvatar(imagePath: _imagePath, radius: 42, backgroundColor: isDark ? const Color(0xFF312948) : const Color(0xFFE7E1F7), iconColor: isDark ? const Color(0xFFB8A9F1) : const Color(0xFF5A4D88)))),
-          Center(child: TextButton.icon(onPressed: _saving ? null : _pickImage, icon: const Icon(Icons.photo_camera_outlined), label: const Text('Imagen del empleado'))),
-          const SizedBox(height: 8),
-          TextField(controller: _nameCtrl, textInputAction: TextInputAction.next, decoration: const InputDecoration(labelText: 'Nombre', hintText: 'Ej: Ana Perez')),
-          DropdownButtonFormField<String?>(value: _selectedSex, decoration: const InputDecoration(labelText: 'Sexo'), items: const [DropdownMenuItem(value: null, child: Text('Sin especificar')), DropdownMenuItem(value: 'F', child: Text('Femenino')), DropdownMenuItem(value: 'M', child: Text('Masculino')), DropdownMenuItem(value: 'X', child: Text('Otro'))], onChanged: _saving ? null : (v) => setState(() => _selectedSex = v)),
-          TextField(controller: _identityCtrl, textInputAction: TextInputAction.next, decoration: const InputDecoration(labelText: 'Numero de identidad (opcional)')),
-          TextField(controller: _addressCtrl, minLines: 2, maxLines: 3, decoration: const InputDecoration(labelText: 'Direccion')),
-          if (_loadingUsers) const LinearProgressIndicator(minHeight: 3) else DropdownButtonFormField<String?>(value: _selectedUserId, isExpanded: true, decoration: const InputDecoration(labelText: 'Usuario asociado'), items: [const DropdownMenuItem(value: null, child: Text('Sin usuario asociado')), ..._userOptions.map((user) => DropdownMenuItem(value: user.id, child: Text(user.username)))], onChanged: _saving ? null : (v) => setState(() => _selectedUserId = v)),
-          const SizedBox(height: 18),
-          SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: _saving ? null : _save, icon: const Icon(Icons.save_outlined), label: Text(_saving ? 'Guardando...' : 'Guardar empleado'))),
-        ]),
+        child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Center(
+                  child: GestureDetector(
+                      onTap: _saving ? null : _pickImage,
+                      child: TpvEmployeeAvatar(
+                          imagePath: _imagePath,
+                          radius: 42,
+                          backgroundColor: isDark
+                              ? const Color(0xFF312948)
+                              : const Color(0xFFE7E1F7),
+                          iconColor: isDark
+                              ? const Color(0xFFB8A9F1)
+                              : const Color(0xFF5A4D88)))),
+              Center(
+                  child: TextButton.icon(
+                      onPressed: _saving ? null : _pickImage,
+                      icon: const Icon(Icons.photo_camera_outlined),
+                      label: const Text('Imagen del empleado'))),
+              const SizedBox(height: 8),
+              TextField(
+                  controller: _nameCtrl,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(
+                      labelText: 'Nombre', hintText: 'Ej: Ana Perez')),
+              DropdownButtonFormField<String?>(
+                  value: _selectedSex,
+                  decoration: const InputDecoration(labelText: 'Sexo'),
+                  items: const [
+                    DropdownMenuItem(
+                        value: null, child: Text('Sin especificar')),
+                    DropdownMenuItem(value: 'F', child: Text('Femenino')),
+                    DropdownMenuItem(value: 'M', child: Text('Masculino')),
+                    DropdownMenuItem(value: 'X', child: Text('Otro'))
+                  ],
+                  onChanged:
+                      _saving ? null : (v) => setState(() => _selectedSex = v)),
+              TextField(
+                  controller: _identityCtrl,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(
+                      labelText: 'Numero de identidad (opcional)')),
+              TextField(
+                  controller: _addressCtrl,
+                  minLines: 2,
+                  maxLines: 3,
+                  decoration: const InputDecoration(labelText: 'Direccion')),
+              if (_loadingUsers)
+                const LinearProgressIndicator(minHeight: 3)
+              else
+                DropdownButtonFormField<String?>(
+                    value: _selectedUserId,
+                    isExpanded: true,
+                    decoration:
+                        const InputDecoration(labelText: 'Usuario asociado'),
+                    items: [
+                      const DropdownMenuItem(
+                          value: null, child: Text('Sin usuario asociado')),
+                      ..._userOptions.map((user) => DropdownMenuItem(
+                          value: user.id, child: Text(user.username)))
+                    ],
+                    onChanged: _saving
+                        ? null
+                        : (v) => setState(() => _selectedUserId = v)),
+              const SizedBox(height: 18),
+              SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                      onPressed: _saving ? null : _save,
+                      icon: const Icon(Icons.save_outlined),
+                      label:
+                          Text(_saving ? 'Guardando...' : 'Guardar empleado'))),
+            ]),
       ),
     );
   }
