@@ -43,6 +43,14 @@ class StoredTrialState {
   final DateTime expiresAt;
 }
 
+class DemoLicenseLimits {
+  const DemoLicenseLimits._();
+
+  static const int maxActiveProducts = 5;
+  static const int maxActiveTerminals = 1;
+  static const int maxSalesPerDay = 5;
+}
+
 class ParsedLicenseToken {
   const ParsedLicenseToken({
     required this.raw,
@@ -149,8 +157,10 @@ class LicenseStatus {
   bool get canWrite => isActive;
   bool get canSell => isActive;
   bool get isTrial => mode == LicenseMode.trial;
+  bool get isDemo => isTrial;
   bool get isFull => mode == LicenseMode.full;
   bool get isBlocked => !isLoading && mode == LicenseMode.blocked;
+  bool get canAccessGeneralReports => isFull;
 
   int? get daysRemaining {
     if (expiresAt == null || checkedAt == null) {
@@ -170,7 +180,7 @@ class LicenseStatus {
     }
     switch (mode) {
       case LicenseMode.trial:
-        return 'Prueba activa';
+        return 'Modo demo';
       case LicenseMode.full:
         return 'Licencia activa';
       case LicenseMode.blocked:
@@ -181,17 +191,29 @@ class LicenseStatus {
   factory LicenseStatus.trial({
     required DeviceIdentity deviceIdentity,
     required DateTime checkedAt,
-    required DateTime startedAt,
-    required DateTime expiresAt,
+    DateTime? startedAt,
+    DateTime? expiresAt,
+    String? messageOverride,
   }) {
-    final int remainingDays = expiresAt.isBefore(checkedAt)
-        ? 0
-        : expiresAt.difference(checkedAt).inDays + 1;
+    final bool hasExpiry = expiresAt != null;
+    final int? remainingDays = hasExpiry
+        ? (expiresAt.isBefore(checkedAt)
+            ? 0
+            : expiresAt.difference(checkedAt).inDays + 1)
+        : null;
+    final String message = messageOverride ??
+        (hasExpiry
+            ? 'Licencia de prueba activa. Restan $remainingDays dia(s).'
+            : 'Modo demo activo con limites: '
+                '${DemoLicenseLimits.maxActiveProducts} productos, '
+                '${DemoLicenseLimits.maxActiveTerminals} TPV, '
+                '${DemoLicenseLimits.maxSalesPerDay} ventas/dia y '
+                'sin acceso a reportes generales.');
     return LicenseStatus(
       mode: LicenseMode.trial,
       isLoading: false,
       deviceIdentity: deviceIdentity,
-      message: 'Licencia de prueba activa. Restan $remainingDays dia(s).',
+      message: message,
       checkedAt: checkedAt,
       startedAt: startedAt,
       expiresAt: expiresAt,

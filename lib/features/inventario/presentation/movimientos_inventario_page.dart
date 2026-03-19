@@ -681,7 +681,7 @@ class _MovimientosInventarioPageState
     final String q = query.toLowerCase();
     return movement.productName.toLowerCase().contains(q) ||
         movement.sku.toLowerCase().contains(q) ||
-        (movement.refId ?? '').toLowerCase().contains(q) ||
+        movement.warehouseName.toLowerCase().contains(q) ||
         _formatDateTime(movement.createdAt).toLowerCase().contains(q) ||
         movement.reasonLabel.toLowerCase().contains(q);
   }
@@ -751,9 +751,9 @@ class _MovimientosInventarioPageState
         : isIn
             ? '+${_formatQty(movement.qty)}'
             : '-${_formatQty(movement.qty)}';
-    final String skuRef = (movement.refId ?? '').trim().isEmpty
-        ? 'SKU: ${movement.sku}'
-        : 'SKU: ${movement.sku} • Ref: ${movement.refId!.trim()}';
+    final String skuText = 'SKU: ${movement.sku}';
+    final String warehouseText = 'Almacén: ${movement.warehouseName}';
+    final String reasonText = 'Motivo: ${movement.reasonLabel}';
 
     return Container(
       decoration: BoxDecoration(
@@ -796,7 +796,7 @@ class _MovimientosInventarioPageState
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    skuRef,
+                    skuText,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -804,6 +804,31 @@ class _MovimientosInventarioPageState
                           ? const Color(0xFF64748B)
                           : const Color(0xFF64748B), // slate-500
                       fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    warehouseText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: isDark
+                          ? const Color(0xFF64748B)
+                          : const Color(0xFF64748B),
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    reasonText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: isDark
+                          ? const Color(0xFF94A3B8)
+                          : const Color(0xFF64748B),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
@@ -977,7 +1002,7 @@ class _MovimientosInventarioPageState
                         controller: _searchCtrl,
                         focusNode: _searchFocusNode,
                         decoration: InputDecoration(
-                          hintText: 'Buscar SKU, Referencia o Fecha',
+                          hintText: 'Buscar SKU, producto, almacén o motivo',
                           hintStyle: TextStyle(
                             fontSize: 14,
                             color: theme.brightness == Brightness.dark

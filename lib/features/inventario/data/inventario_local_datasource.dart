@@ -28,6 +28,18 @@ class InventoryView {
   final String? imagePath;
 }
 
+class InventoryWarehouseStockView {
+  const InventoryWarehouseStockView({
+    required this.warehouseId,
+    required this.warehouseName,
+    required this.qty,
+  });
+
+  final String warehouseId;
+  final String warehouseName;
+  final double qty;
+}
+
 enum InventoryListFilter { all, inStock, lowStock, outOfStock }
 
 class InventoryMovementReason {
@@ -164,6 +176,42 @@ class InventarioLocalDataSource {
       appliesTo: 'out',
     ),
   ];
+
+  Future<List<InventoryWarehouseStockView>> listProductStockByWarehouses(
+    String productId,
+  ) async {
+    final String cleanProductId = productId.trim();
+    if (cleanProductId.isEmpty) {
+      return const <InventoryWarehouseStockView>[];
+    }
+
+    final List<QueryRow> rows = await _db.customSelect(
+      '''
+      SELECT
+        w.id AS warehouse_id,
+        w.name AS warehouse_name,
+        COALESCE(sb.qty, 0.0) AS qty
+      FROM warehouses w
+      LEFT JOIN stock_balances sb
+        ON sb.warehouse_id = w.id
+       AND sb.product_id = ?
+      WHERE w.is_active = 1
+      ORDER BY w.name ASC
+      ''',
+      variables: <Variable<Object>>[
+        Variable<String>(cleanProductId),
+      ],
+    ).get();
+
+    return rows.map((QueryRow row) {
+      return InventoryWarehouseStockView(
+        warehouseId: (row.readNullable<String>('warehouse_id') ?? '').trim(),
+        warehouseName:
+            (row.readNullable<String>('warehouse_name') ?? '-').trim(),
+        qty: row.read<double>('qty'),
+      );
+    }).toList();
+  }
 
   Future<List<InventoryView>> listByWarehouse(String warehouseId) async {
     final result = await _db.customSelect(

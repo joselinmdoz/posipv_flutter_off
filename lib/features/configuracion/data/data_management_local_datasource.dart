@@ -8,6 +8,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:uuid/uuid.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../../core/licensing/license_models.dart';
 import '../../../core/licensing/license_service.dart';
 import '../../productos/domain/product_qr_codec.dart';
 
@@ -322,6 +323,7 @@ class DataManagementLocalDataSource {
 
   Future<CsvImportResult> importProductsCsv(String filePath) async {
     await _licenseService.requireWriteAccess();
+    final LicenseStatus licenseStatus = await _licenseService.current();
     final File file = File(filePath);
     if (!file.existsSync()) {
       throw Exception('El archivo no existe.');
@@ -397,9 +399,15 @@ class DataManagementLocalDataSource {
           ..where((Products tbl) =>
               tbl.id.isNotNull() & tbl.sku.isNotNull() & tbl.name.isNotNull()))
         .get();
+    final Map<String, bool> isActiveByProductId = <String, bool>{
+      for (final Product row in existingProducts) row.id: row.isActive,
+    };
     final Map<String, String> productIdByCode = <String, String>{
       for (final Product row in existingProducts) row.sku.toLowerCase(): row.id,
     };
+    int currentActiveProducts =
+        existingProducts.where((Product row) => row.isActive).length;
+    final bool hasDemoLimit = !licenseStatus.isFull;
 
     int created = 0;
     int updated = 0;
@@ -444,6 +452,16 @@ class DataManagementLocalDataSource {
         final String? existingId = productIdByCode[codeKey];
 
         if (existingId == null) {
+          if (hasDemoLimit &&
+              isActive &&
+              currentActiveProducts >= DemoLicenseLimits.maxActiveProducts) {
+            skipped += 1;
+            warnings.add(
+              'Fila ${line + 1}: modo demo permite hasta ${DemoLicenseLimits.maxActiveProducts} productos activos.',
+            );
+            continue;
+          }
+
           final String newId = _uuid.v4();
           await _db.into(_db.products).insert(
                 ProductsCompanion.insert(
@@ -463,7 +481,23 @@ class DataManagementLocalDataSource {
                 ),
               );
           productIdByCode[codeKey] = newId;
+          isActiveByProductId[newId] = isActive;
+          if (isActive) {
+            currentActiveProducts += 1;
+          }
           created += 1;
+          continue;
+        }
+
+        final bool wasActive = isActiveByProductId[existingId] ?? false;
+        if (hasDemoLimit &&
+            !wasActive &&
+            isActive &&
+            currentActiveProducts >= DemoLicenseLimits.maxActiveProducts) {
+          skipped += 1;
+          warnings.add(
+            'Fila ${line + 1}: modo demo permite hasta ${DemoLicenseLimits.maxActiveProducts} productos activos.',
+          );
           continue;
         }
 
@@ -486,6 +520,12 @@ class DataManagementLocalDataSource {
             updatedAt: Value(DateTime.now()),
           ),
         );
+        isActiveByProductId[existingId] = isActive;
+        if (!wasActive && isActive) {
+          currentActiveProducts += 1;
+        } else if (wasActive && !isActive && currentActiveProducts > 0) {
+          currentActiveProducts -= 1;
+        }
         updated += 1;
       }
     });

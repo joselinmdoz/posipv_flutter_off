@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../../core/licensing/license_providers.dart';
 import '../../../core/utils/perf_trace.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../configuracion/data/configuracion_local_datasource.dart';
@@ -42,6 +44,17 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
   }
 
   Future<void> _load() async {
+    final license = ref.read(currentLicenseStatusProvider);
+    if (!license.canAccessGeneralReports) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _dashboard = null;
+        });
+      }
+      return;
+    }
+
     final PerfTrace trace = PerfTrace('reportes.load');
     if (mounted) {
       setState(() => _loading = true);
@@ -155,8 +168,60 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
 
   @override
   Widget build(BuildContext context) {
+    final license = ref.watch(currentLicenseStatusProvider);
     final ReportesDashboard? dashboard = _dashboard;
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
+
+    if (!license.canAccessGeneralReports) {
+      return AppScaffold(
+        title: 'Reportes',
+        currentRoute: '/reportes',
+        onRefresh: _load,
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Icon(
+                  Icons.lock_outline_rounded,
+                  size: 42,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'El módulo de Reportes está disponible solo con licencia activa.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Puedes seguir usando IPV en modo demo.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
+                  children: <Widget>[
+                    FilledButton.icon(
+                      onPressed: () => context.go('/ipv-reportes'),
+                      icon: const Icon(Icons.table_chart_outlined),
+                      label: const Text('Ir a IPV'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => context.go('/licencia'),
+                      icon: const Icon(Icons.key_rounded),
+                      label: const Text('Activar licencia'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return AppScaffold(
       title: 'Reportes',

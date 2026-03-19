@@ -5,6 +5,7 @@ import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../../core/licensing/license_models.dart';
 import '../../../core/licensing/license_service.dart';
 
 class TpvSessionWithUser {
@@ -251,6 +252,15 @@ class TpvLocalDataSource {
     String? imagePath,
   }) async {
     await _licenseService.requireWriteAccess();
+    final LicenseStatus licenseStatus = await _licenseService.current();
+    if (!licenseStatus.isFull) {
+      final int activeTerminals = await _countActiveTerminals();
+      if (activeTerminals >= DemoLicenseLimits.maxActiveTerminals) {
+        throw const LicenseException(
+          'Modo demo: solo puedes tener 1 TPV activo.',
+        );
+      }
+    }
     final String cleanName = name.trim();
     if (cleanName.isEmpty) {
       throw Exception('El nombre del TPV es obligatorio.');
@@ -295,6 +305,15 @@ class TpvLocalDataSource {
 
       return terminalId;
     });
+  }
+
+  Future<int> _countActiveTerminals() async {
+    final Expression<int> countExp = _db.posTerminals.id.count();
+    final TypedResult row = await (_db.selectOnly(_db.posTerminals)
+          ..addColumns(<Expression<Object>>[countExp])
+          ..where(_db.posTerminals.isActive.equals(true)))
+        .getSingle();
+    return row.read(countExp) ?? 0;
   }
 
   Future<void> updateTerminal({
@@ -803,7 +822,7 @@ class TpvLocalDataSource {
                 salesQty: const Value(0),
                 finalQty: Value(startQty),
                 salePriceCents: Value(priceCents),
-                totalAmountCents: Value((startQty * priceCents).round()),
+                totalAmountCents: const Value(0),
               ),
             );
       }
@@ -1345,7 +1364,7 @@ class TpvLocalDataSource {
       final int priceCents = priceByProduct[productId] ?? 0;
       final double finalQty =
           acc.startQty + acc.entriesQty - acc.outputsQty - acc.salesQty;
-      final int amountCents = (finalQty * priceCents).round();
+      final int amountCents = (acc.salesQty * priceCents).round();
       final IpvReportLinesCompanion payload = IpvReportLinesCompanion(
         reportId: Value(activeReport.id),
         productId: Value(productId),

@@ -193,6 +193,15 @@ class AppScaffold extends ConsumerWidget {
     final bool isDark = theme.brightness == Brightness.dark;
     final Color drawerTitleColor = scheme.onSurface;
     final Color drawerSubtitleColor = scheme.onSurfaceVariant;
+    final Iterable<_NavItem> visibleNavItems = _navItems.where(
+      (_NavItem item) {
+        if (_isGeneralReportsRoute(item.route) &&
+            !licenseStatus.canAccessGeneralReports) {
+          return false;
+        }
+        return true;
+      },
+    );
 
     return Drawer(
       child: SafeArea(
@@ -225,7 +234,7 @@ class AppScaffold extends ConsumerWidget {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(8, 10, 8, 8),
                 children: <Widget>[
-                  for (final _NavItem item in _navItems)
+                  for (final _NavItem item in visibleNavItems)
                     ListTile(
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
@@ -343,6 +352,15 @@ class AppScaffold extends ConsumerWidget {
         context.go('/configuracion');
         return;
       }
+      if (_isGeneralReportsRoute(route) &&
+          !licenseStatus.canAccessGeneralReports) {
+        _showSoon(
+          context,
+          'Modo demo: el modulo Reportes requiere licencia activa.',
+        );
+        context.go('/ipv-reportes');
+        return;
+      }
       context.go(route);
     }
   }
@@ -362,23 +380,15 @@ class AppScaffold extends ConsumerWidget {
     LicenseStatus status,
     String activeRoute,
   ) {
-    if (status.isLoading) {
-      return null;
-    }
-
-    final int? daysRemaining = status.daysRemaining;
-    final bool showTrialWarning =
-        status.isTrial && daysRemaining != null && daysRemaining <= 3;
-    if (!status.isBlocked && !showTrialWarning) {
+    if (status.isLoading || !status.isBlocked) {
       return null;
     }
 
     final ThemeData theme = Theme.of(context);
-    final bool isBlocked = status.isBlocked;
-    final Color background = isBlocked
+    final Color background = status.isBlocked
         ? theme.colorScheme.errorContainer
         : theme.colorScheme.secondaryContainer;
-    final Color foreground = isBlocked
+    final Color foreground = status.isBlocked
         ? theme.colorScheme.onErrorContainer
         : theme.colorScheme.onSecondaryContainer;
 
@@ -389,7 +399,7 @@ class AppScaffold extends ConsumerWidget {
       child: Row(
         children: <Widget>[
           Icon(
-            isBlocked ? Icons.lock_outline_rounded : Icons.timer_outlined,
+            Icons.lock_outline_rounded,
             color: foreground,
           ),
           const SizedBox(width: 10),
@@ -414,6 +424,10 @@ class AppScaffold extends ConsumerWidget {
 
   bool _isSalesRoute(String route) {
     return route == '/ventas-pos' || route == '/ventas-directas';
+  }
+
+  bool _isGeneralReportsRoute(String route) {
+    return route == '/reportes';
   }
 }
 

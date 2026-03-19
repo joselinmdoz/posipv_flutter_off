@@ -597,7 +597,10 @@ class ReportesLocalDataSource {
         t.name AS terminal_name,
         t.currency_symbol AS currency_symbol,
         COUNT(l.product_id) AS line_count,
-        COALESCE(SUM(l.total_amount_cents), 0) AS total_amount_cents
+        COALESCE(
+          SUM(CAST(ROUND(COALESCE(l.sales_qty, 0) * COALESCE(l.sale_price_cents, 0)) AS INTEGER)),
+          0
+        ) AS total_amount_cents
       FROM ipv_reports r
       LEFT JOIN pos_terminals t
         ON t.id = r.terminal_id
@@ -707,7 +710,10 @@ class ReportesLocalDataSource {
         t.name AS terminal_name,
         t.currency_symbol AS currency_symbol,
         COUNT(l.product_id) AS line_count,
-        COALESCE(SUM(l.total_amount_cents), 0) AS total_amount_cents
+        COALESCE(
+          SUM(CAST(ROUND(COALESCE(l.sales_qty, 0) * COALESCE(l.sale_price_cents, 0)) AS INTEGER)),
+          0
+        ) AS total_amount_cents
       FROM ipv_reports r
       LEFT JOIN pos_terminals t
         ON t.id = r.terminal_id
@@ -922,7 +928,7 @@ class ReportesLocalDataSource {
       final int salePriceCents = agg.salePriceCents ?? product?.priceCents ?? 0;
       final double finalQty =
           agg.startQty + agg.entriesQty - agg.outputsQty - agg.salesQty;
-      final int amountCents = (finalQty * salePriceCents).round();
+      final int amountCents = (agg.salesQty * salePriceCents).round();
       totalAmountCents += amountCents;
       lines.add(
         IpvReportLineStat(

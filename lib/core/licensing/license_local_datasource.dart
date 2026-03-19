@@ -16,6 +16,10 @@ class LicenseLocalDataSource {
   static const String _licenseTokenKey = 'offline_license_token_v1';
   static const String _trialStartedAtKey = 'offline_trial_started_at_v1';
   static const String _trialExpiresAtKey = 'offline_trial_expires_at_v1';
+  static const String _trialStartedSecureKey =
+      'offline_trial_started_at_secure_v1';
+  static const String _trialExpiresSecureKey =
+      'offline_trial_expires_at_secure_v1';
   static const String _lastSeenDbKey = 'offline_license_last_seen_v1';
   static const String _lastSeenSecureKey =
       'offline_license_last_seen_secure_v1';
@@ -39,25 +43,55 @@ class LicenseLocalDataSource {
       _trialStartedAtKey,
       _trialExpiresAtKey,
     ]);
-    final String? startedRaw = values[_trialStartedAtKey];
-    final String? expiresRaw = values[_trialExpiresAtKey];
-    if (startedRaw == null || expiresRaw == null) {
+    final StoredTrialState? dbState = _parseTrialState(
+      startedRaw: values[_trialStartedAtKey],
+      expiresRaw: values[_trialExpiresAtKey],
+    );
+
+    final String? secureStartedRaw =
+        await _secureStorage.read(key: _trialStartedSecureKey);
+    final String? secureExpiresRaw =
+        await _secureStorage.read(key: _trialExpiresSecureKey);
+    final StoredTrialState? secureState = _parseTrialState(
+      startedRaw: secureStartedRaw,
+      expiresRaw: secureExpiresRaw,
+    );
+
+    if (dbState == null && secureState == null) {
       return null;
     }
 
-    final DateTime? startedAt = DateTime.tryParse(startedRaw);
-    final DateTime? expiresAt = DateTime.tryParse(expiresRaw);
-    if (startedAt == null || expiresAt == null) {
-      return null;
+    if (dbState != null && secureState == null) {
+      return dbState;
+    }
+    if (dbState == null && secureState != null) {
+      return secureState;
+    }
+
+    final DateTime startedAt =
+        dbState!.startedAt.isBefore(secureState!.startedAt)
+            ? dbState.startedAt
+            : secureState.startedAt;
+    final DateTime expiresAt = dbState.expiresAt.isBefore(secureState.expiresAt)
+        ? dbState.expiresAt
+        : secureState.expiresAt;
+    if (!expiresAt.isAfter(startedAt)) {
+      return dbState.expiresAt.isBefore(secureState.expiresAt)
+          ? dbState
+          : secureState;
     }
     return StoredTrialState(startedAt: startedAt, expiresAt: expiresAt);
   }
 
   Future<void> writeTrialState(StoredTrialState value) async {
+    final String startedAt = value.startedAt.toIso8601String();
+    final String expiresAt = value.expiresAt.toIso8601String();
     await _db.transaction(() async {
-      await _upsert(_trialStartedAtKey, value.startedAt.toIso8601String());
-      await _upsert(_trialExpiresAtKey, value.expiresAt.toIso8601String());
+      await _upsert(_trialStartedAtKey, startedAt);
+      await _upsert(_trialExpiresAtKey, expiresAt);
     });
+    await _secureStorage.write(key: _trialStartedSecureKey, value: startedAt);
+    await _secureStorage.write(key: _trialExpiresSecureKey, value: expiresAt);
   }
 
   Future<DateTime?> readLastSeenAt() async {
@@ -118,5 +152,23 @@ class LicenseLocalDataSource {
             updatedAt: Value(DateTime.now()),
           ),
         );
+  }
+
+  StoredTrialState? _parseTrialState({
+    required String? startedRaw,
+    required String? expiresRaw,
+  }) {
+    if (startedRaw == null || expiresRaw == null) {
+      return null;
+    }
+    final DateTime? startedAt = DateTime.tryParse(startedRaw);
+    final DateTime? expiresAt = DateTime.tryParse(expiresRaw);
+    if (startedAt == null || expiresAt == null) {
+      return null;
+    }
+    if (!expiresAt.isAfter(startedAt)) {
+      return null;
+    }
+    return StoredTrialState(startedAt: startedAt, expiresAt: expiresAt);
   }
 }

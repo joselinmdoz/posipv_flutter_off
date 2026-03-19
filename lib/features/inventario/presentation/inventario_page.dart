@@ -11,9 +11,9 @@ import '../../../shared/widgets/app_scaffold.dart';
 import '../../almacenes/presentation/almacenes_providers.dart';
 import '../../productos/presentation/productos_page.dart';
 import '../data/inventario_local_datasource.dart';
+import 'inventory_product_detail_page.dart';
 import 'inventario_providers.dart';
 import 'widgets/inventory_filter_chips.dart';
-import 'widgets/inventory_movements_button.dart';
 import 'widgets/inventory_product_card.dart';
 import 'widgets/inventory_search_bar.dart';
 
@@ -351,11 +351,25 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
     _show('Producto creado.');
   }
 
+  Future<void> _openProductDetail(InventoryView row) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => InventoryProductDetailPage(
+          inventoryRow: row,
+        ),
+      ),
+    );
+    if (!mounted) {
+      return;
+    }
+    await _reloadInventory();
+  }
+
   Widget _buildInventoryCard(InventoryView row) {
     return InventoryProductCard(
       row: row,
       moneyFromCents: _moneyFromCents,
-      onTap: () => context.go('/inventario-movimientos'),
+      onTap: () => _openProductDetail(row),
     );
   }
 
@@ -380,25 +394,9 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
       useDefaultActions: false,
       appBarActions: <Widget>[
         IconButton(
-          tooltip: 'Notificaciones',
-          onPressed: () => _show('Notificaciones próximamente.'),
-          icon: const Icon(Icons.notifications_none_rounded),
-        ),
-        Padding(
-          padding: const EdgeInsets.only(right: 10),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(18),
-            onTap: () => context.go('/configuracion'),
-            child: CircleAvatar(
-              radius: 17,
-              backgroundColor:
-                  theme.colorScheme.primary.withValues(alpha: 0.14),
-              child: Icon(
-                Icons.account_circle_rounded,
-                color: theme.colorScheme.primary,
-              ),
-            ),
-          ),
+          tooltip: 'Movimientos',
+          onPressed: () => context.go('/inventario-movimientos'),
+          icon: const Icon(Icons.swap_horiz_rounded),
         ),
       ],
       floatingActionButton: AppAddActionButton(
@@ -420,10 +418,6 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
                   InventoryFilterChips(
                     currentFilter: _stockFilter,
                     onFilterChanged: _setStockFilter,
-                  ),
-                  const SizedBox(height: 10),
-                  InventoryMovementsButton(
-                    onPressed: () => context.go('/inventario-movimientos'),
                   ),
                   if (_searching) ...<Widget>[
                     const SizedBox(height: 6),

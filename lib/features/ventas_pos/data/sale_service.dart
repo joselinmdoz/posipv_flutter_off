@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../../core/licensing/license_models.dart';
 import '../../../core/licensing/license_service.dart';
 import '../../../core/utils/app_result.dart';
 import '../domain/sale_models.dart';
@@ -105,6 +106,7 @@ class SaleService {
         }
 
         final DateTime now = DateTime.now();
+        await _enforceDailySalesLimit(now);
         final String saleId = _uuid.v4();
         final String folio = _buildFolio(now);
 
@@ -302,6 +304,30 @@ class SaleService {
     final String mm = now.minute.toString().padLeft(2, '0');
     final String ss = now.second.toString().padLeft(2, '0');
     return 'POS-$y$m$d-$hh$mm$ss';
+  }
+
+  Future<void> _enforceDailySalesLimit(DateTime now) async {
+    final LicenseStatus status = await _licenseService.current();
+    if (status.isFull) {
+      return;
+    }
+
+    final DateTime dayStart = DateTime(now.year, now.month, now.day);
+    final DateTime dayEnd = dayStart.add(const Duration(days: 1));
+    final Expression<int> countExp = _db.sales.id.count();
+    final TypedResult row = await (_db.selectOnly(_db.sales)
+          ..addColumns(<Expression<Object>>[countExp])
+          ..where(
+            _db.sales.createdAt.isBiggerOrEqualValue(dayStart) &
+                _db.sales.createdAt.isSmallerThanValue(dayEnd),
+          ))
+        .getSingle();
+    final int countToday = row.read(countExp) ?? 0;
+    if (countToday >= DemoLicenseLimits.maxSalesPerDay) {
+      throw const _SaleException(
+        'Modo demo: alcanzaste el limite de 5 ventas por dia.',
+      );
+    }
   }
 
   Future<void> _upsertStock({

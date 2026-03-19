@@ -34,8 +34,26 @@ class OfflineLicenseService {
     }
 
     final DeviceIdentity identity = await _deviceIdentityService.getIdentity();
-    final StoredTrialState trialState = await _ensureTrialState(now);
     final DateTime? lastSeenAt = await _localDataSource.readLastSeenAt();
+    final StoredTrialState? persistedTrialState =
+        await _localDataSource.readTrialState();
+    final StoredTrialState trialState;
+    try {
+      trialState = await _ensureTrialState(
+        now,
+        persistedTrialState: persistedTrialState,
+        lastSeenAt: lastSeenAt,
+      );
+    } on LicenseException {
+      return _cache(
+        LicenseStatus.blocked(
+          deviceIdentity: identity,
+          checkedAt: now,
+          reason: LicenseBlockReason.corruptedState,
+        ),
+        now,
+      );
+    }
     final RuntimeSecurityStatus runtimeSecurity = kDebugMode
         ? const RuntimeSecurityStatus.unsupported()
         : await _runtimeSecurityService.inspect(
@@ -80,26 +98,12 @@ class OfflineLicenseService {
       }
     }
 
-    if (now.isAfter(trialState.expiresAt)) {
-      return _cache(
-        LicenseStatus.blocked(
-          deviceIdentity: identity,
-          checkedAt: now,
-          reason: LicenseBlockReason.trialExpired,
-          startedAt: trialState.startedAt,
-          expiresAt: trialState.expiresAt,
-        ),
-        now,
-      );
-    }
-
     await _localDataSource.writeLastSeenAt(now);
     return _cache(
       LicenseStatus.trial(
         deviceIdentity: identity,
         checkedAt: now,
         startedAt: trialState.startedAt,
-        expiresAt: trialState.expiresAt,
       ),
       now,
     );
@@ -166,10 +170,18 @@ class OfflineLicenseService {
     }
   }
 
-  Future<StoredTrialState> _ensureTrialState(DateTime now) async {
-    final StoredTrialState? stored = await _localDataSource.readTrialState();
-    if (stored != null) {
-      return stored;
+  Future<StoredTrialState> _ensureTrialState(
+    DateTime now, {
+    required StoredTrialState? persistedTrialState,
+    required DateTime? lastSeenAt,
+  }) async {
+    if (persistedTrialState != null) {
+      return persistedTrialState;
+    }
+    if (lastSeenAt != null) {
+      throw const LicenseException(
+        'No se encontro el estado del trial en un dispositivo ya usado.',
+      );
     }
 
     final StoredTrialState created = StoredTrialState(

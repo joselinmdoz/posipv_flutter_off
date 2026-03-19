@@ -2,6 +2,7 @@ import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../../core/licensing/license_models.dart';
 import '../../../core/licensing/license_service.dart';
 
 enum ProductCatalogKind { type, category, unit }
@@ -280,6 +281,15 @@ class ProductosLocalDataSource {
 
   Future<void> createProduct(ProductFormInput input) async {
     await _licenseService.requireWriteAccess();
+    final LicenseStatus licenseStatus = await _licenseService.current();
+    if (!licenseStatus.isFull) {
+      final int activeProducts = await _countActiveProducts();
+      if (activeProducts >= DemoLicenseLimits.maxActiveProducts) {
+        throw const LicenseException(
+          'Modo demo: alcanzaste el maximo de 5 productos activos.',
+        );
+      }
+    }
     await _db.into(_db.products).insert(
           ProductsCompanion.insert(
             id: _uuid.v4(),
@@ -296,6 +306,15 @@ class ProductosLocalDataSource {
             currencyCode: Value(input.currencyCode),
           ),
         );
+  }
+
+  Future<int> _countActiveProducts() async {
+    final Expression<int> countExp = _db.products.id.count();
+    final TypedResult row = await (_db.selectOnly(_db.products)
+          ..addColumns(<Expression<Object>>[countExp])
+          ..where(_db.products.isActive.equals(true)))
+        .getSingle();
+    return row.read(countExp) ?? 0;
   }
 
   Future<void> updateProduct({
