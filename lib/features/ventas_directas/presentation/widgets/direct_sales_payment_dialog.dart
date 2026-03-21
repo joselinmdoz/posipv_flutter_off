@@ -24,24 +24,28 @@ class DirectSalesPaymentLine {
     required this.currencyCode,
     required this.enteredAmountCents,
     required this.primaryAmountCents,
+    this.transactionId,
   });
 
   final String method;
   final String currencyCode;
   final int enteredAmountCents;
   final int primaryAmountCents;
+  final String? transactionId;
 
   DirectSalesPaymentLine copyWith({
     String? method,
     String? currencyCode,
     int? enteredAmountCents,
     int? primaryAmountCents,
+    String? transactionId,
   }) {
     return DirectSalesPaymentLine(
       method: method ?? this.method,
       currencyCode: currencyCode ?? this.currencyCode,
       enteredAmountCents: enteredAmountCents ?? this.enteredAmountCents,
       primaryAmountCents: primaryAmountCents ?? this.primaryAmountCents,
+      transactionId: transactionId ?? this.transactionId,
     );
   }
 }
@@ -55,6 +59,7 @@ class DirectSalesPaymentDialog extends StatefulWidget {
     required this.currencyConfig,
     required this.paymentMethods,
     required this.paymentMethodLabel,
+    required this.onlinePaymentMethodCodes,
   });
 
   final List<PosCartLine> cartLines;
@@ -63,6 +68,7 @@ class DirectSalesPaymentDialog extends StatefulWidget {
   final AppCurrencyConfig currencyConfig;
   final List<String> paymentMethods;
   final String Function(String) paymentMethodLabel;
+  final Set<String> onlinePaymentMethodCodes;
 
   @override
   State<DirectSalesPaymentDialog> createState() =>
@@ -73,6 +79,7 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
   final List<PosCartLine> _editableLines = <PosCartLine>[];
   final TextEditingController _discountCtrl = TextEditingController();
   final TextEditingController _lineAmountCtrl = TextEditingController();
+  final TextEditingController _lineTransactionCtrl = TextEditingController();
   final List<_PaymentDraft> _payments = <_PaymentDraft>[];
   late String _selectedMethod;
   late String _selectedCurrencyCode;
@@ -97,6 +104,7 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
   void dispose() {
     _discountCtrl.dispose();
     _lineAmountCtrl.dispose();
+    _lineTransactionCtrl.dispose();
     super.dispose();
   }
 
@@ -148,9 +156,16 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
             currencyCode: draft.currencyCode,
             enteredAmountCents: draft.enteredAmountCents,
             primaryAmountCents: draft.primaryAmountCents,
+            transactionId: draft.transactionId,
           ),
         )
         .toList();
+  }
+
+  bool _requiresTransactionId(String method) {
+    return widget.onlinePaymentMethodCodes.contains(
+      method.trim().toLowerCase(),
+    );
   }
 
   int get _paidPrimaryCents {
@@ -258,6 +273,23 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
     _updateLineQty(line.product.id, line.qty - 1);
   }
 
+  void _setLineQty(PosCartLine line, double nextQtyRaw) {
+    if (!nextQtyRaw.isFinite) {
+      return;
+    }
+    final double nextQty = nextQtyRaw < 0 ? 0 : nextQtyRaw;
+    if (!widget.allowNegativeStock) {
+      final double stock = widget.stockByProductId[line.product.id] ?? 0;
+      if (nextQty > stock + 0.000001) {
+        _show(
+          'Stock insuficiente para ${line.product.name}. Disponible: ${stock.toStringAsFixed(0)}',
+        );
+        return;
+      }
+    }
+    _updateLineQty(line.product.id, nextQty);
+  }
+
   void _removeLine(PosCartLine line) {
     _updateLineQty(line.product.id, 0);
   }
@@ -297,6 +329,11 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
       _show('No se pudo calcular la conversion de la linea de pago.');
       return;
     }
+    final String transactionId = _lineTransactionCtrl.text.trim();
+    if (_requiresTransactionId(_selectedMethod) && transactionId.isEmpty) {
+      _show('Este metodo requiere ID de transaccion.');
+      return;
+    }
 
     setState(() {
       _payments.add(
@@ -305,6 +342,7 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
           currencyCode: _selectedCurrencyCode,
           enteredAmountCents: enteredCents,
           primaryAmountCents: primaryCents,
+          transactionId: transactionId.isEmpty ? null : transactionId,
         ),
       );
       final int pendingPrimary =
@@ -315,6 +353,7 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
       );
       _lineAmountCtrl.text =
           (pendingInSelectedCurrency / 100).toStringAsFixed(2);
+      _lineTransactionCtrl.clear();
     });
   }
 
@@ -387,6 +426,11 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
 
     final Map<String, int> byMethod = <String, int>{};
     for (final DirectSalesPaymentLine line in paymentLines) {
+      if (_requiresTransactionId(line.method) &&
+          (line.transactionId ?? '').trim().isEmpty) {
+        _show('Una linea online no tiene ID de transaccion.');
+        return;
+      }
       byMethod[line.method] =
           (byMethod[line.method] ?? 0) + line.primaryAmountCents;
     }
@@ -415,89 +459,97 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
     final int pending = _deltaPrimaryCents < 0 ? -_deltaPrimaryCents : 0;
     final int overpaid = _deltaPrimaryCents > 0 ? _deltaPrimaryCents : 0;
 
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-      child: Container(
-        width: double.infinity,
-        constraints: const BoxConstraints(maxWidth: 1040),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF101622) : const Color(0xFFF6F6F8),
-          borderRadius: BorderRadius.circular(24),
-        ),
-        child: Column(
-          children: <Widget>[
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(24)),
-              ),
-              child: Row(
-                children: <Widget>[
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.arrow_back_rounded),
-                    color: primaryColor,
+    return Scaffold(
+      backgroundColor:
+          isDark ? const Color(0xFF0B1220) : const Color(0xFFF1F5F9),
+      body: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+        child: SafeArea(
+          child: Column(
+            children: <Widget>[
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                  border: Border(
+                    bottom: BorderSide(
+                      color: isDark ? Colors.white10 : const Color(0xFFE2E8F0),
+                    ),
                   ),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      'Pago Venta Directa',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.5,
+                ),
+                child: Row(
+                  children: <Widget>[
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.arrow_back_rounded),
+                      color: primaryColor,
+                    ),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Pago Venta Directa',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 1100),
+                      child: LayoutBuilder(
+                        builder:
+                            (BuildContext context, BoxConstraints constraints) {
+                          final bool isWide = constraints.maxWidth > 760;
+                          if (isWide) {
+                            return Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                Expanded(
+                                  flex: 2,
+                                  child:
+                                      _buildOrderSummary(isDark, primaryColor),
+                                ),
+                                const SizedBox(width: 20),
+                                Expanded(
+                                  child: _buildPaymentPanel(
+                                    isDark: isDark,
+                                    primaryColor: primaryColor,
+                                    pending: pending,
+                                    overpaid: overpaid,
+                                  ),
+                                ),
+                              ],
+                            );
+                          }
+                          return Column(
+                            children: <Widget>[
+                              _buildOrderSummary(isDark, primaryColor),
+                              const SizedBox(height: 16),
+                              _buildPaymentPanel(
+                                isDark: isDark,
+                                primaryColor: primaryColor,
+                                pending: pending,
+                                overpaid: overpaid,
+                              ),
+                            ],
+                          );
+                        },
                       ),
                     ),
                   ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-                child: LayoutBuilder(
-                  builder: (BuildContext context, BoxConstraints constraints) {
-                    final bool isWide = constraints.maxWidth > 720;
-                    if (isWide) {
-                      return Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Expanded(
-                            flex: 2,
-                            child: _buildOrderSummary(isDark, primaryColor),
-                          ),
-                          const SizedBox(width: 24),
-                          Expanded(
-                            child: _buildPaymentPanel(
-                              isDark: isDark,
-                              primaryColor: primaryColor,
-                              pending: pending,
-                              overpaid: overpaid,
-                            ),
-                          ),
-                        ],
-                      );
-                    }
-                    return Column(
-                      children: <Widget>[
-                        _buildOrderSummary(isDark, primaryColor),
-                        const SizedBox(height: 24),
-                        _buildPaymentPanel(
-                          isDark: isDark,
-                          primaryColor: primaryColor,
-                          pending: pending,
-                          overpaid: overpaid,
-                        ),
-                      ],
-                    );
-                  },
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -558,6 +610,7 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
                   onIncrease: () => _increaseLine(line),
                   onDecrease: () => _decreaseLine(line),
                   onRemove: () => _removeLine(line),
+                  onSetQty: (double qty) => _setLineQty(line, qty),
                 );
               },
             ),
@@ -627,7 +680,12 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
                   if (value == null) {
                     return;
                   }
-                  setState(() => _selectedMethod = value);
+                  setState(() {
+                    _selectedMethod = value;
+                    if (!_requiresTransactionId(value)) {
+                      _lineTransactionCtrl.clear();
+                    }
+                  });
                 },
               );
 
@@ -677,6 +735,16 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
             },
           ),
           const SizedBox(height: 8),
+          if (_requiresTransactionId(_selectedMethod)) ...<Widget>[
+            TextField(
+              controller: _lineTransactionCtrl,
+              decoration: const InputDecoration(
+                labelText: 'ID de transaccion',
+                hintText: 'Ej. TX-123456',
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           LayoutBuilder(
             builder: (BuildContext context, BoxConstraints constraints) {
               final Widget amountField = TextField(
@@ -754,6 +822,19 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
+                            if ((draft.transactionId ?? '')
+                                .trim()
+                                .isNotEmpty) ...<Widget>[
+                              const SizedBox(height: 2),
+                              Text(
+                                'TX: ${draft.transactionId!.trim()}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey[500],
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -836,10 +917,12 @@ class _PaymentDraft {
     required this.currencyCode,
     required this.enteredAmountCents,
     required this.primaryAmountCents,
+    this.transactionId,
   });
 
   String method;
   String currencyCode;
   int enteredAmountCents;
   int primaryAmountCents;
+  String? transactionId;
 }

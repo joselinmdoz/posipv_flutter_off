@@ -10,6 +10,7 @@ class PosProductsGrid extends StatelessWidget {
   final String emptyMessage;
   final bool isPosting;
   final void Function(String productId, double delta) onQtyChanged;
+  final void Function(String productId, double qty) onQtySet;
 
   const PosProductsGrid({
     super.key,
@@ -20,6 +21,7 @@ class PosProductsGrid extends StatelessWidget {
     required this.emptyMessage,
     required this.isPosting,
     required this.onQtyChanged,
+    required this.onQtySet,
   });
 
   static const double _kGridSpacing = 12;
@@ -67,6 +69,7 @@ class PosProductsGrid extends StatelessWidget {
               currencySymbol: currencySymbol,
               isPosting: isPosting,
               onQtyChanged: (delta) => onQtyChanged(product.id, delta),
+              onQtySet: (double qty) => onQtySet(product.id, qty),
             );
           },
         );
@@ -92,11 +95,11 @@ class PosProductsGrid extends StatelessWidget {
 
   double _gridMainAxisExtent(double tileWidth) {
     if (tileWidth >= 280) {
-      return 278;
+      return 232;
     }
     if (tileWidth >= 220) {
-      return 258;
+      return 214;
     }
-    return 236;
+    return 198;
   }
 }

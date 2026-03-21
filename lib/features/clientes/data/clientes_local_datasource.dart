@@ -10,6 +10,7 @@ class ClienteListItem {
     required this.id,
     required this.code,
     required this.fullName,
+    required this.identityNumber,
     required this.phone,
     required this.email,
     required this.avatarPath,
@@ -26,6 +27,7 @@ class ClienteListItem {
   final String id;
   final String code;
   final String fullName;
+  final String? identityNumber;
   final String? phone;
   final String? email;
   final String? avatarPath;
@@ -66,6 +68,7 @@ class ClienteDetail {
     required this.id,
     required this.code,
     required this.fullName,
+    required this.identityNumber,
     required this.phone,
     required this.email,
     required this.address,
@@ -86,6 +89,7 @@ class ClienteDetail {
   final String id;
   final String code;
   final String fullName;
+  final String? identityNumber;
   final String? phone;
   final String? email;
   final String? address;
@@ -106,6 +110,7 @@ class ClienteDetail {
 class ClienteUpsertInput {
   const ClienteUpsertInput({
     required this.fullName,
+    this.identityNumber,
     this.phone,
     this.email,
     this.address,
@@ -119,6 +124,7 @@ class ClienteUpsertInput {
   });
 
   final String fullName;
+  final String? identityNumber;
   final String? phone;
   final String? email;
   final String? address;
@@ -157,11 +163,13 @@ class ClientesLocalDataSource {
           LOWER(c.full_name) LIKE ?
           OR LOWER(COALESCE(c.phone, '')) LIKE ?
           OR LOWER(COALESCE(c.email, '')) LIKE ?
+          OR LOWER(COALESCE(c.identity_number, '')) LIKE ?
           OR LOWER(c.code) LIKE ?
         )
         ''',
       );
       final String like = '%$search%';
+      variables.add(Variable<String>(like));
       variables.add(Variable<String>(like));
       variables.add(Variable<String>(like));
       variables.add(Variable<String>(like));
@@ -184,6 +192,7 @@ class ClientesLocalDataSource {
         c.id,
         c.code,
         c.full_name,
+        c.identity_number,
         c.phone,
         c.email,
         c.avatar_path,
@@ -247,6 +256,7 @@ class ClientesLocalDataSource {
         c.id,
         c.code,
         c.full_name,
+        c.identity_number,
         c.phone,
         c.email,
         c.address,
@@ -355,6 +365,8 @@ class ClientesLocalDataSource {
       id: header.read<String>('id'),
       code: header.read<String>('code'),
       fullName: header.read<String>('full_name'),
+      identityNumber:
+          _normalizeOptional(header.readNullable<String>('identity_number')),
       phone: _normalizeOptional(header.readNullable<String>('phone')),
       email: _normalizeOptional(header.readNullable<String>('email')),
       address: _normalizeOptional(header.readNullable<String>('address')),
@@ -388,6 +400,7 @@ class ClientesLocalDataSource {
             id: id,
             code: code,
             fullName: fullName,
+            identityNumber: Value(_normalizeOptional(input.identityNumber)),
             phone: Value(_normalizeOptional(input.phone)),
             email: Value(_normalizeOptional(input.email)),
             address: Value(_normalizeOptional(input.address)),
@@ -423,6 +436,7 @@ class ClientesLocalDataSource {
         .write(
       CustomersCompanion(
         fullName: Value(fullName),
+        identityNumber: Value(_normalizeOptional(input.identityNumber)),
         phone: Value(_normalizeOptional(input.phone)),
         email: Value(_normalizeOptional(input.email)),
         address: Value(_normalizeOptional(input.address)),
@@ -464,6 +478,8 @@ class ClientesLocalDataSource {
       id: row.read<String>('id'),
       code: row.read<String>('code'),
       fullName: row.read<String>('full_name'),
+      identityNumber:
+          _normalizeOptional(row.readNullable<String>('identity_number')),
       phone: _normalizeOptional(row.readNullable<String>('phone')),
       email: _normalizeOptional(row.readNullable<String>('email')),
       avatarPath: _normalizeOptional(row.readNullable<String>('avatar_path')),

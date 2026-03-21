@@ -222,6 +222,8 @@ class InventarioLocalDataSource {
         p.sku,
         p.price_cents,
         p.tax_rate_bps,
+        p.currency_code,
+        p.image_path,
         COALESCE(sb.qty, 0) AS qty
       FROM products p
       LEFT JOIN stock_balances sb
@@ -246,6 +248,9 @@ class InventarioLocalDataSource {
         qty: row.read<double>('qty'),
         priceCents: row.read<int>('price_cents'),
         taxRateBps: row.read<int>('tax_rate_bps'),
+        currencyCode:
+            (row.readNullable<String>('currency_code') ?? 'USD').trim(),
+        imagePath: row.readNullable<String>('image_path'),
       );
     }).toList();
   }
@@ -259,6 +264,8 @@ class InventarioLocalDataSource {
         p.sku,
         p.price_cents,
         p.tax_rate_bps,
+        p.currency_code,
+        p.image_path,
         SUM(sb.qty) AS qty
       FROM stock_balances sb
       INNER JOIN products p
@@ -274,7 +281,14 @@ class InventarioLocalDataSource {
     }
     sql.write(
       '''
-      GROUP BY p.id, p.name, p.sku, p.price_cents, p.tax_rate_bps
+      GROUP BY
+        p.id,
+        p.name,
+        p.sku,
+        p.price_cents,
+        p.tax_rate_bps,
+        p.currency_code,
+        p.image_path
       ORDER BY p.name ASC
       ''',
     );
@@ -294,6 +308,9 @@ class InventarioLocalDataSource {
         qty: row.read<double>('qty'),
         priceCents: row.read<int>('price_cents'),
         taxRateBps: row.read<int>('tax_rate_bps'),
+        currencyCode:
+            (row.readNullable<String>('currency_code') ?? 'USD').trim(),
+        imagePath: row.readNullable<String>('image_path'),
       );
     }).toList();
   }
@@ -315,6 +332,8 @@ class InventarioLocalDataSource {
         p.sku,
         p.price_cents,
         p.tax_rate_bps,
+        p.currency_code,
+        p.image_path,
         SUM(sb.qty) AS qty
       FROM stock_balances sb
       INNER JOIN products p
@@ -350,7 +369,14 @@ class InventarioLocalDataSource {
 
     sql.write(
       '''
-      GROUP BY p.id, p.name, p.sku, p.price_cents, p.tax_rate_bps
+      GROUP BY
+        p.id,
+        p.name,
+        p.sku,
+        p.price_cents,
+        p.tax_rate_bps,
+        p.currency_code,
+        p.image_path
       ORDER BY p.name ASC
       LIMIT ? OFFSET ?
       ''',
@@ -375,6 +401,9 @@ class InventarioLocalDataSource {
         qty: row.read<double>('qty'),
         priceCents: row.read<int>('price_cents'),
         taxRateBps: row.read<int>('tax_rate_bps'),
+        currencyCode:
+            (row.readNullable<String>('currency_code') ?? 'USD').trim(),
+        imagePath: row.readNullable<String>('image_path'),
       );
     }).toList();
   }

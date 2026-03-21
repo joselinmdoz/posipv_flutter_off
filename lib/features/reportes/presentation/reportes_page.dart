@@ -1,17 +1,17 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_providers.dart';
-import '../../../core/utils/perf_trace.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../configuracion/data/configuracion_local_datasource.dart';
 import '../../configuracion/presentation/configuracion_providers.dart';
 import '../data/reportes_local_datasource.dart';
 import 'reportes_providers.dart';
+import 'widgets/analytics_kpi_card.dart';
+import 'widgets/analytics_period_tabs.dart';
+import 'widgets/analytics_top_product_tile.dart';
+import 'widgets/sales_trend_card.dart';
 
 class ReportesPage extends ConsumerStatefulWidget {
   const ReportesPage({super.key});
@@ -21,42 +21,40 @@ class ReportesPage extends ConsumerStatefulWidget {
 }
 
 class _ReportesPageState extends ConsumerState<ReportesPage> {
-  ReportesDashboard? _dashboard;
+  SalesAnalyticsSnapshot? _analytics;
   String _currencySymbol = AppConfig.defaultCurrencySymbol;
   bool _loading = true;
-  bool _loadingIpv = false;
-  bool _showingIpvSheet = false;
-  List<PosTerminal> _ipvTerminalOptions = <PosTerminal>[];
-  String? _ipvTerminalId;
-  DateTime? _ipvFromDate;
-  DateTime? _ipvToDate;
-  List<IpvReportSummaryStat> _ipvReports = <IpvReportSummaryStat>[];
+  bool _exportingAnalytics = false;
+  late DateTimeRange _range;
+  SalesAnalyticsGranularity _granularity = SalesAnalyticsGranularity.month;
+  bool _showAllTopProducts = false;
 
   @override
   void initState() {
     super.initState();
+    _range = _rangeForGranularity(_granularity, DateTime.now());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;
       }
-      _load();
+      _loadAnalytics();
     });
   }
 
-  Future<void> _load() async {
+  Future<void> _loadAnalytics({bool showLoader = true}) async {
     final license = ref.read(currentLicenseStatusProvider);
     if (!license.canAccessGeneralReports) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _dashboard = null;
-        });
+      if (!mounted) {
+        return;
       }
+      setState(() {
+        _loading = false;
+        _analytics = null;
+      });
       return;
     }
 
-    final PerfTrace trace = PerfTrace('reportes.load');
-    if (mounted) {
+    if (showLoader && mounted) {
       setState(() => _loading = true);
     }
 
@@ -64,119 +62,233 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
         ref.read(reportesLocalDataSourceProvider);
     final ConfiguracionLocalDataSource configDs =
         ref.read(configuracionLocalDataSourceProvider);
-    final Future<ReportesDashboard> dashboardFuture =
-        reportesDs.loadDashboard();
-    final Future<AppConfig> configFuture = configDs.loadConfig();
 
-    ReportesDashboard dashboard = const ReportesDashboard(
-      today: SalesSummary(salesCount: 0, totalCents: 0, taxCents: 0),
-      lastDays: <DailySalesPoint>[],
-      topProducts: <TopProductStat>[],
-      recentSales: <RecentSaleStat>[],
-      recentSessionClosures: <RecentSessionClosureStat>[],
-      recentIpvReports: <IpvReportSummaryStat>[],
-    );
-    String currencySymbol = AppConfig.defaultCurrencySymbol;
+    String currencySymbol = _currencySymbol;
+    SalesAnalyticsSnapshot? snapshot;
     String? warningMessage;
 
     try {
-      dashboard = await dashboardFuture;
-      trace.mark('dashboard cargado');
+      currencySymbol = (await configDs.loadConfig()).currencySymbol;
     } catch (e) {
-      warningMessage = 'Reportes: $e';
+      warningMessage = 'Configuracion: $e';
     }
 
     try {
-      currencySymbol = (await configFuture).currencySymbol;
-      trace.mark('config cargada');
+      snapshot = await reportesDs.loadSalesAnalytics(
+        fromDate: _range.start,
+        toDate: _range.end,
+        granularity: _granularity,
+        topLimit: 20,
+      );
     } catch (e) {
-      final String message = 'Configuracion: $e';
+      final String message = 'Analiticas: $e';
       warningMessage =
           warningMessage == null ? message : '$warningMessage\n$message';
     }
 
     if (!mounted) {
-      trace.end('unmounted');
       return;
     }
 
     setState(() {
-      _dashboard = dashboard;
       _currencySymbol = currencySymbol;
+      _analytics = snapshot;
       _loading = false;
     });
-    trace.end('ok');
 
     if (warningMessage != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Cargado con advertencias:\n$warningMessage')),
       );
     }
-
-    unawaited(
-        _reloadIpvReports(loadTerminalOptions: _ipvTerminalOptions.isEmpty));
   }
 
-  Future<void> _reloadIpvReports({bool loadTerminalOptions = false}) async {
-    if (mounted) {
-      setState(() => _loadingIpv = true);
-    }
-    final ReportesLocalDataSource ds =
-        ref.read(reportesLocalDataSourceProvider);
-    try {
-      final Future<List<PosTerminal>> terminalFuture = loadTerminalOptions
-          ? ds.listIpvTerminalOptions()
-          : Future<List<PosTerminal>>.value(_ipvTerminalOptions);
-      final Future<List<IpvReportSummaryStat>> rowsFuture = ds.listIpvReports(
-        terminalId: _ipvTerminalId,
-        fromDate: _ipvFromDate,
-        toDate: _ipvToDate,
-        limit: 120,
-      );
-      List<PosTerminal> terminals = await terminalFuture;
-      List<IpvReportSummaryStat> rows = await rowsFuture;
-      if (_ipvTerminalId != null &&
-          terminals.every((PosTerminal row) => row.id != _ipvTerminalId)) {
-        _ipvTerminalId = null;
-        rows = await ds.listIpvReports(
-          terminalId: null,
-          fromDate: _ipvFromDate,
-          toDate: _ipvToDate,
-          limit: 120,
+  DateTimeRange _rangeForGranularity(
+    SalesAnalyticsGranularity granularity,
+    DateTime now,
+  ) {
+    final DateTime dayStart = DateTime(now.year, now.month, now.day);
+    switch (granularity) {
+      case SalesAnalyticsGranularity.day:
+        return DateTimeRange(start: dayStart, end: dayStart);
+      case SalesAnalyticsGranularity.week:
+        final int diff = dayStart.weekday - DateTime.monday;
+        final DateTime start = dayStart.subtract(Duration(days: diff));
+        final DateTime end = start.add(const Duration(days: 6));
+        return DateTimeRange(start: start, end: end);
+      case SalesAnalyticsGranularity.month:
+        final DateTime start = DateTime(now.year, now.month, 1);
+        final DateTime end = DateTime(now.year, now.month + 1, 0);
+        return DateTimeRange(start: start, end: end);
+      case SalesAnalyticsGranularity.year:
+        return DateTimeRange(
+          start: DateTime(now.year, 1, 1),
+          end: DateTime(now.year, 12, 31),
         );
-      }
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _ipvTerminalOptions = terminals;
-        _ipvReports = rows;
-        _loadingIpv = false;
-      });
-    } catch (e, st) {
-      debugPrint('IPV export failed (reportes/reportes_page). $e');
-      debugPrintStack(stackTrace: st);
-      if (!mounted) {
-        return;
-      }
-      setState(() => _loadingIpv = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo cargar IPV: $e')),
-      );
     }
+  }
+
+  Future<void> _pickDateRange() async {
+    final DateTime now = DateTime.now();
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020, 1, 1),
+      lastDate: DateTime(now.year + 2, 12, 31),
+      initialDateRange: _range,
+      saveText: 'Aplicar',
+      helpText: 'Seleccionar período',
+      cancelText: 'Cancelar',
+      confirmText: 'Aceptar',
+    );
+    if (picked == null) {
+      return;
+    }
+    setState(() {
+      _range = DateTimeRange(
+        start:
+            DateTime(picked.start.year, picked.start.month, picked.start.day),
+        end: DateTime(picked.end.year, picked.end.month, picked.end.day),
+      );
+      _showAllTopProducts = false;
+    });
+    await _loadAnalytics(showLoader: true);
+  }
+
+  Future<void> _setGranularity(SalesAnalyticsGranularity value) async {
+    if (_granularity == value) {
+      return;
+    }
+    final DateTimeRange nextRange = _rangeForGranularity(value, DateTime.now());
+    setState(() {
+      _granularity = value;
+      _range = nextRange;
+      _showAllTopProducts = false;
+    });
+    await _loadAnalytics(showLoader: true);
+  }
+
+  void _onBackPressed() {
+    if (Navigator.of(context).canPop()) {
+      context.pop();
+      return;
+    }
+    context.go('/home');
+  }
+
+  Future<void> _exportAnalytics() async {
+    if (_exportingAnalytics) {
+      return;
+    }
+    setState(() => _exportingAnalytics = true);
+    try {
+      final String filePath = await ref
+          .read(reportesLocalDataSourceProvider)
+          .exportSalesAnalyticsCsv(
+            fromDate: _range.start,
+            toDate: _range.end,
+            granularity: _granularity,
+            currencySymbol: _currencySymbol,
+            topLimit: 20,
+          );
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(
+            content: Text('Analítica exportada en:\n$filePath'),
+            duration: const Duration(seconds: 5),
+          ),
+        );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(
+            content: Text('No se pudo exportar la analítica: $e'),
+          ),
+        );
+    } finally {
+      if (mounted) {
+        setState(() => _exportingAnalytics = false);
+      }
+    }
+  }
+
+  String _money(int cents, {String? symbol}) {
+    final String useSymbol = symbol ?? _currencySymbol;
+    return '$useSymbol${(cents / 100).toStringAsFixed(2)}';
+  }
+
+  String _formatDelta(double value) {
+    final String sign = value > 0 ? '+' : '';
+    return '$sign${value.toStringAsFixed(1)}%';
+  }
+
+  String _formatDateRange(DateTimeRange range) {
+    return '${_formatDate(range.start)} - ${_formatDate(range.end)}';
+  }
+
+  String _formatDate(DateTime date) {
+    const List<String> months = <String>[
+      'Ene',
+      'Feb',
+      'Mar',
+      'Abr',
+      'May',
+      'Jun',
+      'Jul',
+      'Ago',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dic',
+    ];
+    final String day = date.day.toString().padLeft(2, '0');
+    return '$day ${months[date.month - 1]}, ${date.year}';
+  }
+
+  String _formatUnits(double qty) {
+    if ((qty - qty.roundToDouble()).abs() < 0.000001) {
+      return '${qty.toStringAsFixed(0)} unidades vendidas';
+    }
+    return '${qty.toStringAsFixed(2)} unidades vendidas';
   }
 
   @override
   Widget build(BuildContext context) {
     final license = ref.watch(currentLicenseStatusProvider);
-    final ReportesDashboard? dashboard = _dashboard;
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final SalesAnalyticsSnapshot? analytics = _analytics;
 
     if (!license.canAccessGeneralReports) {
       return AppScaffold(
-        title: 'Reportes',
+        title: 'Panel de Analíticas',
         currentRoute: '/reportes',
-        onRefresh: _load,
+        onRefresh: _loadAnalytics,
+        useDefaultActions: false,
+        showDrawer: false,
+        appBarLeading: IconButton(
+          tooltip: 'Volver',
+          onPressed: _onBackPressed,
+          icon: const Icon(Icons.arrow_back_rounded),
+        ),
+        appBarActions: <Widget>[
+          IconButton(
+            tooltip: 'Descargar',
+            onPressed: _exportingAnalytics ? null : _exportAnalytics,
+            icon: _exportingAnalytics
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.download_rounded),
+          ),
+        ],
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(20),
@@ -223,669 +335,215 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
       );
     }
 
+    final List<AnalyticsTopProductStat> topProducts =
+        analytics?.topProducts ?? <AnalyticsTopProductStat>[];
+    final bool canExpandTopProducts = topProducts.length > 3;
+    final List<AnalyticsTopProductStat> visibleTopProducts =
+        _showAllTopProducts || !canExpandTopProducts
+            ? topProducts
+            : topProducts.take(3).toList(growable: false);
+
     return AppScaffold(
-      title: 'Reportes',
+      title: 'Panel de Analíticas',
       currentRoute: '/reportes',
-      onRefresh: _load,
-      body: _loading && dashboard == null
+      onRefresh: _loadAnalytics,
+      useDefaultActions: false,
+      showDrawer: false,
+      appBarLeading: IconButton(
+        tooltip: 'Volver',
+        onPressed: _onBackPressed,
+        icon: const Icon(Icons.arrow_back_rounded),
+      ),
+      appBarActions: <Widget>[
+        IconButton(
+          tooltip: 'Descargar',
+          onPressed: _exportingAnalytics ? null : _exportAnalytics,
+          icon: _exportingAnalytics
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.download_rounded),
+        ),
+      ],
+      body: _loading && analytics == null
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
-              onRefresh: _load,
+              onRefresh: _loadAnalytics,
               child: ListView(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
                 children: <Widget>[
                   if (_loading)
                     const Padding(
-                      padding: EdgeInsets.only(bottom: 12),
-                      child: LinearProgressIndicator(),
+                      padding: EdgeInsets.only(bottom: 8),
+                      child: LinearProgressIndicator(minHeight: 2),
                     ),
-                  if (dashboard == null)
+                  _AnalyticsDateRangeCard(
+                    value: _formatDateRange(_range),
+                    onTap: _pickDateRange,
+                  ),
+                  const SizedBox(height: 12),
+                  AnalyticsPeriodTabs(
+                    selected: _granularity,
+                    onSelected: _setGranularity,
+                  ),
+                  const SizedBox(height: 14),
+                  if (analytics == null)
                     const Card(
                       child: Padding(
                         padding: EdgeInsets.all(16),
-                        child: Text('No hay datos disponibles.'),
+                        child:
+                            Text('No hay datos disponibles para el periodo.'),
                       ),
                     )
                   else ...<Widget>[
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
+                    Row(
                       children: <Widget>[
-                        _kpiCard(
-                          title: 'Ventas hoy',
-                          value: dashboard.today.salesCount.toString(),
-                          icon: Icons.point_of_sale_outlined,
+                        Expanded(
+                          child: AnalyticsKpiCard(
+                            title: 'INGRESOS TOTALES',
+                            value: _money(analytics.totalRevenueCents),
+                            deltaPercent: analytics.totalRevenueDeltaPercent,
+                            deltaText: _formatDelta(
+                                analytics.totalRevenueDeltaPercent),
+                          ),
                         ),
-                        _kpiCard(
-                          title: 'Total hoy',
-                          value: _money(dashboard.today.totalCents),
-                          icon: Icons.attach_money_outlined,
-                        ),
-                        _kpiCard(
-                          title: 'Impuestos hoy',
-                          value: _money(dashboard.today.taxCents),
-                          icon: Icons.receipt_long_outlined,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: AnalyticsKpiCard(
+                            title: 'PEDIDO PROMEDIO',
+                            value: _money(analytics.avgOrderCents),
+                            deltaPercent: analytics.avgOrderDeltaPercent,
+                            deltaText:
+                                _formatDelta(analytics.avgOrderDeltaPercent),
+                          ),
                         ),
                       ],
                     ),
+                    const SizedBox(height: 14),
+                    SalesTrendCard(
+                      points: analytics.trend,
+                      currencySymbol: _currencySymbol,
+                    ),
                     const SizedBox(height: 16),
-                    _section(
-                      title: 'Ultimos 7 dias',
-                      child: dashboard.lastDays.isEmpty
-                          ? const Text('Sin ventas en el rango.')
-                          : Column(
-                              children: dashboard.lastDays
-                                  .map(
-                                    (DailySalesPoint point) => ListTile(
-                                      dense: true,
-                                      contentPadding: EdgeInsets.zero,
-                                      title: Text(point.day),
-                                      subtitle:
-                                          Text('${point.salesCount} venta(s)'),
-                                      trailing: Text(_money(point.totalCents)),
-                                    ),
-                                  )
-                                  .toList(),
+                    Row(
+                      children: <Widget>[
+                        const Expanded(
+                          child: Text(
+                            'Productos Destacados',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
                             ),
-                    ),
-                    const SizedBox(height: 12),
-                    _section(
-                      title: 'Top productos (30 dias)',
-                      child: dashboard.topProducts.isEmpty
-                          ? const Text('Sin datos suficientes.')
-                          : Column(
-                              children: dashboard.topProducts
-                                  .map(
-                                    (TopProductStat product) => ListTile(
-                                      dense: true,
-                                      contentPadding: EdgeInsets.zero,
-                                      title: Text(product.productName),
-                                      subtitle: Text(
-                                        'SKU ${product.sku} | ${product.qty.toStringAsFixed(2)} u',
-                                      ),
-                                      trailing:
-                                          Text(_money(product.totalCents)),
-                                    ),
-                                  )
-                                  .toList(),
-                            ),
-                    ),
-                    const SizedBox(height: 12),
-                    _section(
-                      title: 'Ultimas ventas',
-                      child: dashboard.recentSales.isEmpty
-                          ? const Text('No hay ventas registradas.')
-                          : Column(
-                              children: dashboard.recentSales
-                                  .map(
-                                    (RecentSaleStat sale) => ListTile(
-                                      dense: true,
-                                      contentPadding: EdgeInsets.zero,
-                                      title: Text(sale.folio),
-                                      subtitle: Text(
-                                        '${_formatDateTime(sale.createdAt)} | ${sale.warehouseName} | ${sale.cashierUsername}',
-                                      ),
-                                      trailing: Text(_money(sale.totalCents)),
-                                    ),
-                                  )
-                                  .toList(),
-                            ),
-                    ),
-                    const SizedBox(height: 12),
-                    _section(
-                      title: 'Ultimos cierres de turno TPV',
-                      child: dashboard.recentSessionClosures.isEmpty
-                          ? const Text('No hay cierres de turno registrados.')
-                          : Column(
-                              children: dashboard.recentSessionClosures
-                                  .map(
-                                    (RecentSessionClosureStat closure) => Card(
-                                      margin: const EdgeInsets.only(bottom: 8),
-                                      elevation: 0,
-                                      color: isDark
-                                          ? const Color(0xFF241F33)
-                                          : const Color(0xFFF4F1FB),
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(10),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: <Widget>[
-                                            Row(
-                                              children: <Widget>[
-                                                Expanded(
-                                                  child: Text(
-                                                    closure.terminalName,
-                                                    style: const TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                    ),
-                                                  ),
-                                                ),
-                                                Text(
-                                                  _moneyWithSymbol(
-                                                    closure.closingCashCents,
-                                                    closure.currencySymbol,
-                                                  ),
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.w800,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              '${_formatDateTime(closure.closedAt)} | ${closure.cashierUsername}',
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: Theme.of(context)
-                                                    .colorScheme
-                                                    .onSurfaceVariant,
-                                              ),
-                                            ),
-                                            if (closure.breakdown.isNotEmpty)
-                                              const SizedBox(height: 6),
-                                            if (closure.breakdown.isNotEmpty)
-                                              ...closure.breakdown.map(
-                                                (SessionClosureBreakdownStat
-                                                    row) {
-                                                  return Row(
-                                                    children: <Widget>[
-                                                      Expanded(
-                                                        child: Text(
-                                                          '${_moneyWithSymbol(row.denominationCents, closure.currencySymbol)} x ${row.unitCount}',
-                                                          style:
-                                                              const TextStyle(
-                                                            fontSize: 12,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                      Text(
-                                                        _moneyWithSymbol(
-                                                          row.subtotalCents,
-                                                          closure
-                                                              .currencySymbol,
-                                                        ),
-                                                        style: const TextStyle(
-                                                          fontSize: 12,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  );
-                                                },
-                                              ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
-                            ),
-                    ),
-                    const SizedBox(height: 12),
-                    _section(
-                      title: 'Reportes IPV recientes',
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          if (_loadingIpv)
-                            const Padding(
-                              padding: EdgeInsets.only(bottom: 8),
-                              child: LinearProgressIndicator(minHeight: 2),
-                            ),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: <Widget>[
-                              SizedBox(
-                                width: 230,
-                                child: DropdownButtonFormField<String?>(
-                                  initialValue: _ipvTerminalId,
-                                  isExpanded: true,
-                                  decoration: const InputDecoration(
-                                    labelText: 'TPV',
-                                    isDense: true,
-                                  ),
-                                  items: <DropdownMenuItem<String?>>[
-                                    const DropdownMenuItem<String?>(
-                                      value: null,
-                                      child: Text('Todos los TPV'),
-                                    ),
-                                    ..._ipvTerminalOptions.map(
-                                      (PosTerminal terminal) =>
-                                          DropdownMenuItem<String?>(
-                                        value: terminal.id,
-                                        child: Text(terminal.name),
-                                      ),
-                                    ),
-                                  ],
-                                  onChanged: (String? value) {
-                                    setState(() => _ipvTerminalId = value);
-                                  },
-                                ),
-                              ),
-                              OutlinedButton.icon(
-                                onPressed: () => _pickIpvFromDate(),
-                                icon: const Icon(Icons.date_range_outlined),
-                                label: Text(
-                                  _ipvFromDate == null
-                                      ? 'Desde'
-                                      : _formatDate(_ipvFromDate!),
-                                ),
-                              ),
-                              OutlinedButton.icon(
-                                onPressed: () => _pickIpvToDate(),
-                                icon: const Icon(Icons.event_outlined),
-                                label: Text(
-                                  _ipvToDate == null
-                                      ? 'Hasta'
-                                      : _formatDate(_ipvToDate!),
-                                ),
-                              ),
-                              IconButton(
-                                tooltip: 'Limpiar filtros',
-                                onPressed: _clearIpvFilters,
-                                icon: const Icon(Icons.restart_alt_rounded),
-                              ),
-                              FilledButton.tonalIcon(
-                                onPressed:
-                                    _loadingIpv ? null : _reloadIpvReports,
-                                icon: const Icon(Icons.filter_alt_rounded),
-                                label: const Text('Aplicar'),
-                              ),
-                            ],
                           ),
-                          const SizedBox(height: 10),
-                          _ipvReports.isEmpty
-                              ? const Text('No hay reportes IPV en el filtro.')
-                              : ListView.builder(
-                                  key: const PageStorageKey<String>(
-                                    'reportes-ipv-summary-list',
-                                  ),
-                                  shrinkWrap: true,
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  itemCount: _ipvReports.length,
-                                  itemBuilder:
-                                      (BuildContext context, int index) {
-                                    final IpvReportSummaryStat report =
-                                        _ipvReports[index];
-                                    return KeyedSubtree(
-                                      key: ValueKey<String>(report.reportId),
-                                      child: _ipvReportCard(report),
-                                    );
-                                  },
-                                ),
-                        ],
-                      ),
+                        ),
+                        if (canExpandTopProducts)
+                          TextButton(
+                            onPressed: () {
+                              setState(() {
+                                _showAllTopProducts = !_showAllTopProducts;
+                              });
+                            },
+                            child: Text(
+                                _showAllTopProducts ? 'Ver menos' : 'Ver todo'),
+                          ),
+                      ],
                     ),
+                    const SizedBox(height: 8),
+                    if (visibleTopProducts.isEmpty)
+                      const Card(
+                        child: Padding(
+                          padding: EdgeInsets.all(14),
+                          child: Text('Sin productos vendidos en el rango.'),
+                        ),
+                      )
+                    else
+                      ...visibleTopProducts.map(
+                        (AnalyticsTopProductStat product) => Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: AnalyticsTopProductTile(
+                            name: product.productName,
+                            subtitle: _formatUnits(product.qty),
+                            amount: _money(product.totalCents),
+                            deltaPercent: product.deltaPercent,
+                            deltaText: _formatDelta(product.deltaPercent),
+                            imagePath: product.imagePath,
+                          ),
+                        ),
+                      ),
                   ],
                 ],
               ),
             ),
     );
   }
+}
 
-  Widget _section({required String title, required Widget child}) {
-    final Color titleColor = Theme.of(context).colorScheme.onSurface;
+class _AnalyticsDateRangeCard extends StatelessWidget {
+  const _AnalyticsDateRangeCard({
+    required this.value,
+    required this.onTap,
+  });
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text(
-              title,
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 16,
-                color: titleColor,
-              ),
-            ),
-            const SizedBox(height: 8),
-            child,
-          ],
-        ),
-      ),
-    );
-  }
+  final String value;
+  final VoidCallback onTap;
 
-  Widget _ipvReportCard(IpvReportSummaryStat report) {
-    final ThemeData theme = Theme.of(context);
-    final bool isDark = theme.brightness == Brightness.dark;
+  @override
+  Widget build(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      elevation: 0,
-      color: isDark ? const Color(0xFF1C2430) : const Color(0xFFEFF3FB),
+    return Material(
+      color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () => _openIpvDetail(report),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF0F172A) : Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isDark ? const Color(0xFF263244) : const Color(0xFFD8E0EC),
+            ),
+          ),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      report.terminalName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${_formatDateTime(report.openedAt)} → ${report.closedAt == null ? '-' : _formatDateTime(report.closedAt!)}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${_ipvSourceLabel(report.openingSource)} • ${report.lineCount} producto(s)',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 88, maxWidth: 112),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: <Widget>[
-                    Text(
-                      _moneyWithSymbol(
-                        report.totalAmountCents,
-                        report.currencySymbol,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.end,
-                      style: const TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      report.status == 'open' ? 'IPV abierto' : 'IPV cerrado',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.end,
+                      'SELECCIONAR PERÍODO',
                       style: TextStyle(
                         fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
                         color: isDark
-                            ? const Color(0xFFB8A9F1)
-                            : const Color(0xFF5B4B8A),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _kpiCard({
-    required String title,
-    required String value,
-    required IconData icon,
-  }) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme scheme = theme.colorScheme;
-    final bool isDark = theme.brightness == Brightness.dark;
-
-    return SizedBox(
-      width: 200,
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: <Widget>[
-              CircleAvatar(
-                radius: 18,
-                backgroundColor:
-                    isDark ? const Color(0xFF312948) : const Color(0xFFE9E3F7),
-                child: Icon(icon, size: 18, color: scheme.primary),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: scheme.onSurfaceVariant,
+                            ? const Color(0xFF94A3B8)
+                            : const Color(0xFF64748B),
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       value,
                       style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: scheme.onSurface,
+                        fontSize: 31 / 2,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white : const Color(0xFF0F172A),
                       ),
                     ),
                   ],
                 ),
+              ),
+              const Icon(
+                Icons.calendar_today_rounded,
+                color: Color(0xFF1152D4),
               ),
             ],
           ),
         ),
       ),
     );
-  }
-
-  String _money(int cents) {
-    return '$_currencySymbol${(cents / 100).toStringAsFixed(2)}';
-  }
-
-  String _moneyWithSymbol(int cents, String symbol) {
-    return '$symbol${(cents / 100).toStringAsFixed(2)}';
-  }
-
-  String _formatDateTime(DateTime dt) {
-    final String y = dt.year.toString().padLeft(4, '0');
-    final String m = dt.month.toString().padLeft(2, '0');
-    final String d = dt.day.toString().padLeft(2, '0');
-    final String hh = dt.hour.toString().padLeft(2, '0');
-    final String mm = dt.minute.toString().padLeft(2, '0');
-    return '$y-$m-$d $hh:$mm';
-  }
-
-  String _ipvSourceLabel(String source) {
-    switch (source.trim().toLowerCase()) {
-      case 'previous_final':
-        return 'Inicio desde cierre IPV anterior';
-      case 'initial_stock':
-      default:
-        return 'Inicio desde stock del TPV';
-    }
-  }
-
-  String _formatDate(DateTime dt) {
-    final DateTime local = dt.toLocal();
-    final String y = local.year.toString().padLeft(4, '0');
-    final String m = local.month.toString().padLeft(2, '0');
-    final String d = local.day.toString().padLeft(2, '0');
-    return '$y-$m-$d';
-  }
-
-  Future<void> _pickIpvFromDate() async {
-    final DateTime now = DateTime.now();
-    final DateTime initial = _ipvFromDate ?? now;
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: DateTime(2020, 1, 1),
-      lastDate: DateTime(now.year + 2, 12, 31),
-    );
-    if (picked == null) {
-      return;
-    }
-    setState(() => _ipvFromDate = picked);
-  }
-
-  Future<void> _pickIpvToDate() async {
-    final DateTime now = DateTime.now();
-    final DateTime initial = _ipvToDate ?? now;
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: DateTime(2020, 1, 1),
-      lastDate: DateTime(now.year + 2, 12, 31),
-    );
-    if (picked == null) {
-      return;
-    }
-    setState(() => _ipvToDate = picked);
-  }
-
-  void _clearIpvFilters() {
-    setState(() {
-      _ipvTerminalId = null;
-      _ipvFromDate = null;
-      _ipvToDate = null;
-    });
-    _reloadIpvReports();
-  }
-
-  Future<void> _exportIpv(IpvReportSummaryStat report, String format) async {
-    final ReportesLocalDataSource ds =
-        ref.read(reportesLocalDataSourceProvider);
-    try {
-      final String path = format == 'pdf'
-          ? await ds.exportIpvReportPdf(report.reportId)
-          : await ds.exportIpvReportCsv(report.reportId);
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Exportado $format en: $path')),
-      );
-    } catch (e) {
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo exportar IPV: $e')),
-      );
-    }
-  }
-
-  Future<void> _closeSheetAndExportIpv(
-    BuildContext sheetContext,
-    IpvReportSummaryStat report,
-    String format,
-  ) async {
-    Navigator.of(sheetContext).pop();
-    await _exportIpv(report, format);
-  }
-
-  Future<void> _openIpvDetail(IpvReportSummaryStat report) async {
-    if (_showingIpvSheet) {
-      return;
-    }
-    if (!mounted) {
-      return;
-    }
-
-    final bool canExportIpv = ref.read(currentLicenseStatusProvider).isFull;
-    _showingIpvSheet = true;
-    try {
-      await showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        builder: (BuildContext context) {
-          return FractionallySizedBox(
-            heightFactor: 0.92,
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      'IPV ${report.terminalName}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${_formatDateTime(report.openedAt)} → ${report.closedAt == null ? '-' : _formatDateTime(report.closedAt!)}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: <Widget>[
-                        OutlinedButton.icon(
-                          onPressed: canExportIpv
-                              ? () => _closeSheetAndExportIpv(
-                                    context,
-                                    report,
-                                    'csv',
-                                  )
-                              : null,
-                          icon: const Icon(Icons.table_view_outlined),
-                          label: const Text('Exportar CSV'),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: canExportIpv
-                              ? () => _closeSheetAndExportIpv(
-                                    context,
-                                    report,
-                                    'pdf',
-                                  )
-                              : null,
-                          icon: const Icon(Icons.picture_as_pdf_outlined),
-                          label: const Text('Exportar PDF'),
-                        ),
-                      ],
-                    ),
-                    if (!canExportIpv) ...<Widget>[
-                      const SizedBox(height: 8),
-                      Text(
-                        'Modo demo: exportar IPV requiere licencia activa.',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w600,
-                          color: Theme.of(context).colorScheme.error,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    const SizedBox(height: 4),
-                    Text(
-                      'El detalle IPV se consulta por archivo exportado.',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      );
-    } finally {
-      _showingIpvSheet = false;
-    }
   }
 }

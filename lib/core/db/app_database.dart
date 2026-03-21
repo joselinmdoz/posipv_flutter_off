@@ -230,6 +230,7 @@ class Customers extends Table {
   TextColumn get id => text()();
   TextColumn get code => text().unique()();
   TextColumn get fullName => text()();
+  TextColumn get identityNumber => text().nullable()();
   TextColumn get phone => text().nullable()();
   TextColumn get email => text().nullable()();
   TextColumn get address => text().nullable()();
@@ -290,6 +291,7 @@ class Payments extends Table {
   TextColumn get saleId => text().references(Sales, #id)();
   TextColumn get method => text()();
   IntColumn get amountCents => integer()();
+  TextColumn get transactionId => text().nullable()();
   TextColumn get sourceCurrencyCode => text().nullable()();
   IntColumn get sourceAmountCents => integer().nullable()();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
@@ -388,7 +390,7 @@ class AppDatabase extends _$AppDatabase {
   final Uuid _uuid = const Uuid();
 
   @override
-  int get schemaVersion => 18;
+  int get schemaVersion => 20;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -599,6 +601,20 @@ class AppDatabase extends _$AppDatabase {
             await _seedAccessControlDefaults();
             await _createPerformanceIndexes();
           }
+          if (from < 19) {
+            await _addCustomerColumnIfMissing(
+              m,
+              'identity_number',
+              () => m.addColumn(customers, customers.identityNumber),
+            );
+          }
+          if (from < 20) {
+            await _addPaymentColumnIfMissing(
+              m,
+              'transaction_id',
+              () => m.addColumn(payments, payments.transactionId),
+            );
+          }
         },
       );
 
@@ -619,6 +635,17 @@ class AppDatabase extends _$AppDatabase {
     Future<void> Function() addColumn,
   ) async {
     final bool exists = await _tableHasColumn('sales', columnName);
+    if (!exists) {
+      await addColumn();
+    }
+  }
+
+  Future<void> _addCustomerColumnIfMissing(
+    Migrator migrator,
+    String columnName,
+    Future<void> Function() addColumn,
+  ) async {
+    final bool exists = await _tableHasColumn('customers', columnName);
     if (!exists) {
       await addColumn();
     }

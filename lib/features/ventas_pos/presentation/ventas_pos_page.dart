@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_providers.dart';
+import '../../../core/security/app_permissions.dart';
 import '../../../core/utils/app_result.dart';
 import '../../../core/utils/perf_trace.dart';
 import '../../../shared/models/user_session.dart';
@@ -14,8 +15,6 @@ import '../../../shared/widgets/code_scanner_page.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../clientes/data/clientes_local_datasource.dart';
 import '../../clientes/presentation/clientes_providers.dart';
-import '../../clientes/presentation/widgets/sale_customer_picker_dialog.dart';
-import '../../clientes/presentation/widgets/sale_customer_selector_tile.dart';
 import '../../configuracion/data/configuracion_local_datasource.dart';
 import '../../configuracion/presentation/configuracion_providers.dart';
 import '../../inventario/data/inventario_local_datasource.dart';
@@ -74,9 +73,9 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
   bool _loading = true;
   bool _posting = false;
   bool _closingSession = false;
-  bool _showingIpvSheet = false;
+  final bool _showingIpvSheet = false;
   bool _redirectingToTpv = false;
-  ClienteListItem? _selectedCustomer;
+  PosSelectedCustomer? _selectedCustomer;
 
   @override
   void initState() {
@@ -328,11 +327,15 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
   }
 
   bool _matchesTerminalCurrency(Product product) {
+    return _matchesTerminalCurrencyCode(product.currencyCode);
+  }
+
+  bool _matchesTerminalCurrencyCode(String currencyCode) {
     final String terminalCurrency = _terminalCurrencyCode.trim().toUpperCase();
     if (terminalCurrency.isEmpty) {
       return true;
     }
-    final String productCurrency = product.currencyCode.trim().toUpperCase();
+    final String productCurrency = currencyCode.trim().toUpperCase();
     return productCurrency == terminalCurrency;
   }
 
@@ -519,6 +522,32 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     });
   }
 
+  void _setQty(String productId, double nextQtyRaw) {
+    if (!nextQtyRaw.isFinite) {
+      return;
+    }
+    final double nextQty = nextQtyRaw < 0 ? 0 : nextQtyRaw;
+    if (!_allowNegativeStock) {
+      final double stock = _stockByProductId[productId] ?? 0;
+      if (nextQty > stock + 0.000001) {
+        final Product? product = _findProductById(productId);
+        if (product != null) {
+          _show(
+            'Stock insuficiente para ${product.name}. Disponible: ${_formatQty(stock)}',
+          );
+        }
+        return;
+      }
+    }
+    setState(() {
+      if (nextQty <= 0) {
+        _qtyByProductId.remove(productId);
+      } else {
+        _qtyByProductId[productId] = nextQty;
+      }
+    });
+  }
+
   Future<void> _scanAndAddProduct() async {
     if (_loading || _posting) {
       return;
@@ -638,30 +667,59 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       _show('El carrito esta vacio.');
       return;
     }
+    final UserSession? session = ref.read(currentSessionProvider);
 
     final List<String> methods = _terminalConfig.paymentMethods.isEmpty
         ? <String>['cash', 'card']
         : _terminalConfig.paymentMethods;
+    List<ClienteListItem> customers = const <ClienteListItem>[];
+    Set<String> onlinePaymentMethodCodes = <String>{
+      'transfer',
+      'wallet',
+    };
+    try {
+      customers = await _loadCustomersForPayment();
+    } catch (e) {
+      _show('No se pudo cargar la lista de clientes: $e');
+    }
+    try {
+      onlinePaymentMethodCodes = await ref
+          .read(configuracionLocalDataSourceProvider)
+          .loadOnlinePaymentMethodCodes();
+    } catch (_) {}
+    if (!mounted) {
+      return;
+    }
 
-    final PosPaymentResult? result = await showDialog<PosPaymentResult>(
-      context: context,
-      builder: (BuildContext context) {
-        return PosPaymentDialog(
-          cartLines: lines
-              .map((_CartLine line) =>
-                  PosCartLine(product: line.product, qty: line.qty))
-              .toList(),
-          currencySymbol: _currencySymbol,
-          paymentMethods: methods,
-          paymentMethodLabel: _paymentMethodLabel,
-          stockByProductId: _stockByProductId,
-          allowNegativeStock: _allowNegativeStock,
-        );
-      },
+    final PosPaymentResult? result =
+        await Navigator.of(context).push<PosPaymentResult>(
+      MaterialPageRoute<PosPaymentResult>(
+        fullscreenDialog: true,
+        builder: (BuildContext context) {
+          return PosPaymentDialog(
+            cartLines: lines
+                .map((_CartLine line) =>
+                    PosCartLine(product: line.product, qty: line.qty))
+                .toList(),
+            currencySymbol: _currencySymbol,
+            paymentMethods: methods,
+            paymentMethodLabel: _paymentMethodLabel,
+            stockByProductId: _stockByProductId,
+            allowNegativeStock: _allowNegativeStock,
+            customers: customers,
+            onlinePaymentMethodCodes: onlinePaymentMethodCodes,
+            selectedCustomer: _selectedCustomer,
+            canCreateCustomer:
+                session?.hasPermission(AppPermissionKeys.customersManage) ??
+                    false,
+            reloadCustomers: _loadCustomersForPayment,
+          );
+        },
+      ),
     );
 
     if (result == null ||
-        result.paymentByMethod.isEmpty ||
+        result.paymentLines.isEmpty ||
         result.cartLines.isEmpty) {
       return;
     }
@@ -670,11 +728,14 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
         .map((PosCartLine line) =>
             _CartLine(product: line.product, qty: line.qty))
         .toList();
+    if (mounted) {
+      setState(() => _selectedCustomer = result.selectedCustomer);
+    }
     _applyCartLinesFromPayment(finalLines);
 
     await _submitSale(
       discountCents: 0,
-      paymentByMethod: result.paymentByMethod,
+      paymentLines: result.paymentLines,
       linesOverride: finalLines,
     );
   }
@@ -697,7 +758,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
 
   Future<void> _submitSale({
     required int discountCents,
-    required Map<String, int> paymentByMethod,
+    required List<PosPaymentLine> paymentLines,
     List<_CartLine>? linesOverride,
   }) async {
     final session = ref.read(currentSessionProvider);
@@ -729,9 +790,9 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     }
     final int totalCents = _totalFromLines(lines, discountCents);
 
-    final int paymentsTotal = paymentByMethod.values.fold<int>(
+    final int paymentsTotal = paymentLines.fold<int>(
       0,
-      (int sum, int value) => sum + value,
+      (int sum, PosPaymentLine value) => sum + value.amountCents,
     );
     if (paymentsTotal != totalCents) {
       _show('La suma de pagos no coincide con el total de la venta.');
@@ -756,10 +817,13 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       terminalId: _terminalId!,
       terminalSessionId: _openSessionId!,
       items: items,
-      payments: paymentByMethod.entries
+      payments: paymentLines
           .map(
-            (MapEntry<String, int> entry) =>
-                PaymentInput(method: entry.key, amountCents: entry.value),
+            (PosPaymentLine line) => PaymentInput(
+              method: line.method,
+              amountCents: line.amountCents,
+              transactionId: line.transactionId,
+            ),
           )
           .toList(),
       discountCents: discountCents,
@@ -784,6 +848,8 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
           terminalName: _terminalName ?? '',
           warehouseName: _warehouseName ?? '',
           currencySymbol: _currencySymbol,
+          customerName: _selectedCustomer?.fullName,
+          customerCode: _selectedCustomer?.code,
           lines: lines
               .map(
                 (_CartLine line) => SaleReceiptLine(
@@ -799,11 +865,13 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
           taxCents: taxCents,
           discountCents: discountCents,
           totalCents: totalCents,
-          payments: paymentByMethod.entries
+          payments: paymentLines
               .map(
-                (MapEntry<String, int> entry) => ReceiptPayment(
-                  method: _paymentMethodLabel(entry.key),
-                  amountCents: entry.value,
+                (PosPaymentLine line) => ReceiptPayment(
+                  method: (line.transactionId ?? '').trim().isEmpty
+                      ? _paymentMethodLabel(line.method)
+                      : '${_paymentMethodLabel(line.method)} • TX: ${line.transactionId!.trim()}',
+                  amountCents: line.amountCents,
                 ),
               )
               .toList(),
@@ -830,45 +898,8 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     }
   }
 
-  Future<void> _selectCustomerForSale() async {
-    if (_posting) {
-      return;
-    }
-    try {
-      final List<ClienteListItem> customers =
-          await ref.read(clientesLocalDataSourceProvider).listClients(
-                limit: 300,
-              );
-      if (!mounted) {
-        return;
-      }
-      if (customers.isEmpty) {
-        _show('No hay clientes registrados.');
-        return;
-      }
-      final ClienteListItem? selected = await showDialog<ClienteListItem>(
-        context: context,
-        builder: (BuildContext context) {
-          return SaleCustomerPickerDialog(
-            customers: customers,
-            initialSelectedId: _selectedCustomer?.id,
-          );
-        },
-      );
-      if (!mounted || selected == null) {
-        return;
-      }
-      setState(() => _selectedCustomer = selected);
-    } catch (e) {
-      _show('No se pudo cargar la lista de clientes: $e');
-    }
-  }
-
-  void _clearSelectedCustomer() {
-    if (_posting || _selectedCustomer == null || !mounted) {
-      return;
-    }
-    setState(() => _selectedCustomer = null);
+  Future<List<ClienteListItem>> _loadCustomersForPayment() {
+    return ref.read(clientesLocalDataSourceProvider).listClients(limit: 300);
   }
 
   Future<void> _showReceiptDialog(SaleReceipt receipt) async {
@@ -892,10 +923,15 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     }
     final InventarioLocalDataSource inventarioDs =
         ref.read(inventarioLocalDataSourceProvider);
-    final List<InventoryView> adjustRows =
+    final List<InventoryView> baseRows =
         await inventarioDs.listByWarehouse(_warehouseId!);
+    final List<InventoryView> adjustRows = baseRows
+        .where((InventoryView row) =>
+            _matchesTerminalCurrencyCode(row.currencyCode))
+        .toList(growable: false);
     if (adjustRows.isEmpty) {
-      _show('No hay productos para ajustar.');
+      _show(
+          'No hay productos en ${_terminalCurrencyCode.trim().toUpperCase()} para ajustar.');
       return;
     }
     final List<InventoryMovementReason> entryReasons =
@@ -922,6 +958,14 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
           entryReasons: entryReasons,
           outputReasons: outputReasons,
           currencySymbol: _currencySymbol,
+          loadAdjustRowsForWarehouse: (String warehouseId) async {
+            final List<InventoryView> rows =
+                await inventarioDs.listByWarehouse(warehouseId);
+            return rows
+                .where((InventoryView row) =>
+                    _matchesTerminalCurrencyCode(row.currencyCode))
+                .toList(growable: false);
+          },
         );
       },
     );
@@ -1057,6 +1101,9 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       for (final String method in _terminalConfig.paymentMethods)
         method: expectedByMethod[method] ?? 0,
     };
+    if (!mounted) {
+      return;
+    }
     final CloseSessionResult? confirm = await showDialog<CloseSessionResult>(
       context: context,
       builder: (BuildContext context) {
@@ -1079,10 +1126,6 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     final int totalCents = confirm.totalCents;
     final Map<int, int> breakdown = confirm.breakdown;
     final String closeNoteText = confirm.note;
-    if (breakdown.isEmpty) {
-      _show('Debes ingresar al menos una denominacion para cerrar el turno.');
-      return;
-    }
 
     if (mounted) {
       setState(() => _closingSession = true);
@@ -1254,65 +1297,62 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       ],
       floatingActionButton: null,
       body: license.canSell
-          ? (_loading
-              ? const Center(child: CircularProgressIndicator())
-              : Column(
-                  children: <Widget>[
-                    PosStoreInfoBar(
-                      terminalName: _terminalName,
-                      open: _openSessionId != null,
-                      sellerName: _sellerName,
-                    ),
-                    Expanded(
-                      child: Column(
-                        children: <Widget>[
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                            child: PosSearchBar(
-                              controller: _searchCtrl,
-                              onScanTap: _scanAndAddProduct,
-                              categories: _categories,
-                              selectedCategory: _selectedCategory,
-                              onCategoryChanged: _onCategoryChanged,
-                            ),
+          ? GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : Column(
+                      children: <Widget>[
+                        PosStoreInfoBar(
+                          terminalName: _terminalName,
+                          open: _openSessionId != null,
+                          sellerName: _sellerName,
+                        ),
+                        Expanded(
+                          child: Column(
+                            children: <Widget>[
+                              Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                                child: PosSearchBar(
+                                  controller: _searchCtrl,
+                                  onScanTap: _scanAndAddProduct,
+                                  categories: _categories,
+                                  selectedCategory: _selectedCategory,
+                                  onCategoryChanged: _onCategoryChanged,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Expanded(
+                                child: PosProductsGrid(
+                                  products: _visibleProducts,
+                                  qtyByProductId: _qtyByProductId,
+                                  stockByProductId: _stockByProductId,
+                                  currencySymbol: _currencySymbol,
+                                  emptyMessage: _emptyProductsMessage(),
+                                  isPosting: _posting,
+                                  onQtyChanged: _changeQty,
+                                  onQtySet: _setQty,
+                                ),
+                              ),
+                            ],
                           ),
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                            child: SaleCustomerSelectorTile(
-                              selectedCustomer: _selectedCustomer,
-                              enabled: !_posting,
-                              onSelect: _selectCustomerForSale,
-                              onClear: _clearSelectedCustomer,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Expanded(
-                            child: PosProductsGrid(
-                              products: _visibleProducts,
-                              qtyByProductId: _qtyByProductId,
-                              stockByProductId: _stockByProductId,
-                              currencySymbol: _currencySymbol,
-                              emptyMessage: _emptyProductsMessage(),
-                              isPosting: _posting,
-                              onQtyChanged: _changeQty,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                        PosBottomFooter(
+                          itemCount: _qtyByProductId.values
+                              .fold<double>(
+                                  0, (double sum, double qty) => sum + qty)
+                              .toInt(),
+                          total: _computeTotal(),
+                          currencySymbol: _currencySymbol,
+                          onPayTap: _qtyByProductId.values.any((q) => q > 0)
+                              ? _openPaymentSheet
+                              : null,
+                        ),
+                      ],
                     ),
-                    PosBottomFooter(
-                      itemCount: _qtyByProductId.values
-                          .fold<double>(
-                              0, (double sum, double qty) => sum + qty)
-                          .toInt(),
-                      total: _computeTotal(),
-                      currencySymbol: _currencySymbol,
-                      onPayTap: _qtyByProductId.values.any((q) => q > 0)
-                          ? _openPaymentSheet
-                          : null,
-                    ),
-                  ],
-                ))
+            )
           : _buildLicenseBlockedBody(license.message),
     );
   }

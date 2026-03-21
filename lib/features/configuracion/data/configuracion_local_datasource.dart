@@ -293,6 +293,40 @@ class AppCurrencyConfig {
   }
 }
 
+class AppPaymentMethodSetting {
+  const AppPaymentMethodSetting({
+    required this.code,
+    required this.isOnline,
+  });
+
+  final String code;
+  final bool isOnline;
+
+  factory AppPaymentMethodSetting.fromJson(Map<String, Object?> json) {
+    return AppPaymentMethodSetting(
+      code: (json['code'] as String? ?? '').trim().toLowerCase(),
+      isOnline: json['isOnline'] == true,
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'code': code,
+      'isOnline': isOnline,
+    };
+  }
+
+  AppPaymentMethodSetting copyWith({
+    String? code,
+    bool? isOnline,
+  }) {
+    return AppPaymentMethodSetting(
+      code: code ?? this.code,
+      isOnline: isOnline ?? this.isOnline,
+    );
+  }
+}
+
 class AppConfig {
   const AppConfig({
     required this.businessName,
@@ -349,8 +383,17 @@ class ConfiguracionLocalDataSource {
   static const String _kCurrencyConfigJson = 'currency_config_json_v1';
   static const String _kAllowNegativeStock = 'allow_negative_stock';
   static const String _kThemePreference = 'theme_preference';
+  static const String _kPaymentMethodsConfigJson =
+      'payment_methods_config_json_v1';
   static const String _kDashboardWidgetsPrefix =
       'dashboard_widgets_visible_v1::';
+  static const List<AppPaymentMethodSetting> _defaultPaymentMethods =
+      <AppPaymentMethodSetting>[
+    AppPaymentMethodSetting(code: 'cash', isOnline: false),
+    AppPaymentMethodSetting(code: 'card', isOnline: false),
+    AppPaymentMethodSetting(code: 'transfer', isOnline: true),
+    AppPaymentMethodSetting(code: 'wallet', isOnline: true),
+  ];
 
   Future<AppConfig> loadConfig() async {
     final List<AppSetting> rows = await (_db.select(_db.appSettings)
@@ -413,6 +456,58 @@ class ConfiguracionLocalDataSource {
   Future<AppCurrencyConfig> loadCurrencyConfig() async {
     final AppConfig config = await loadConfig();
     return config.currencyConfig;
+  }
+
+  Future<List<AppPaymentMethodSetting>> loadPaymentMethodSettings() async {
+    final AppSetting? row = await (_db.select(_db.appSettings)
+          ..where(
+              (AppSettings tbl) => tbl.key.equals(_kPaymentMethodsConfigJson)))
+        .getSingleOrNull();
+    if (row == null || row.value.trim().isEmpty) {
+      return _defaultPaymentMethods;
+    }
+    try {
+      final Object? decoded = jsonDecode(row.value);
+      if (decoded is! List) {
+        return _defaultPaymentMethods;
+      }
+      final List<AppPaymentMethodSetting> parsed = <AppPaymentMethodSetting>[];
+      for (final Object? item in decoded) {
+        if (item is Map) {
+          parsed.add(
+            AppPaymentMethodSetting.fromJson(item.cast<String, Object?>()),
+          );
+        }
+      }
+      return _normalizePaymentMethodSettings(parsed);
+    } catch (_) {
+      return _defaultPaymentMethods;
+    }
+  }
+
+  Future<void> savePaymentMethodSettings(
+    List<AppPaymentMethodSetting> methods,
+  ) async {
+    final List<AppPaymentMethodSetting> normalized =
+        _normalizePaymentMethodSettings(methods);
+    await _upsert(
+      _kPaymentMethodsConfigJson,
+      jsonEncode(
+        normalized
+            .map((AppPaymentMethodSetting method) => method.toJson())
+            .toList(growable: false),
+      ),
+    );
+  }
+
+  Future<Set<String>> loadOnlinePaymentMethodCodes() async {
+    final List<AppPaymentMethodSetting> settings =
+        await loadPaymentMethodSettings();
+    return settings
+        .where((AppPaymentMethodSetting row) => row.isOnline)
+        .map((AppPaymentMethodSetting row) => row.code.trim().toLowerCase())
+        .where((String code) => code.isNotEmpty)
+        .toSet();
   }
 
   Future<DashboardWidgetLayout> loadDashboardWidgetLayout({
@@ -512,6 +607,39 @@ class ConfiguracionLocalDataSource {
             updatedAt: Value(DateTime.now()),
           ),
         );
+  }
+
+  List<AppPaymentMethodSetting> _normalizePaymentMethodSettings(
+    List<AppPaymentMethodSetting> methods,
+  ) {
+    final Map<String, AppPaymentMethodSetting> byCode =
+        <String, AppPaymentMethodSetting>{};
+    for (final AppPaymentMethodSetting raw in methods) {
+      final String code = raw.code.trim().toLowerCase();
+      if (code.isEmpty || byCode.containsKey(code)) {
+        continue;
+      }
+      byCode[code] = AppPaymentMethodSetting(
+        code: code,
+        isOnline: raw.isOnline,
+      );
+    }
+    for (final AppPaymentMethodSetting def in _defaultPaymentMethods) {
+      byCode.putIfAbsent(def.code, () => def);
+    }
+    final List<AppPaymentMethodSetting> ordered = <AppPaymentMethodSetting>[];
+    for (final AppPaymentMethodSetting def in _defaultPaymentMethods) {
+      final AppPaymentMethodSetting? row = byCode.remove(def.code);
+      if (row != null) {
+        ordered.add(row);
+      }
+    }
+    final List<AppPaymentMethodSetting> extras = byCode.values.toList()
+      ..sort((AppPaymentMethodSetting a, AppPaymentMethodSetting b) {
+        return a.code.compareTo(b.code);
+      });
+    ordered.addAll(extras);
+    return ordered;
   }
 
   DashboardWidgetLayout _decodeDashboardWidgetLayout(String raw) {

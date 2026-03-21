@@ -494,6 +494,75 @@ class AuthLocalDataSource {
         .toList(growable: false);
   }
 
+  Future<AuthUserSummary?> getUserSummaryById(String userId) async {
+    final String cleanUserId = userId.trim();
+    if (cleanUserId.isEmpty) {
+      return null;
+    }
+    await _ensureCoreAccessRecords();
+    final User? user = await (_db.select(_db.users)
+          ..where((Users tbl) => tbl.id.equals(cleanUserId)))
+        .getSingleOrNull();
+    if (user == null) {
+      return null;
+    }
+
+    final List<QueryRow> roleRows = await _db.customSelect(
+      '''
+      SELECT
+        ur.role_id AS role_id,
+        r.name AS role_name
+      FROM user_roles ur
+      LEFT JOIN roles r ON r.id = ur.role_id
+      WHERE ur.user_id = ?
+      ORDER BY r.name ASC
+      ''',
+      variables: <Variable<Object>>[Variable<String>(cleanUserId)],
+    ).get();
+    final Set<String> roleIds = <String>{};
+    final Set<String> roleNames = <String>{};
+    for (final QueryRow row in roleRows) {
+      final String roleId = (row.readNullable<String>('role_id') ?? '').trim();
+      final String roleName =
+          (row.readNullable<String>('role_name') ?? '').trim();
+      if (roleId.isNotEmpty) {
+        roleIds.add(roleId);
+      }
+      if (roleName.isNotEmpty) {
+        roleNames.add(roleName);
+      }
+    }
+
+    final QueryRow? employeeRow = await _db.customSelect(
+      '''
+      SELECT
+        e.name AS employee_name,
+        e.image_path AS employee_image_path
+      FROM employees e
+      WHERE e.associated_user_id = ?
+        AND e.is_active = 1
+      ORDER BY COALESCE(e.updated_at, e.created_at) DESC, e.created_at DESC
+      LIMIT 1
+      ''',
+      variables: <Variable<Object>>[Variable<String>(cleanUserId)],
+    ).getSingleOrNull();
+
+    return AuthUserSummary(
+      id: user.id,
+      username: user.username,
+      isActive: user.isActive,
+      isDefaultAdmin: user.username.toLowerCase() == 'admin',
+      roleIds: roleIds.toList(growable: false),
+      roleNames: roleNames.toList(growable: false),
+      employeeName: _normalizeOptional(
+        employeeRow?.readNullable<String>('employee_name'),
+      ),
+      employeeImagePath: _normalizeOptional(
+        employeeRow?.readNullable<String>('employee_image_path'),
+      ),
+    );
+  }
+
   Future<String> createUserWithRoles({
     required String username,
     required String password,

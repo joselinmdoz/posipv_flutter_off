@@ -45,15 +45,17 @@ class ClientDetailProfileCard extends StatelessWidget {
             runSpacing: 8,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: <Widget>[
-              Text(
-                'ID: ${client.code}',
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: Color(0xFF48546A),
-                  fontWeight: FontWeight.w500,
+              if ((client.identityNumber ?? '').trim().isNotEmpty) ...<Widget>[
+                Text(
+                  'Identidad: ${client.identityNumber!.trim()}',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF48546A),
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              ),
-              const Text('•', style: TextStyle(color: Color(0xFF94A3B8))),
+                const Text('•', style: TextStyle(color: Color(0xFF94A3B8))),
+              ],
               Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 4),

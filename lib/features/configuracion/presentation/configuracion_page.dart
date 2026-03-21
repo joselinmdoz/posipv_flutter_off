@@ -14,6 +14,7 @@ import 'gestion_datos_page.dart';
 import 'widgets/business_name_dialog.dart';
 import 'widgets/config_option_tile.dart';
 import 'widgets/config_section_label.dart';
+import 'widgets/payment_methods_config_dialog.dart';
 
 class ConfiguracionPage extends ConsumerStatefulWidget {
   const ConfiguracionPage({super.key});
@@ -213,6 +214,38 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
     await _save(next, okMessage: 'Configuración de transacciones guardada.');
   }
 
+  Future<void> _openPaymentMethodsDialog() async {
+    try {
+      final ConfiguracionLocalDataSource ds =
+          ref.read(configuracionLocalDataSourceProvider);
+      final List<AppPaymentMethodSetting> current =
+          await ds.loadPaymentMethodSettings();
+      if (!mounted) {
+        return;
+      }
+      final List<AppPaymentMethodSetting>? updated =
+          await showDialog<List<AppPaymentMethodSetting>>(
+        context: context,
+        builder: (BuildContext context) {
+          return PaymentMethodsConfigDialog(initialMethods: current);
+        },
+      );
+      if (updated == null || !mounted) {
+        return;
+      }
+      await ds.savePaymentMethodSettings(updated);
+      if (!mounted) {
+        return;
+      }
+      _show('Métodos de pago actualizados.');
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      _show('No se pudo guardar los métodos de pago: $e');
+    }
+  }
+
   Future<void> _openDataManagement() {
     return Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
@@ -330,6 +363,12 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
                       ? 'Stock negativo permitido'
                       : 'Stock negativo bloqueado',
                   onTap: _saving ? null : _openTransactionsDialog,
+                ),
+                ConfigOptionTile(
+                  icon: Icons.payments_outlined,
+                  title: 'Metodos de pago',
+                  subtitle: 'Define cuales son pagos online',
+                  onTap: canManageData ? _openPaymentMethodsDialog : null,
                 ),
                 ConfigOptionTile(
                   icon: Icons.calendar_month_outlined,

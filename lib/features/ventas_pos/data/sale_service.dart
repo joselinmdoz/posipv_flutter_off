@@ -267,6 +267,9 @@ class SaleService {
                   saleId: saleId,
                   method: payment.method,
                   amountCents: payment.amountCents,
+                  transactionId: Value(
+                    _normalizeOptional(payment.transactionId),
+                  ),
                   sourceCurrencyCode: Value(payment.sourceCurrencyCode),
                   sourceAmountCents: Value(payment.sourceAmountCents),
                 ),
@@ -310,6 +313,14 @@ class SaleService {
 
   String _normalizeCurrencyCode(String? value) {
     return (value ?? '').trim().toUpperCase();
+  }
+
+  String? _normalizeOptional(String? value) {
+    final String clean = (value ?? '').trim();
+    if (clean.isEmpty) {
+      return null;
+    }
+    return clean;
   }
 
   String _buildFolio(DateTime now) {

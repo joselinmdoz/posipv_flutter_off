@@ -162,7 +162,7 @@ class _SaleCustomerPickerDialogState extends State<SaleCustomerPickerDialog> {
                                                           .isNotEmpty ??
                                                       false)
                                                   ? customer.email!
-                                                  : customer.code,
+                                                  : 'Cliente',
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(

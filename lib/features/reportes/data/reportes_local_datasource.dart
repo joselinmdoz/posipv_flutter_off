@@ -48,6 +48,66 @@ class TopProductStat {
   final int totalCents;
 }
 
+enum SalesAnalyticsGranularity { day, week, month, year }
+
+class SalesTrendPointStat {
+  const SalesTrendPointStat({
+    required this.bucketStart,
+    required this.label,
+    required this.totalCents,
+    required this.ordersCount,
+  });
+
+  final DateTime bucketStart;
+  final String label;
+  final int totalCents;
+  final int ordersCount;
+}
+
+class AnalyticsTopProductStat {
+  const AnalyticsTopProductStat({
+    required this.productId,
+    required this.productName,
+    required this.sku,
+    required this.imagePath,
+    required this.qty,
+    required this.totalCents,
+    required this.deltaPercent,
+  });
+
+  final String productId;
+  final String productName;
+  final String sku;
+  final String? imagePath;
+  final double qty;
+  final int totalCents;
+  final double deltaPercent;
+}
+
+class SalesAnalyticsSnapshot {
+  const SalesAnalyticsSnapshot({
+    required this.fromDate,
+    required this.toDate,
+    required this.granularity,
+    required this.totalRevenueCents,
+    required this.avgOrderCents,
+    required this.totalRevenueDeltaPercent,
+    required this.avgOrderDeltaPercent,
+    required this.trend,
+    required this.topProducts,
+  });
+
+  final DateTime fromDate;
+  final DateTime toDate;
+  final SalesAnalyticsGranularity granularity;
+  final int totalRevenueCents;
+  final int avgOrderCents;
+  final double totalRevenueDeltaPercent;
+  final double avgOrderDeltaPercent;
+  final List<SalesTrendPointStat> trend;
+  final List<AnalyticsTopProductStat> topProducts;
+}
+
 class RecentSaleStat {
   const RecentSaleStat({
     required this.saleId,
@@ -234,6 +294,8 @@ class ReportesLocalDataSource {
   final OfflineLicenseService _licenseService;
   static const String _demoIpvExportBlockedMessage =
       'Modo demo: la exportacion de IPV (CSV/PDF) esta disponible solo con licencia activa.';
+  static const String _demoAnalyticsExportBlockedMessage =
+      'Modo demo: la exportacion de analiticas esta disponible solo con licencia activa.';
 
   Future<HomeOperationalInsight> loadHomeOperationalInsight({
     double lowStockThreshold = 5,
@@ -358,6 +420,63 @@ class ReportesLocalDataSource {
     );
   }
 
+  Future<SalesAnalyticsSnapshot> loadSalesAnalytics({
+    required DateTime fromDate,
+    required DateTime toDate,
+    required SalesAnalyticsGranularity granularity,
+    int topLimit = 5,
+  }) async {
+    final DateTime from = _startOfDay(fromDate);
+    DateTime toExclusive = _startOfDay(toDate).add(const Duration(days: 1));
+    if (!toExclusive.isAfter(from)) {
+      toExclusive = from.add(const Duration(days: 1));
+    }
+    final Duration span = toExclusive.difference(from);
+    final DateTime prevFrom = from.subtract(span);
+    final DateTime prevToExclusive = from;
+
+    final List<Sale> currentSales =
+        await _postedSalesBetween(from, toExclusive);
+    final List<Sale> previousSales =
+        await _postedSalesBetween(prevFrom, prevToExclusive);
+    final int currentTotal = currentSales.fold<int>(
+      0,
+      (int sum, Sale row) => sum + row.totalCents,
+    );
+    final int previousTotal = previousSales.fold<int>(
+      0,
+      (int sum, Sale row) => sum + row.totalCents,
+    );
+    final int currentAvg =
+        currentSales.isEmpty ? 0 : (currentTotal / currentSales.length).round();
+    final int previousAvg = previousSales.isEmpty
+        ? 0
+        : (previousTotal / previousSales.length).round();
+
+    final List<SalesTrendPointStat> trend =
+        _buildTrend(currentSales, granularity);
+    final List<AnalyticsTopProductStat> topProducts =
+        await _topProductsForRange(
+      from: from,
+      toExclusive: toExclusive,
+      prevFrom: prevFrom,
+      prevToExclusive: prevToExclusive,
+      limit: topLimit < 1 ? 1 : topLimit,
+    );
+
+    return SalesAnalyticsSnapshot(
+      fromDate: from,
+      toDate: toExclusive.subtract(const Duration(days: 1)),
+      granularity: granularity,
+      totalRevenueCents: currentTotal,
+      avgOrderCents: currentAvg,
+      totalRevenueDeltaPercent: _pctChange(currentTotal, previousTotal),
+      avgOrderDeltaPercent: _pctChange(currentAvg, previousAvg),
+      trend: trend,
+      topProducts: topProducts,
+    );
+  }
+
   Future<List<Sale>> _postedSalesSince(DateTime from) {
     return (_db.select(_db.sales)
           ..where(
@@ -372,6 +491,25 @@ class ReportesLocalDataSource {
                 tbl.totalCents.isNotNull() &
                 tbl.createdAt.isNotNull() &
                 tbl.createdAt.isBiggerOrEqualValue(from),
+          ))
+        .get();
+  }
+
+  Future<List<Sale>> _postedSalesBetween(DateTime from, DateTime toExclusive) {
+    return (_db.select(_db.sales)
+          ..where(
+            (Sales tbl) =>
+                tbl.status.equals('posted') &
+                tbl.id.isNotNull() &
+                tbl.folio.isNotNull() &
+                tbl.warehouseId.isNotNull() &
+                tbl.cashierId.isNotNull() &
+                tbl.subtotalCents.isNotNull() &
+                tbl.taxCents.isNotNull() &
+                tbl.totalCents.isNotNull() &
+                tbl.createdAt.isNotNull() &
+                tbl.createdAt.isBiggerOrEqualValue(from) &
+                tbl.createdAt.isSmallerThanValue(toExclusive),
           ))
         .get();
   }
@@ -479,6 +617,182 @@ class ReportesLocalDataSource {
         totalCents: (row.data['total_cents'] as num?)?.toInt() ?? 0,
       );
     }).toList();
+  }
+
+  Future<List<AnalyticsTopProductStat>> _topProductsForRange({
+    required DateTime from,
+    required DateTime toExclusive,
+    required DateTime prevFrom,
+    required DateTime prevToExclusive,
+    required int limit,
+  }) async {
+    final List<QueryRow> currentRows = await _db.customSelect(
+      '''
+      SELECT
+        si.product_id AS product_id,
+        COALESCE(p.name, si.product_id) AS product_name,
+        COALESCE(p.sku, '-') AS sku,
+        p.image_path AS image_path,
+        COALESCE(SUM(si.qty), 0) AS qty,
+        COALESCE(SUM(si.line_total_cents), 0) AS total_cents
+      FROM sale_items si
+      INNER JOIN sales s
+        ON s.id = si.sale_id
+      LEFT JOIN products p
+        ON p.id = si.product_id
+      WHERE s.status = 'posted'
+        AND s.created_at >= ?
+        AND s.created_at < ?
+      GROUP BY si.product_id, p.name, p.sku, p.image_path
+      ORDER BY total_cents DESC, qty DESC
+      LIMIT ?
+      ''',
+      variables: <Variable<Object>>[
+        Variable<DateTime>(from),
+        Variable<DateTime>(toExclusive),
+        Variable<int>(limit),
+      ],
+    ).get();
+    if (currentRows.isEmpty) {
+      return <AnalyticsTopProductStat>[];
+    }
+
+    final List<String> productIds = currentRows
+        .map((QueryRow row) => _readTextCell(row, 'product_id', fallback: ''))
+        .where((String id) => id.isNotEmpty)
+        .toList(growable: false);
+    final Map<String, int> previousTotalsByProduct = <String, int>{};
+    if (productIds.isNotEmpty) {
+      final List<QueryRow> previousRows = await _db.customSelect(
+        '''
+        SELECT
+          si.product_id AS product_id,
+          COALESCE(SUM(si.line_total_cents), 0) AS total_cents
+        FROM sale_items si
+        INNER JOIN sales s
+          ON s.id = si.sale_id
+        WHERE s.status = 'posted'
+          AND s.created_at >= ?
+          AND s.created_at < ?
+          AND si.product_id IN (${List<String>.filled(productIds.length, '?').join(', ')})
+        GROUP BY si.product_id
+        ''',
+        variables: <Variable<Object>>[
+          Variable<DateTime>(prevFrom),
+          Variable<DateTime>(prevToExclusive),
+          ...productIds.map((String id) => Variable<String>(id)),
+        ],
+      ).get();
+      for (final QueryRow row in previousRows) {
+        final String productId = _readTextCell(row, 'product_id', fallback: '');
+        if (productId.isEmpty) {
+          continue;
+        }
+        previousTotalsByProduct[productId] =
+            (row.data['total_cents'] as num?)?.toInt() ?? 0;
+      }
+    }
+
+    return currentRows.map((QueryRow row) {
+      final String productId = _readTextCell(row, 'product_id', fallback: '');
+      final int total = (row.data['total_cents'] as num?)?.toInt() ?? 0;
+      final int previous = previousTotalsByProduct[productId] ?? 0;
+      return AnalyticsTopProductStat(
+        productId: productId,
+        productName: _readTextCell(row, 'product_name', fallback: 'Producto'),
+        sku: _readTextCell(row, 'sku', fallback: '-'),
+        imagePath: row.readNullable<String>('image_path'),
+        qty: (row.data['qty'] as num?)?.toDouble() ?? 0,
+        totalCents: total,
+        deltaPercent: _pctChange(total, previous),
+      );
+    }).toList(growable: false);
+  }
+
+  List<SalesTrendPointStat> _buildTrend(
+    List<Sale> sales,
+    SalesAnalyticsGranularity granularity,
+  ) {
+    final Map<String, _TrendBucket> byKey = <String, _TrendBucket>{};
+    for (final Sale sale in sales) {
+      final DateTime dt = sale.createdAt.toLocal();
+      final DateTime bucketStart = _bucketStart(dt, granularity);
+      final String key = bucketStart.toIso8601String();
+      final _TrendBucket bucket = byKey.putIfAbsent(
+        key,
+        () => _TrendBucket(
+          bucketStart: bucketStart,
+          label: _bucketLabel(bucketStart, granularity),
+        ),
+      );
+      bucket.totalCents += sale.totalCents;
+      bucket.ordersCount += 1;
+    }
+    final List<_TrendBucket> rows = byKey.values.toList()
+      ..sort((_TrendBucket a, _TrendBucket b) {
+        return a.bucketStart.compareTo(b.bucketStart);
+      });
+    return rows
+        .map(
+          (_TrendBucket row) => SalesTrendPointStat(
+            bucketStart: row.bucketStart,
+            label: row.label,
+            totalCents: row.totalCents,
+            ordersCount: row.ordersCount,
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  DateTime _bucketStart(DateTime dt, SalesAnalyticsGranularity granularity) {
+    switch (granularity) {
+      case SalesAnalyticsGranularity.day:
+        return DateTime(dt.year, dt.month, dt.day);
+      case SalesAnalyticsGranularity.week:
+        final int diff = dt.weekday - DateTime.monday;
+        final DateTime monday = dt.subtract(Duration(days: diff));
+        return DateTime(monday.year, monday.month, monday.day);
+      case SalesAnalyticsGranularity.month:
+        return DateTime(dt.year, dt.month, 1);
+      case SalesAnalyticsGranularity.year:
+        return DateTime(dt.year, 1, 1);
+    }
+  }
+
+  String _bucketLabel(DateTime dt, SalesAnalyticsGranularity granularity) {
+    const List<String> months = <String>[
+      'Ene',
+      'Feb',
+      'Mar',
+      'Abr',
+      'May',
+      'Jun',
+      'Jul',
+      'Ago',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dic',
+    ];
+    switch (granularity) {
+      case SalesAnalyticsGranularity.day:
+        final String day = dt.day.toString().padLeft(2, '0');
+        return '$day ${months[dt.month - 1]}';
+      case SalesAnalyticsGranularity.week:
+        final String day = dt.day.toString().padLeft(2, '0');
+        return '$day ${months[dt.month - 1]}';
+      case SalesAnalyticsGranularity.month:
+        return '${months[dt.month - 1]} ${dt.year.toString().substring(2)}';
+      case SalesAnalyticsGranularity.year:
+        return dt.year.toString();
+    }
+  }
+
+  double _pctChange(int current, int previous) {
+    if (previous == 0) {
+      return current == 0 ? 0 : 100;
+    }
+    return ((current - previous) / previous) * 100;
   }
 
   Future<List<RecentSessionClosureStat>> _recentSessionClosures(
@@ -853,9 +1167,7 @@ class ReportesLocalDataSource {
           ),
     };
 
-    final Set<String> productIds = byProduct.keys.toSet();
-    final Map<String, _IpvProductSnapshot> productById =
-        await _loadIpvProductSnapshots(productIds);
+    final bool includeStartBoundary = movementStart.isAtSameMomentAs(openedAt);
 
     final List<QueryRow> movementRows = warehouseId.isEmpty
         ? <QueryRow>[]
@@ -906,7 +1218,7 @@ class ReportesLocalDataSource {
               ), 0) AS sales_qty
             FROM stock_movements sm
             WHERE sm.warehouse_id = ?
-              AND sm.created_at > ?
+              AND sm.created_at ${includeStartBoundary ? '>=' : '>'} ?
               AND sm.created_at <= ?
             GROUP BY sm.product_id
             ''',
@@ -926,6 +1238,8 @@ class ReportesLocalDataSource {
       agg.outputsQty = (row.data['outputs_qty'] as num?)?.toDouble() ?? 0;
       agg.salesQty = (row.data['sales_qty'] as num?)?.toDouble() ?? 0;
     }
+    final Map<String, _IpvProductSnapshot> productById =
+        await _loadIpvProductSnapshots(byProduct.keys.toSet());
 
     int totalAmountCents = 0;
     final List<IpvReportLineStat> lines = <IpvReportLineStat>[];
@@ -940,7 +1254,7 @@ class ReportesLocalDataSource {
       lines.add(
         IpvReportLineStat(
           productId: productId,
-          productName: product?.name ?? '-',
+          productName: product?.name ?? 'Producto',
           sku: product?.sku ?? '-',
           startQty: agg.startQty,
           entriesQty: agg.entriesQty,
@@ -998,6 +1312,91 @@ class ReportesLocalDataSource {
       ],
     ).getSingleOrNull();
     return row?.read<DateTime>('closed_at') ?? openedAt;
+  }
+
+  Future<String> exportSalesAnalyticsCsv({
+    required DateTime fromDate,
+    required DateTime toDate,
+    required SalesAnalyticsGranularity granularity,
+    required String currencySymbol,
+    int topLimit = 20,
+  }) async {
+    await _licenseService.requireFullAccess(
+      message: _demoAnalyticsExportBlockedMessage,
+    );
+    final SalesAnalyticsSnapshot snapshot = await loadSalesAnalytics(
+      fromDate: fromDate,
+      toDate: toDate,
+      granularity: granularity,
+      topLimit: topLimit,
+    );
+    final DateTime now = DateTime.now();
+    final Directory preferredBase = await _resolveDownloadsBaseDir();
+    Directory dir =
+        Directory(p.join(preferredBase.path, 'Reportes', 'Analiticas'));
+    try {
+      if (!dir.existsSync()) {
+        await dir.create(recursive: true);
+      }
+    } catch (_) {
+      final Directory docs = await getApplicationDocumentsDirectory();
+      dir = Directory(p.join(docs.path, 'exports', 'Reportes', 'Analiticas'));
+      if (!dir.existsSync()) {
+        await dir.create(recursive: true);
+      }
+    }
+
+    final String fromTag = _dayKey(snapshot.fromDate).replaceAll('-', '');
+    final String toTag = _dayKey(snapshot.toDate).replaceAll('-', '');
+    final String hh = now.hour.toString().padLeft(2, '0');
+    final String mm = now.minute.toString().padLeft(2, '0');
+    final String ss = now.second.toString().padLeft(2, '0');
+    final String fileName =
+        'analiticas_${fromTag}_${toTag}_${granularity.name}_$hh$mm$ss.csv';
+    final File file = File(p.join(dir.path, fileName));
+
+    final StringBuffer csv = StringBuffer()
+      ..writeln('Reporte,Panel de Analiticas')
+      ..writeln('Generado,${_csvCell(_formatDateTimeHuman(now))}')
+      ..writeln('Periodo,${_csvCell(_analyticsGranularityLabel(granularity))}')
+      ..writeln(
+        'Rango,${_csvCell('${_dayKey(snapshot.fromDate)} - ${_dayKey(snapshot.toDate)}')}',
+      )
+      ..writeln('Moneda,${_csvCell(currencySymbol)}')
+      ..writeln(
+        'Ingresos totales,${(snapshot.totalRevenueCents / 100).toStringAsFixed(2)}',
+      )
+      ..writeln(
+        'Pedido promedio,${(snapshot.avgOrderCents / 100).toStringAsFixed(2)}',
+      )
+      ..writeln(
+        'Variacion ingresos (%),${snapshot.totalRevenueDeltaPercent.toStringAsFixed(2)}',
+      )
+      ..writeln(
+        'Variacion ticket promedio (%),${snapshot.avgOrderDeltaPercent.toStringAsFixed(2)}',
+      )
+      ..writeln('')
+      ..writeln('Tendencia (${_analyticsGranularityLabel(granularity)})')
+      ..writeln('Etiqueta,Pedidos,Importe');
+
+    for (final SalesTrendPointStat point in snapshot.trend) {
+      csv.writeln(
+        '${_csvCell(point.label)},${point.ordersCount},${(point.totalCents / 100).toStringAsFixed(2)}',
+      );
+    }
+
+    csv
+      ..writeln('')
+      ..writeln('Productos destacados')
+      ..writeln('Producto,SKU,Cantidad,Importe,Variacion (%)');
+    for (final AnalyticsTopProductStat product in snapshot.topProducts) {
+      csv.writeln(
+        '${_csvCell(product.productName)},${_csvCell(product.sku)},${product.qty.toStringAsFixed(2)},${(product.totalCents / 100).toStringAsFixed(2)},${product.deltaPercent.toStringAsFixed(2)}',
+      );
+    }
+
+    await file.writeAsString(csv.toString(), encoding: utf8, flush: true);
+    return file.path;
   }
 
   Future<String> exportIpvReportCsv(String reportId) async {
@@ -1772,6 +2171,19 @@ class ReportesLocalDataSource {
     }
   }
 
+  String _analyticsGranularityLabel(SalesAnalyticsGranularity granularity) {
+    switch (granularity) {
+      case SalesAnalyticsGranularity.day:
+        return 'Dia';
+      case SalesAnalyticsGranularity.week:
+        return 'Semana';
+      case SalesAnalyticsGranularity.month:
+        return 'Mes';
+      case SalesAnalyticsGranularity.year:
+        return 'Ano';
+    }
+  }
+
   String _formatMoney(int cents) {
     return (cents / 100).toStringAsFixed(2);
   }
@@ -1996,4 +2408,16 @@ class _IpvProductSnapshot {
 class _DayAccumulator {
   int salesCount = 0;
   int totalCents = 0;
+}
+
+class _TrendBucket {
+  _TrendBucket({
+    required this.bucketStart,
+    required this.label,
+  });
+
+  final DateTime bucketStart;
+  final String label;
+  int totalCents = 0;
+  int ordersCount = 0;
 }

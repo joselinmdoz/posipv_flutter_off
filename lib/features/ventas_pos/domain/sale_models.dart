@@ -16,12 +16,14 @@ class PaymentInput {
   const PaymentInput({
     required this.method,
     required this.amountCents,
+    this.transactionId,
     this.sourceCurrencyCode,
     this.sourceAmountCents,
   });
 
   final String method;
   final int amountCents;
+  final String? transactionId;
   final String? sourceCurrencyCode;
   final int? sourceAmountCents;
 }

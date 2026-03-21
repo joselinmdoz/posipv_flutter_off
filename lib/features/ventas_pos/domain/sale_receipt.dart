@@ -14,6 +14,8 @@ class SaleReceipt {
     required this.totalCents,
     required this.payments,
     required this.paidCents,
+    this.customerName,
+    this.customerCode,
     this.currencySymbol = r'$',
     this.isDemoMode = false,
   });
@@ -30,6 +32,8 @@ class SaleReceipt {
   final int totalCents;
   final List<ReceiptPayment> payments;
   final int paidCents;
+  final String? customerName;
+  final String? customerCode;
   final String currencySymbol;
   final bool isDemoMode;
 }

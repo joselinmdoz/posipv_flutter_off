@@ -71,7 +71,9 @@ class SaleCustomerSelectorTile extends StatelessWidget {
                       ? 'Seleccion opcional para asociar la venta.'
                       : customer.phone?.trim().isNotEmpty == true
                           ? customer.phone!
-                          : customer.code,
+                          : customer.email?.trim().isNotEmpty == true
+                              ? customer.email!
+                              : 'Cliente seleccionado',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(

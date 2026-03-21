@@ -786,7 +786,7 @@ class _MovimientosInventarioPageState
     final license = ref.watch(currentLicenseStatusProvider);
 
     return AppScaffold(
-      title: 'Inventario',
+      title: 'Movimientos',
       currentRoute: '/inventario-movimientos',
       onRefresh: _bootstrap,
       showTopTabs: false,

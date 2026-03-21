@@ -6341,6 +6341,12 @@ class $CustomersTable extends Customers
   late final GeneratedColumn<String> fullName = GeneratedColumn<String>(
       'full_name', aliasedName, false,
       type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _identityNumberMeta =
+      const VerificationMeta('identityNumber');
+  @override
+  late final GeneratedColumn<String> identityNumber = GeneratedColumn<String>(
+      'identity_number', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   static const VerificationMeta _phoneMeta = const VerificationMeta('phone');
   @override
   late final GeneratedColumn<String> phone = GeneratedColumn<String>(
@@ -6437,6 +6443,7 @@ class $CustomersTable extends Customers
         id,
         code,
         fullName,
+        identityNumber,
         phone,
         email,
         address,
@@ -6477,6 +6484,12 @@ class $CustomersTable extends Customers
           fullName.isAcceptableOrUnknown(data['full_name']!, _fullNameMeta));
     } else if (isInserting) {
       context.missing(_fullNameMeta);
+    }
+    if (data.containsKey('identity_number')) {
+      context.handle(
+          _identityNumberMeta,
+          identityNumber.isAcceptableOrUnknown(
+              data['identity_number']!, _identityNumberMeta));
     }
     if (data.containsKey('phone')) {
       context.handle(
@@ -6553,6 +6566,8 @@ class $CustomersTable extends Customers
           .read(DriftSqlType.string, data['${effectivePrefix}code'])!,
       fullName: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}full_name'])!,
+      identityNumber: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}identity_number']),
       phone: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}phone']),
       email: attachedDatabase.typeMapping
@@ -6592,6 +6607,7 @@ class Customer extends DataClass implements Insertable<Customer> {
   final String id;
   final String code;
   final String fullName;
+  final String? identityNumber;
   final String? phone;
   final String? email;
   final String? address;
@@ -6609,6 +6625,7 @@ class Customer extends DataClass implements Insertable<Customer> {
       {required this.id,
       required this.code,
       required this.fullName,
+      this.identityNumber,
       this.phone,
       this.email,
       this.address,
@@ -6628,6 +6645,9 @@ class Customer extends DataClass implements Insertable<Customer> {
     map['id'] = Variable<String>(id);
     map['code'] = Variable<String>(code);
     map['full_name'] = Variable<String>(fullName);
+    if (!nullToAbsent || identityNumber != null) {
+      map['identity_number'] = Variable<String>(identityNumber);
+    }
     if (!nullToAbsent || phone != null) {
       map['phone'] = Variable<String>(phone);
     }
@@ -6663,6 +6683,9 @@ class Customer extends DataClass implements Insertable<Customer> {
       id: Value(id),
       code: Value(code),
       fullName: Value(fullName),
+      identityNumber: identityNumber == null && nullToAbsent
+          ? const Value.absent()
+          : Value(identityNumber),
       phone:
           phone == null && nullToAbsent ? const Value.absent() : Value(phone),
       email:
@@ -6698,6 +6721,7 @@ class Customer extends DataClass implements Insertable<Customer> {
       id: serializer.fromJson<String>(json['id']),
       code: serializer.fromJson<String>(json['code']),
       fullName: serializer.fromJson<String>(json['fullName']),
+      identityNumber: serializer.fromJson<String?>(json['identityNumber']),
       phone: serializer.fromJson<String?>(json['phone']),
       email: serializer.fromJson<String?>(json['email']),
       address: serializer.fromJson<String?>(json['address']),
@@ -6721,6 +6745,7 @@ class Customer extends DataClass implements Insertable<Customer> {
       'id': serializer.toJson<String>(id),
       'code': serializer.toJson<String>(code),
       'fullName': serializer.toJson<String>(fullName),
+      'identityNumber': serializer.toJson<String?>(identityNumber),
       'phone': serializer.toJson<String?>(phone),
       'email': serializer.toJson<String?>(email),
       'address': serializer.toJson<String?>(address),
@@ -6741,6 +6766,7 @@ class Customer extends DataClass implements Insertable<Customer> {
           {String? id,
           String? code,
           String? fullName,
+          Value<String?> identityNumber = const Value.absent(),
           Value<String?> phone = const Value.absent(),
           Value<String?> email = const Value.absent(),
           Value<String?> address = const Value.absent(),
@@ -6758,6 +6784,8 @@ class Customer extends DataClass implements Insertable<Customer> {
         id: id ?? this.id,
         code: code ?? this.code,
         fullName: fullName ?? this.fullName,
+        identityNumber:
+            identityNumber.present ? identityNumber.value : this.identityNumber,
         phone: phone.present ? phone.value : this.phone,
         email: email.present ? email.value : this.email,
         address: address.present ? address.value : this.address,
@@ -6777,6 +6805,9 @@ class Customer extends DataClass implements Insertable<Customer> {
       id: data.id.present ? data.id.value : this.id,
       code: data.code.present ? data.code.value : this.code,
       fullName: data.fullName.present ? data.fullName.value : this.fullName,
+      identityNumber: data.identityNumber.present
+          ? data.identityNumber.value
+          : this.identityNumber,
       phone: data.phone.present ? data.phone.value : this.phone,
       email: data.email.present ? data.email.value : this.email,
       address: data.address.present ? data.address.value : this.address,
@@ -6805,6 +6836,7 @@ class Customer extends DataClass implements Insertable<Customer> {
           ..write('id: $id, ')
           ..write('code: $code, ')
           ..write('fullName: $fullName, ')
+          ..write('identityNumber: $identityNumber, ')
           ..write('phone: $phone, ')
           ..write('email: $email, ')
           ..write('address: $address, ')
@@ -6827,6 +6859,7 @@ class Customer extends DataClass implements Insertable<Customer> {
       id,
       code,
       fullName,
+      identityNumber,
       phone,
       email,
       address,
@@ -6847,6 +6880,7 @@ class Customer extends DataClass implements Insertable<Customer> {
           other.id == this.id &&
           other.code == this.code &&
           other.fullName == this.fullName &&
+          other.identityNumber == this.identityNumber &&
           other.phone == this.phone &&
           other.email == this.email &&
           other.address == this.address &&
@@ -6866,6 +6900,7 @@ class CustomersCompanion extends UpdateCompanion<Customer> {
   final Value<String> id;
   final Value<String> code;
   final Value<String> fullName;
+  final Value<String?> identityNumber;
   final Value<String?> phone;
   final Value<String?> email;
   final Value<String?> address;
@@ -6884,6 +6919,7 @@ class CustomersCompanion extends UpdateCompanion<Customer> {
     this.id = const Value.absent(),
     this.code = const Value.absent(),
     this.fullName = const Value.absent(),
+    this.identityNumber = const Value.absent(),
     this.phone = const Value.absent(),
     this.email = const Value.absent(),
     this.address = const Value.absent(),
@@ -6903,6 +6939,7 @@ class CustomersCompanion extends UpdateCompanion<Customer> {
     required String id,
     required String code,
     required String fullName,
+    this.identityNumber = const Value.absent(),
     this.phone = const Value.absent(),
     this.email = const Value.absent(),
     this.address = const Value.absent(),
@@ -6924,6 +6961,7 @@ class CustomersCompanion extends UpdateCompanion<Customer> {
     Expression<String>? id,
     Expression<String>? code,
     Expression<String>? fullName,
+    Expression<String>? identityNumber,
     Expression<String>? phone,
     Expression<String>? email,
     Expression<String>? address,
@@ -6943,6 +6981,7 @@ class CustomersCompanion extends UpdateCompanion<Customer> {
       if (id != null) 'id': id,
       if (code != null) 'code': code,
       if (fullName != null) 'full_name': fullName,
+      if (identityNumber != null) 'identity_number': identityNumber,
       if (phone != null) 'phone': phone,
       if (email != null) 'email': email,
       if (address != null) 'address': address,
@@ -6965,6 +7004,7 @@ class CustomersCompanion extends UpdateCompanion<Customer> {
       {Value<String>? id,
       Value<String>? code,
       Value<String>? fullName,
+      Value<String?>? identityNumber,
       Value<String?>? phone,
       Value<String?>? email,
       Value<String?>? address,
@@ -6983,6 +7023,7 @@ class CustomersCompanion extends UpdateCompanion<Customer> {
       id: id ?? this.id,
       code: code ?? this.code,
       fullName: fullName ?? this.fullName,
+      identityNumber: identityNumber ?? this.identityNumber,
       phone: phone ?? this.phone,
       email: email ?? this.email,
       address: address ?? this.address,
@@ -7011,6 +7052,9 @@ class CustomersCompanion extends UpdateCompanion<Customer> {
     }
     if (fullName.present) {
       map['full_name'] = Variable<String>(fullName.value);
+    }
+    if (identityNumber.present) {
+      map['identity_number'] = Variable<String>(identityNumber.value);
     }
     if (phone.present) {
       map['phone'] = Variable<String>(phone.value);
@@ -7063,6 +7107,7 @@ class CustomersCompanion extends UpdateCompanion<Customer> {
           ..write('id: $id, ')
           ..write('code: $code, ')
           ..write('fullName: $fullName, ')
+          ..write('identityNumber: $identityNumber, ')
           ..write('phone: $phone, ')
           ..write('email: $email, ')
           ..write('address: $address, ')
@@ -8231,6 +8276,12 @@ class $PaymentsTable extends Payments with TableInfo<$PaymentsTable, Payment> {
   late final GeneratedColumn<int> amountCents = GeneratedColumn<int>(
       'amount_cents', aliasedName, false,
       type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _transactionIdMeta =
+      const VerificationMeta('transactionId');
+  @override
+  late final GeneratedColumn<String> transactionId = GeneratedColumn<String>(
+      'transaction_id', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   static const VerificationMeta _sourceCurrencyCodeMeta =
       const VerificationMeta('sourceCurrencyCode');
   @override
@@ -8257,6 +8308,7 @@ class $PaymentsTable extends Payments with TableInfo<$PaymentsTable, Payment> {
         saleId,
         method,
         amountCents,
+        transactionId,
         sourceCurrencyCode,
         sourceAmountCents,
         createdAt
@@ -8296,6 +8348,12 @@ class $PaymentsTable extends Payments with TableInfo<$PaymentsTable, Payment> {
     } else if (isInserting) {
       context.missing(_amountCentsMeta);
     }
+    if (data.containsKey('transaction_id')) {
+      context.handle(
+          _transactionIdMeta,
+          transactionId.isAcceptableOrUnknown(
+              data['transaction_id']!, _transactionIdMeta));
+    }
     if (data.containsKey('source_currency_code')) {
       context.handle(
           _sourceCurrencyCodeMeta,
@@ -8329,6 +8387,8 @@ class $PaymentsTable extends Payments with TableInfo<$PaymentsTable, Payment> {
           .read(DriftSqlType.string, data['${effectivePrefix}method'])!,
       amountCents: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}amount_cents'])!,
+      transactionId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}transaction_id']),
       sourceCurrencyCode: attachedDatabase.typeMapping.read(
           DriftSqlType.string, data['${effectivePrefix}source_currency_code']),
       sourceAmountCents: attachedDatabase.typeMapping.read(
@@ -8349,6 +8409,7 @@ class Payment extends DataClass implements Insertable<Payment> {
   final String saleId;
   final String method;
   final int amountCents;
+  final String? transactionId;
   final String? sourceCurrencyCode;
   final int? sourceAmountCents;
   final DateTime createdAt;
@@ -8357,6 +8418,7 @@ class Payment extends DataClass implements Insertable<Payment> {
       required this.saleId,
       required this.method,
       required this.amountCents,
+      this.transactionId,
       this.sourceCurrencyCode,
       this.sourceAmountCents,
       required this.createdAt});
@@ -8367,6 +8429,9 @@ class Payment extends DataClass implements Insertable<Payment> {
     map['sale_id'] = Variable<String>(saleId);
     map['method'] = Variable<String>(method);
     map['amount_cents'] = Variable<int>(amountCents);
+    if (!nullToAbsent || transactionId != null) {
+      map['transaction_id'] = Variable<String>(transactionId);
+    }
     if (!nullToAbsent || sourceCurrencyCode != null) {
       map['source_currency_code'] = Variable<String>(sourceCurrencyCode);
     }
@@ -8383,6 +8448,9 @@ class Payment extends DataClass implements Insertable<Payment> {
       saleId: Value(saleId),
       method: Value(method),
       amountCents: Value(amountCents),
+      transactionId: transactionId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(transactionId),
       sourceCurrencyCode: sourceCurrencyCode == null && nullToAbsent
           ? const Value.absent()
           : Value(sourceCurrencyCode),
@@ -8401,6 +8469,7 @@ class Payment extends DataClass implements Insertable<Payment> {
       saleId: serializer.fromJson<String>(json['saleId']),
       method: serializer.fromJson<String>(json['method']),
       amountCents: serializer.fromJson<int>(json['amountCents']),
+      transactionId: serializer.fromJson<String?>(json['transactionId']),
       sourceCurrencyCode:
           serializer.fromJson<String?>(json['sourceCurrencyCode']),
       sourceAmountCents: serializer.fromJson<int?>(json['sourceAmountCents']),
@@ -8415,6 +8484,7 @@ class Payment extends DataClass implements Insertable<Payment> {
       'saleId': serializer.toJson<String>(saleId),
       'method': serializer.toJson<String>(method),
       'amountCents': serializer.toJson<int>(amountCents),
+      'transactionId': serializer.toJson<String?>(transactionId),
       'sourceCurrencyCode': serializer.toJson<String?>(sourceCurrencyCode),
       'sourceAmountCents': serializer.toJson<int?>(sourceAmountCents),
       'createdAt': serializer.toJson<DateTime>(createdAt),
@@ -8426,6 +8496,7 @@ class Payment extends DataClass implements Insertable<Payment> {
           String? saleId,
           String? method,
           int? amountCents,
+          Value<String?> transactionId = const Value.absent(),
           Value<String?> sourceCurrencyCode = const Value.absent(),
           Value<int?> sourceAmountCents = const Value.absent(),
           DateTime? createdAt}) =>
@@ -8434,6 +8505,8 @@ class Payment extends DataClass implements Insertable<Payment> {
         saleId: saleId ?? this.saleId,
         method: method ?? this.method,
         amountCents: amountCents ?? this.amountCents,
+        transactionId:
+            transactionId.present ? transactionId.value : this.transactionId,
         sourceCurrencyCode: sourceCurrencyCode.present
             ? sourceCurrencyCode.value
             : this.sourceCurrencyCode,
@@ -8449,6 +8522,9 @@ class Payment extends DataClass implements Insertable<Payment> {
       method: data.method.present ? data.method.value : this.method,
       amountCents:
           data.amountCents.present ? data.amountCents.value : this.amountCents,
+      transactionId: data.transactionId.present
+          ? data.transactionId.value
+          : this.transactionId,
       sourceCurrencyCode: data.sourceCurrencyCode.present
           ? data.sourceCurrencyCode.value
           : this.sourceCurrencyCode,
@@ -8466,6 +8542,7 @@ class Payment extends DataClass implements Insertable<Payment> {
           ..write('saleId: $saleId, ')
           ..write('method: $method, ')
           ..write('amountCents: $amountCents, ')
+          ..write('transactionId: $transactionId, ')
           ..write('sourceCurrencyCode: $sourceCurrencyCode, ')
           ..write('sourceAmountCents: $sourceAmountCents, ')
           ..write('createdAt: $createdAt')
@@ -8475,7 +8552,7 @@ class Payment extends DataClass implements Insertable<Payment> {
 
   @override
   int get hashCode => Object.hash(id, saleId, method, amountCents,
-      sourceCurrencyCode, sourceAmountCents, createdAt);
+      transactionId, sourceCurrencyCode, sourceAmountCents, createdAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -8484,6 +8561,7 @@ class Payment extends DataClass implements Insertable<Payment> {
           other.saleId == this.saleId &&
           other.method == this.method &&
           other.amountCents == this.amountCents &&
+          other.transactionId == this.transactionId &&
           other.sourceCurrencyCode == this.sourceCurrencyCode &&
           other.sourceAmountCents == this.sourceAmountCents &&
           other.createdAt == this.createdAt);
@@ -8494,6 +8572,7 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
   final Value<String> saleId;
   final Value<String> method;
   final Value<int> amountCents;
+  final Value<String?> transactionId;
   final Value<String?> sourceCurrencyCode;
   final Value<int?> sourceAmountCents;
   final Value<DateTime> createdAt;
@@ -8503,6 +8582,7 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
     this.saleId = const Value.absent(),
     this.method = const Value.absent(),
     this.amountCents = const Value.absent(),
+    this.transactionId = const Value.absent(),
     this.sourceCurrencyCode = const Value.absent(),
     this.sourceAmountCents = const Value.absent(),
     this.createdAt = const Value.absent(),
@@ -8513,6 +8593,7 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
     required String saleId,
     required String method,
     required int amountCents,
+    this.transactionId = const Value.absent(),
     this.sourceCurrencyCode = const Value.absent(),
     this.sourceAmountCents = const Value.absent(),
     this.createdAt = const Value.absent(),
@@ -8526,6 +8607,7 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
     Expression<String>? saleId,
     Expression<String>? method,
     Expression<int>? amountCents,
+    Expression<String>? transactionId,
     Expression<String>? sourceCurrencyCode,
     Expression<int>? sourceAmountCents,
     Expression<DateTime>? createdAt,
@@ -8536,6 +8618,7 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
       if (saleId != null) 'sale_id': saleId,
       if (method != null) 'method': method,
       if (amountCents != null) 'amount_cents': amountCents,
+      if (transactionId != null) 'transaction_id': transactionId,
       if (sourceCurrencyCode != null)
         'source_currency_code': sourceCurrencyCode,
       if (sourceAmountCents != null) 'source_amount_cents': sourceAmountCents,
@@ -8549,6 +8632,7 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
       Value<String>? saleId,
       Value<String>? method,
       Value<int>? amountCents,
+      Value<String?>? transactionId,
       Value<String?>? sourceCurrencyCode,
       Value<int?>? sourceAmountCents,
       Value<DateTime>? createdAt,
@@ -8558,6 +8642,7 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
       saleId: saleId ?? this.saleId,
       method: method ?? this.method,
       amountCents: amountCents ?? this.amountCents,
+      transactionId: transactionId ?? this.transactionId,
       sourceCurrencyCode: sourceCurrencyCode ?? this.sourceCurrencyCode,
       sourceAmountCents: sourceAmountCents ?? this.sourceAmountCents,
       createdAt: createdAt ?? this.createdAt,
@@ -8579,6 +8664,9 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
     }
     if (amountCents.present) {
       map['amount_cents'] = Variable<int>(amountCents.value);
+    }
+    if (transactionId.present) {
+      map['transaction_id'] = Variable<String>(transactionId.value);
     }
     if (sourceCurrencyCode.present) {
       map['source_currency_code'] = Variable<String>(sourceCurrencyCode.value);
@@ -8602,6 +8690,7 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
           ..write('saleId: $saleId, ')
           ..write('method: $method, ')
           ..write('amountCents: $amountCents, ')
+          ..write('transactionId: $transactionId, ')
           ..write('sourceCurrencyCode: $sourceCurrencyCode, ')
           ..write('sourceAmountCents: $sourceAmountCents, ')
           ..write('createdAt: $createdAt, ')
@@ -17528,6 +17617,7 @@ typedef $$CustomersTableCreateCompanionBuilder = CustomersCompanion Function({
   required String id,
   required String code,
   required String fullName,
+  Value<String?> identityNumber,
   Value<String?> phone,
   Value<String?> email,
   Value<String?> address,
@@ -17547,6 +17637,7 @@ typedef $$CustomersTableUpdateCompanionBuilder = CustomersCompanion Function({
   Value<String> id,
   Value<String> code,
   Value<String> fullName,
+  Value<String?> identityNumber,
   Value<String?> phone,
   Value<String?> email,
   Value<String?> address,
@@ -17600,6 +17691,10 @@ class $$CustomersTableFilterComposer
 
   ColumnFilters<String> get fullName => $composableBuilder(
       column: $table.fullName, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get identityNumber => $composableBuilder(
+      column: $table.identityNumber,
+      builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get phone => $composableBuilder(
       column: $table.phone, builder: (column) => ColumnFilters(column));
@@ -17681,6 +17776,10 @@ class $$CustomersTableOrderingComposer
   ColumnOrderings<String> get fullName => $composableBuilder(
       column: $table.fullName, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get identityNumber => $composableBuilder(
+      column: $table.identityNumber,
+      builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<String> get phone => $composableBuilder(
       column: $table.phone, builder: (column) => ColumnOrderings(column));
 
@@ -17740,6 +17839,9 @@ class $$CustomersTableAnnotationComposer
 
   GeneratedColumn<String> get fullName =>
       $composableBuilder(column: $table.fullName, builder: (column) => column);
+
+  GeneratedColumn<String> get identityNumber => $composableBuilder(
+      column: $table.identityNumber, builder: (column) => column);
 
   GeneratedColumn<String> get phone =>
       $composableBuilder(column: $table.phone, builder: (column) => column);
@@ -17828,6 +17930,7 @@ class $$CustomersTableTableManager extends RootTableManager<
             Value<String> id = const Value.absent(),
             Value<String> code = const Value.absent(),
             Value<String> fullName = const Value.absent(),
+            Value<String?> identityNumber = const Value.absent(),
             Value<String?> phone = const Value.absent(),
             Value<String?> email = const Value.absent(),
             Value<String?> address = const Value.absent(),
@@ -17847,6 +17950,7 @@ class $$CustomersTableTableManager extends RootTableManager<
             id: id,
             code: code,
             fullName: fullName,
+            identityNumber: identityNumber,
             phone: phone,
             email: email,
             address: address,
@@ -17866,6 +17970,7 @@ class $$CustomersTableTableManager extends RootTableManager<
             required String id,
             required String code,
             required String fullName,
+            Value<String?> identityNumber = const Value.absent(),
             Value<String?> phone = const Value.absent(),
             Value<String?> email = const Value.absent(),
             Value<String?> address = const Value.absent(),
@@ -17885,6 +17990,7 @@ class $$CustomersTableTableManager extends RootTableManager<
             id: id,
             code: code,
             fullName: fullName,
+            identityNumber: identityNumber,
             phone: phone,
             email: email,
             address: address,
@@ -19199,6 +19305,7 @@ typedef $$PaymentsTableCreateCompanionBuilder = PaymentsCompanion Function({
   required String saleId,
   required String method,
   required int amountCents,
+  Value<String?> transactionId,
   Value<String?> sourceCurrencyCode,
   Value<int?> sourceAmountCents,
   Value<DateTime> createdAt,
@@ -19209,6 +19316,7 @@ typedef $$PaymentsTableUpdateCompanionBuilder = PaymentsCompanion Function({
   Value<String> saleId,
   Value<String> method,
   Value<int> amountCents,
+  Value<String?> transactionId,
   Value<String?> sourceCurrencyCode,
   Value<int?> sourceAmountCents,
   Value<DateTime> createdAt,
@@ -19251,6 +19359,9 @@ class $$PaymentsTableFilterComposer
 
   ColumnFilters<int> get amountCents => $composableBuilder(
       column: $table.amountCents, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get transactionId => $composableBuilder(
+      column: $table.transactionId, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get sourceCurrencyCode => $composableBuilder(
       column: $table.sourceCurrencyCode,
@@ -19302,6 +19413,10 @@ class $$PaymentsTableOrderingComposer
   ColumnOrderings<int> get amountCents => $composableBuilder(
       column: $table.amountCents, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get transactionId => $composableBuilder(
+      column: $table.transactionId,
+      builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<String> get sourceCurrencyCode => $composableBuilder(
       column: $table.sourceCurrencyCode,
       builder: (column) => ColumnOrderings(column));
@@ -19351,6 +19466,9 @@ class $$PaymentsTableAnnotationComposer
 
   GeneratedColumn<int> get amountCents => $composableBuilder(
       column: $table.amountCents, builder: (column) => column);
+
+  GeneratedColumn<String> get transactionId => $composableBuilder(
+      column: $table.transactionId, builder: (column) => column);
 
   GeneratedColumn<String> get sourceCurrencyCode => $composableBuilder(
       column: $table.sourceCurrencyCode, builder: (column) => column);
@@ -19409,6 +19527,7 @@ class $$PaymentsTableTableManager extends RootTableManager<
             Value<String> saleId = const Value.absent(),
             Value<String> method = const Value.absent(),
             Value<int> amountCents = const Value.absent(),
+            Value<String?> transactionId = const Value.absent(),
             Value<String?> sourceCurrencyCode = const Value.absent(),
             Value<int?> sourceAmountCents = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
@@ -19419,6 +19538,7 @@ class $$PaymentsTableTableManager extends RootTableManager<
             saleId: saleId,
             method: method,
             amountCents: amountCents,
+            transactionId: transactionId,
             sourceCurrencyCode: sourceCurrencyCode,
             sourceAmountCents: sourceAmountCents,
             createdAt: createdAt,
@@ -19429,6 +19549,7 @@ class $$PaymentsTableTableManager extends RootTableManager<
             required String saleId,
             required String method,
             required int amountCents,
+            Value<String?> transactionId = const Value.absent(),
             Value<String?> sourceCurrencyCode = const Value.absent(),
             Value<int?> sourceAmountCents = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
@@ -19439,6 +19560,7 @@ class $$PaymentsTableTableManager extends RootTableManager<
             saleId: saleId,
             method: method,
             amountCents: amountCents,
+            transactionId: transactionId,
             sourceCurrencyCode: sourceCurrencyCode,
             sourceAmountCents: sourceAmountCents,
             createdAt: createdAt,

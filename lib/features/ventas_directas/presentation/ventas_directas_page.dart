@@ -49,6 +49,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
   final Map<String, Product> _productsById = <String, Product>{};
   String? _selectedWarehouseId;
   AppCurrencyConfig _currencyConfig = AppCurrencyConfig.defaults;
+  Set<String> _onlinePaymentMethodCodes = <String>{'transfer', 'wallet'};
   bool _allowNegativeStock = false;
   bool _loading = true;
   bool _posting = false;
@@ -120,6 +121,9 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
           whDs.listActiveWarehouses();
       final Future<AppConfig> configFuture =
           ref.read(configuracionLocalDataSourceProvider).loadConfig();
+      final Future<Set<String>> onlineMethodsFuture = ref
+          .read(configuracionLocalDataSourceProvider)
+          .loadOnlinePaymentMethodCodes();
 
       final List<Warehouse> warehouses = (await warehousesFuture)
           .where(
@@ -129,6 +133,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
           .toList()
         ..sort((Warehouse a, Warehouse b) => a.name.compareTo(b.name));
       final AppConfig config = await configFuture;
+      final Set<String> onlineMethods = await onlineMethodsFuture;
 
       String? warehouseId = _selectedWarehouseId;
       if (warehouseId == null ||
@@ -156,6 +161,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
           availableIds: warehouseData.availableIds,
         );
         _currencyConfig = config.currencyConfig.normalized();
+        _onlinePaymentMethodCodes = onlineMethods;
         _allowNegativeStock = config.allowNegativeStock;
         _loading = false;
       });
@@ -360,6 +366,32 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
     });
   }
 
+  void _setQty(String productId, double nextQtyRaw) {
+    if (!nextQtyRaw.isFinite) {
+      return;
+    }
+    final double nextQty = nextQtyRaw < 0 ? 0 : nextQtyRaw;
+    if (!_allowNegativeStock) {
+      final double stock = _stockByProductId[productId] ?? 0;
+      if (nextQty > stock + 0.000001) {
+        final Product? product = _findProduct(productId);
+        if (product != null) {
+          _show(
+            'Stock insuficiente para ${product.name}. Disponible: ${_formatQty(stock)}',
+          );
+        }
+        return;
+      }
+    }
+    setState(() {
+      if (nextQty <= 0) {
+        _qtyByProductId.remove(productId);
+      } else {
+        _qtyByProductId[productId] = nextQty;
+      }
+    });
+  }
+
   Product? _findProduct(String productId) {
     return _productsById[productId];
   }
@@ -510,23 +542,26 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
       return;
     }
     final DirectSalesPaymentResult? result =
-        await showDialog<DirectSalesPaymentResult>(
-      context: context,
-      builder: (BuildContext context) {
-        return DirectSalesPaymentDialog(
-          cartLines: lines
-              .map(
-                (_DirectCartLine line) =>
-                    PosCartLine(product: line.product, qty: line.qty),
-              )
-              .toList(),
-          stockByProductId: _stockByProductId,
-          allowNegativeStock: _allowNegativeStock,
-          currencyConfig: _currencyConfig,
-          paymentMethods: _paymentMethods,
-          paymentMethodLabel: _paymentMethodLabel,
-        );
-      },
+        await Navigator.of(context).push<DirectSalesPaymentResult>(
+      MaterialPageRoute<DirectSalesPaymentResult>(
+        fullscreenDialog: true,
+        builder: (BuildContext context) {
+          return DirectSalesPaymentDialog(
+            cartLines: lines
+                .map(
+                  (_DirectCartLine line) =>
+                      PosCartLine(product: line.product, qty: line.qty),
+                )
+                .toList(),
+            stockByProductId: _stockByProductId,
+            allowNegativeStock: _allowNegativeStock,
+            currencyConfig: _currencyConfig,
+            paymentMethods: _paymentMethods,
+            paymentMethodLabel: _paymentMethodLabel,
+            onlinePaymentMethodCodes: _onlinePaymentMethodCodes,
+          );
+        },
+      ),
     );
 
     if (result == null ||
@@ -638,6 +673,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
               (DirectSalesPaymentLine line) => PaymentInput(
                 method: line.method,
                 amountCents: line.primaryAmountCents,
+                transactionId: line.transactionId,
                 sourceCurrencyCode: line.currencyCode,
                 sourceAmountCents: line.enteredAmountCents,
               ),
@@ -823,7 +859,11 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
     final String symbol = _currencyConfig.symbolForCode(code);
     final String source =
         '$symbol${(line.enteredAmountCents / 100).toStringAsFixed(2)} $code';
-    return '$method ($source)';
+    final String tx = (line.transactionId ?? '').trim();
+    if (tx.isEmpty) {
+      return '$method ($source)';
+    }
+    return '$method ($source) • TX: $tx';
   }
 
   String _formatQty(double qty) {
@@ -872,12 +912,12 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
 
   double _gridMainAxisExtentForTile(double tileWidth) {
     if (tileWidth >= 280) {
-      return 278;
+      return 232;
     }
     if (tileWidth >= 220) {
-      return 258;
+      return 214;
     }
-    return 236;
+    return 198;
   }
 
   Widget _warehouseHeader() {
@@ -944,6 +984,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
       currencySymbol: _currencyConfig.symbolForCode(product.currencyCode),
       isPosting: _posting,
       onQtyChanged: (double delta) => _changeQty(product.id, delta),
+      onQtySet: (double qty) => _setQty(product.id, qty),
     );
   }
 
@@ -1009,52 +1050,59 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
       showBottomNavigationBar: false,
       floatingActionButton: null,
       body: license.canSell
-          ? (_loading
-              ? const Center(child: CircularProgressIndicator())
-              : Column(
-                  children: <Widget>[
-                    Expanded(
-                      child: SafeArea(
-                        bottom: false,
-                        child: CustomScrollView(
-                          keyboardDismissBehavior:
-                              ScrollViewKeyboardDismissBehavior.onDrag,
-                          slivers: <Widget>[
-                            SliverPadding(
-                              padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-                              sliver: SliverToBoxAdapter(
-                                child: Column(
-                                  children: <Widget>[
-                                    _warehouseHeader(),
-                                    const SizedBox(height: 8),
-                                    SaleCustomerSelectorTile(
-                                      selectedCustomer: _selectedCustomer,
-                                      enabled: !_posting,
-                                      onSelect: _selectCustomerForSale,
-                                      onClear: _clearSelectedCustomer,
+          ? GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : Column(
+                      children: <Widget>[
+                        Expanded(
+                          child: SafeArea(
+                            bottom: false,
+                            child: CustomScrollView(
+                              keyboardDismissBehavior:
+                                  ScrollViewKeyboardDismissBehavior.onDrag,
+                              slivers: <Widget>[
+                                SliverPadding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                                  sliver: SliverToBoxAdapter(
+                                    child: Column(
+                                      children: <Widget>[
+                                        _warehouseHeader(),
+                                        const SizedBox(height: 8),
+                                        SaleCustomerSelectorTile(
+                                          selectedCustomer: _selectedCustomer,
+                                          enabled: !_posting,
+                                          onSelect: _selectCustomerForSale,
+                                          onClear: _clearSelectedCustomer,
+                                        ),
+                                        const SizedBox(height: 10),
+                                        _productFilterField(),
+                                        const SizedBox(height: 8),
+                                      ],
                                     ),
-                                    const SizedBox(height: 10),
-                                    _productFilterField(),
-                                    const SizedBox(height: 8),
-                                  ],
+                                  ),
                                 ),
-                              ),
+                                _productsGridSliver(),
+                              ],
                             ),
-                            _productsGridSliver(),
-                          ],
+                          ),
                         ),
-                      ),
+                        PosBottomFooter(
+                          itemCount: _cartUnits,
+                          total: _computeFooterTotal(),
+                          currencySymbol:
+                              _currencyConfig.primaryCurrency.symbol,
+                          onPayTap:
+                              _qtyByProductId.values.any((double q) => q > 0)
+                                  ? _openPaymentSheet
+                                  : null,
+                        ),
+                      ],
                     ),
-                    PosBottomFooter(
-                      itemCount: _cartUnits,
-                      total: _computeFooterTotal(),
-                      currencySymbol: _currencyConfig.primaryCurrency.symbol,
-                      onPayTap: _qtyByProductId.values.any((double q) => q > 0)
-                          ? _openPaymentSheet
-                          : null,
-                    ),
-                  ],
-                ))
+            )
           : _buildLicenseBlockedBody(license.message),
     );
   }

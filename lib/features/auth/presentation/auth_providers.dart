@@ -22,3 +22,13 @@ final FutureProvider<bool> appLockEnabledProvider =
 
 final StateProvider<UserSession?> currentSessionProvider =
     StateProvider<UserSession?>((_) => null);
+
+final FutureProviderFamily<AuthUserSummary?, String>
+    authUserSummaryByIdProvider =
+    FutureProvider.family<AuthUserSummary?, String>((ref, String userId) async {
+  final String cleanUserId = userId.trim();
+  if (cleanUserId.isEmpty) {
+    return null;
+  }
+  return ref.watch(authLocalDataSourceProvider).getUserSummaryById(cleanUserId);
+});

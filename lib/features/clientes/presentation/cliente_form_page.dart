@@ -17,9 +17,11 @@ class ClienteFormPage extends ConsumerStatefulWidget {
   const ClienteFormPage({
     super.key,
     this.clientId,
+    this.returnCreatedClientIdOnCreate = false,
   });
 
   final String? clientId;
+  final bool returnCreatedClientIdOnCreate;
 
   bool get isEditing => (clientId ?? '').trim().isNotEmpty;
 
@@ -29,6 +31,7 @@ class ClienteFormPage extends ConsumerStatefulWidget {
 
 class _ClienteFormPageState extends ConsumerState<ClienteFormPage> {
   late final TextEditingController _nameCtrl;
+  late final TextEditingController _identityCtrl;
   late final TextEditingController _phoneCtrl;
   late final TextEditingController _emailCtrl;
   late final TextEditingController _addressCtrl;
@@ -46,6 +49,7 @@ class _ClienteFormPageState extends ConsumerState<ClienteFormPage> {
   void initState() {
     super.initState();
     _nameCtrl = TextEditingController();
+    _identityCtrl = TextEditingController();
     _phoneCtrl = TextEditingController();
     _emailCtrl = TextEditingController();
     _addressCtrl = TextEditingController();
@@ -65,6 +69,7 @@ class _ClienteFormPageState extends ConsumerState<ClienteFormPage> {
   @override
   void dispose() {
     _nameCtrl.dispose();
+    _identityCtrl.dispose();
     _phoneCtrl.dispose();
     _emailCtrl.dispose();
     _addressCtrl.dispose();
@@ -97,6 +102,7 @@ class _ClienteFormPageState extends ConsumerState<ClienteFormPage> {
       }
 
       _nameCtrl.text = detail.fullName;
+      _identityCtrl.text = detail.identityNumber ?? '';
       _phoneCtrl.text = detail.phone ?? '';
       _emailCtrl.text = detail.email ?? '';
       _addressCtrl.text = detail.address ?? '';
@@ -130,6 +136,7 @@ class _ClienteFormPageState extends ConsumerState<ClienteFormPage> {
     try {
       final ClienteUpsertInput input = ClienteUpsertInput(
         fullName: fullName,
+        identityNumber: _identityCtrl.text.trim(),
         phone: _phoneCtrl.text.trim(),
         email: _emailCtrl.text.trim(),
         address: _addressCtrl.text.trim(),
@@ -145,13 +152,21 @@ class _ClienteFormPageState extends ConsumerState<ClienteFormPage> {
           ref.read(clientesLocalDataSourceProvider);
       if (widget.isEditing) {
         await ds.updateClient(clientId: widget.clientId!, input: input);
+        if (!mounted) {
+          return;
+        }
+        Navigator.of(context).pop(true);
       } else {
-        await ds.createClient(input);
+        final String createdId = await ds.createClient(input);
+        if (!mounted) {
+          return;
+        }
+        if (widget.returnCreatedClientIdOnCreate) {
+          Navigator.of(context).pop(createdId);
+        } else {
+          Navigator.of(context).pop(true);
+        }
       }
-      if (!mounted) {
-        return;
-      }
-      Navigator.of(context).pop(true);
     } catch (error) {
       if (!mounted) {
         return;
@@ -283,6 +298,14 @@ class _ClienteFormPageState extends ConsumerState<ClienteFormPage> {
                               controller: _phoneCtrl,
                               hint: '+53 000 000 000',
                               keyboardType: TextInputType.phone,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _LabeledField(
+                            label: 'Numero de Identidad (opcional)',
+                            child: _input(
+                              controller: _identityCtrl,
+                              hint: 'Ej. 91010112345',
                             ),
                           ),
                           const SizedBox(height: 12),

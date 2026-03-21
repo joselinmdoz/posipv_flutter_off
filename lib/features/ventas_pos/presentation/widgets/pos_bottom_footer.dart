@@ -71,32 +71,67 @@ class PosBottomFooter extends StatelessWidget {
                   ],
                 ),
               ),
-              FilledButton.icon(
-                onPressed: onPayTap,
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF1152D4),
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor: isDark
-                      ? const Color(0xFF334155)
-                      : const Color(0xFFCBD5E1),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 28,
-                    vertical: 16,
+              Stack(
+                clipBehavior: Clip.none,
+                children: <Widget>[
+                  FilledButton.icon(
+                    onPressed: onPayTap,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF1152D4),
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: isDark
+                          ? const Color(0xFF334155)
+                          : const Color(0xFFCBD5E1),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 28,
+                        vertical: 16,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 4,
+                      shadowColor:
+                          const Color(0xFF1152D4).withValues(alpha: 0.35),
+                    ),
+                    icon: const Icon(Icons.shopping_cart_checkout_rounded),
+                    label: const Text(
+                      'PAGAR',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
+                    ),
                   ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  elevation: 4,
-                  shadowColor: const Color(0xFF1152D4).withValues(alpha: 0.35),
-                ),
-                icon: const Icon(Icons.shopping_cart_checkout_rounded),
-                label: const Text(
-                  'PAGAR',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                  ),
-                ),
+                  if (itemCount > 0)
+                    Positioned(
+                      right: -6,
+                      top: -8,
+                      child: Container(
+                        constraints: const BoxConstraints(
+                          minWidth: 22,
+                          minHeight: 22,
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFDC2626),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: Colors.white, width: 1.4),
+                        ),
+                        child: Text(
+                          itemCount > 99 ? '99+' : '$itemCount',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ],
           ),

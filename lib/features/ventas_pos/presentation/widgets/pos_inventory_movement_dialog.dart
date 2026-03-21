@@ -796,7 +796,21 @@ class _PosInventoryMovementDialogState
       return const Center(
           child: Icon(Icons.inventory_2_outlined, color: Colors.grey));
     }
-    return Image.file(File(path), fit: BoxFit.cover);
+    final File file = File(path);
+    if (!file.existsSync()) {
+      return const Center(
+        child: Icon(Icons.inventory_2_outlined, color: Colors.grey),
+      );
+    }
+    return Image.file(
+      file,
+      fit: BoxFit.contain,
+      errorBuilder: (_, __, ___) {
+        return const Center(
+          child: Icon(Icons.broken_image_outlined, color: Colors.grey),
+        );
+      },
+    );
   }
 }
 

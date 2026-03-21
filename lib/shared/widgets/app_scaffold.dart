@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/auth/data/auth_local_datasource.dart';
 import '../../core/licensing/license_models.dart';
 import '../../core/licensing/license_providers.dart';
 import '../../core/security/app_permissions.dart';
@@ -198,6 +201,8 @@ class AppScaffold extends ConsumerWidget {
 
     final ThemeData theme = Theme.of(context);
     final LicenseStatus licenseStatus = ref.watch(currentLicenseStatusProvider);
+    final AsyncValue<AuthUserSummary?> userSummaryAsync =
+        ref.watch(authUserSummaryByIdProvider(session.userId));
     final bool isDark = theme.brightness == Brightness.dark;
     final List<Color> bodyGradient = isDark
         ? <Color>[theme.scaffoldBackgroundColor, const Color(0xFF0B1220)]
@@ -227,6 +232,7 @@ class AppScaffold extends ConsumerWidget {
               activeRoute,
               licenseStatus,
               session,
+              userSummaryAsync.valueOrNull,
             )
           : null,
       floatingActionButton: floatingActionButton,
@@ -332,12 +338,10 @@ class AppScaffold extends ConsumerWidget {
     String activeRoute,
     LicenseStatus licenseStatus,
     UserSession session,
+    AuthUserSummary? userSummary,
   ) {
     final ThemeData theme = Theme.of(context);
-    final ColorScheme scheme = theme.colorScheme;
     final bool isDark = theme.brightness == Brightness.dark;
-    final Color drawerTitleColor = scheme.onSurface;
-    final Color drawerSubtitleColor = scheme.onSurfaceVariant;
     final Iterable<_NavItem> visibleNavItems = _navItems.where(
       (_NavItem item) {
         if (_isGeneralReportsRoute(item.route) &&
@@ -351,55 +355,161 @@ class AppScaffold extends ConsumerWidget {
       },
     );
 
+    final Color titleColor =
+        isDark ? const Color(0xFF93C5FD) : const Color(0xFF0F47C6);
+    final String employeeName = (userSummary?.employeeName ?? '').trim();
+    final String displayName =
+        employeeName.isNotEmpty ? employeeName : session.username;
+    final String profileSubtitle = _drawerProfileSubtitle(userSummary, session);
+    final String avatarPath = (userSummary?.employeeImagePath ?? '').trim();
+    final bool hasAvatar =
+        avatarPath.isNotEmpty && File(avatarPath).existsSync();
+
     return Drawer(
+      width: 328,
+      backgroundColor:
+          isDark ? const Color(0xFF0B1220) : const Color(0xFFF6F8FC),
       child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   Text(
                     'POSIPV',
                     style: TextStyle(
-                      fontSize: 30,
+                      fontSize: 22,
                       fontWeight: FontWeight.w800,
-                      color: drawerTitleColor,
+                      letterSpacing: -0.6,
+                      color: titleColor,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Ventas y control',
-                    style: TextStyle(fontSize: 14, color: drawerSubtitleColor),
+                  const SizedBox(height: 14),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? const Color(0xFF1E293B).withValues(alpha: 0.8)
+                          : Colors.white.withValues(alpha: 0.9),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: isDark
+                            ? const Color(0xFF334155)
+                            : const Color(0xFFE2E8F0),
+                      ),
+                    ),
+                    child: Row(
+                      children: <Widget>[
+                        Stack(
+                          clipBehavior: Clip.none,
+                          children: <Widget>[
+                            Container(
+                              width: 52,
+                              height: 52,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(14),
+                                color: const Color(0xFFF2D5BD),
+                                image: hasAvatar
+                                    ? DecorationImage(
+                                        image: FileImage(File(avatarPath)),
+                                        fit: BoxFit.cover,
+                                      )
+                                    : null,
+                              ),
+                              child: !hasAvatar
+                                  ? const Icon(
+                                      Icons.person_outline_rounded,
+                                      color: Color(0xFF475569),
+                                    )
+                                  : null,
+                            ),
+                            Positioned(
+                              right: -2,
+                              bottom: -2,
+                              child: Container(
+                                width: 16,
+                                height: 16,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF22C55E),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: isDark
+                                        ? const Color(0xFF0B1220)
+                                        : Colors.white,
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(
+                                displayName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                  color: isDark
+                                      ? Colors.white
+                                      : const Color(0xFF0F172A),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                profileSubtitle.toUpperCase(),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  letterSpacing: 1.8,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark
+                                      ? const Color(0xFF94A3B8)
+                                      : const Color(0xFF64748B),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
-            Divider(height: 1, color: theme.dividerColor),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(8, 10, 8, 8),
+                padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
                 children: <Widget>[
-                  for (final _NavItem item in visibleNavItems)
-                    ListTile(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      selected: item.route == activeRoute,
-                      selectedTileColor: isDark
-                          ? scheme.primary.withValues(alpha: 0.2)
-                          : scheme.primary.withValues(alpha: 0.12),
-                      leading: Icon(item.icon),
-                      title: Text(
-                        item.label,
-                        style: TextStyle(
-                          fontWeight: item.route == activeRoute
-                              ? FontWeight.w700
-                              : FontWeight.w500,
+                  for (final _NavItem item in visibleNavItems) ...<Widget>[
+                    if (item.route == '/ipv-reportes')
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+                        child: Divider(
+                          height: 1,
+                          color: isDark
+                              ? const Color(0xFF334155)
+                              : const Color(0xFFE2E8F0),
                         ),
                       ),
+                    _DrawerNavTile(
+                      icon: item.icon,
+                      label: item.label,
+                      selected: item.route == activeRoute,
+                      isDark: isDark,
                       onTap: () {
                         Navigator.of(context).pop();
                         _go(
@@ -411,56 +521,59 @@ class AppScaffold extends ConsumerWidget {
                         );
                       },
                     ),
-                  // const SizedBox(height: 8),
-                  // Divider(height: 1, color: theme.dividerColor),
-                  // const SizedBox(height: 8),
-                  // const Padding(
-                  //   padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  //   child: Text(
-                  //     'Sincronizacion rapida',
-                  //     style:
-                  //         TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-                  //   ),
-                  // ),
-                  // StatefulBuilder(
-                  //   builder: (BuildContext context, StateSetter setState) {
-                  //     return SwitchListTile(
-                  //       value: isTravelMode,
-                  //       onChanged: (bool value) {
-                  //         isTravelMode = value;
-                  //         setState(() {});
-                  //         _showSoon(context, 'Modo viaje aun no implementado.');
-                  //       },
-                  //       title: const Text('Modo viaje'),
-                  //       secondary: const Icon(Icons.flight_takeoff_rounded),
-                  //     );
-                  //   },
-                  // ),
+                  ],
                 ],
               ),
             ),
-            Divider(height: 1, color: theme.dividerColor),
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 6, 12, 14),
-              child: ListTile(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                tileColor: isDark
-                    ? scheme.surface.withValues(alpha: 0.85)
-                    : scheme.surface,
-                leading: const Icon(Icons.logout_rounded),
-                title: const Text('Cerrar sesion'),
+              padding: const EdgeInsets.fromLTRB(18, 6, 18, 16),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
                 onTap: () {
                   Navigator.of(context).pop();
                   _logout(context, ref);
                 },
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  child: Row(
+                    children: <Widget>[
+                      const Icon(
+                        Icons.logout_rounded,
+                        color: Color(0xFFB91C1C),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Cerrar sesión',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: isDark
+                              ? const Color(0xFFFCA5A5)
+                              : const Color(0xFFB91C1C),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  String _drawerProfileSubtitle(AuthUserSummary? user, UserSession session) {
+    final List<String> roleNames = user?.roleNames ?? session.roleNames;
+    if (roleNames.isNotEmpty) {
+      return roleNames.join(' • ');
+    }
+    final String role = session.role.trim();
+    if (role.isNotEmpty) {
+      return role;
+    }
+    return 'Gestión Ejecutiva';
   }
 
   Future<void> _onTopMenu(
@@ -598,6 +711,75 @@ class AppScaffold extends ConsumerWidget {
 
   bool _isGeneralReportsRoute(String route) {
     return route == '/reportes';
+  }
+}
+
+class _DrawerNavTile extends StatelessWidget {
+  const _DrawerNavTile({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final bool isDark;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    const Color activeColor = Color(0xFF1152D4);
+    final Color textColor = selected
+        ? activeColor
+        : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF64748B));
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Ink(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            decoration: BoxDecoration(
+              color: selected
+                  ? (isDark ? const Color(0xFF0F172A) : Colors.white)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(14),
+              border: selected
+                  ? Border.all(
+                      color: isDark
+                          ? const Color(0xFF334155)
+                          : const Color(0xFFE2E8F0),
+                    )
+                  : null,
+            ),
+            child: Row(
+              children: <Widget>[
+                Icon(icon, color: textColor, size: 29),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                      color: textColor,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

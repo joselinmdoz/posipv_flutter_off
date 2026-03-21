@@ -242,6 +242,15 @@ class PosSaleReceiptPage extends StatelessWidget {
           _detailRow('Cajero', receipt.cashierUsername, labelColor, valueColor),
           const SizedBox(height: 12),
           _detailRow('TPV', receipt.terminalName, labelColor, valueColor),
+          if ((receipt.customerName ?? '').trim().isNotEmpty) ...<Widget>[
+            const SizedBox(height: 12),
+            _detailRow(
+              'Cliente',
+              receipt.customerName!.trim(),
+              labelColor,
+              valueColor,
+            ),
+          ],
         ],
       ),
     );
