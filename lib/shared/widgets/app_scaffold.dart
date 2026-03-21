@@ -4,6 +4,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/licensing/license_models.dart';
 import '../../core/licensing/license_providers.dart';
+import '../../core/security/app_permissions.dart';
+import '../../core/security/session_access.dart';
+import '../models/user_session.dart';
 import '../../features/auth/presentation/auth_providers.dart';
 import 'app_bottom_navigation.dart';
 
@@ -38,30 +41,123 @@ class AppScaffold extends ConsumerWidget {
   final bool? showBottomNavigationBar;
 
   static const List<_NavItem> _navItems = <_NavItem>[
-    _NavItem('Principal', '/home', Icons.home_rounded),
-    _NavItem('TPV', '/tpv', Icons.point_of_sale_rounded),
-    _NavItem('Empleados', '/tpv-empleados', Icons.badge_outlined),
-    _NavItem('Ventas', '/ventas-directas', Icons.receipt_long_rounded),
-    _NavItem('Inventario', '/inventario', Icons.inventory_2_outlined),
+    _NavItem(
+      'Principal',
+      '/home',
+      Icons.home_rounded,
+      AppPermissionKeys.homeView,
+    ),
+    _NavItem(
+      'TPV',
+      '/tpv',
+      Icons.point_of_sale_rounded,
+      AppPermissionKeys.tpvView,
+    ),
+    _NavItem(
+      'Empleados',
+      '/tpv-empleados',
+      Icons.badge_outlined,
+      AppPermissionKeys.tpvManageEmployees,
+    ),
+    _NavItem(
+      'Ventas',
+      '/ventas-directas',
+      Icons.receipt_long_rounded,
+      AppPermissionKeys.salesDirect,
+    ),
+    _NavItem(
+      'Clientes',
+      '/clientes',
+      Icons.groups_rounded,
+      AppPermissionKeys.customersView,
+    ),
+    _NavItem(
+      'Inventario',
+      '/inventario',
+      Icons.inventory_2_outlined,
+      AppPermissionKeys.inventoryView,
+    ),
     _NavItem(
       'Movimientos',
       '/inventario-movimientos',
       Icons.swap_horiz_rounded,
+      AppPermissionKeys.inventoryMovements,
     ),
-    _NavItem('Productos', '/productos', Icons.shopping_bag_outlined),
-    _NavItem('Almacenes', '/almacenes', Icons.warehouse_outlined),
-    _NavItem('Reportes', '/reportes', Icons.bar_chart_rounded),
-    _NavItem('IPV', '/ipv-reportes', Icons.table_chart_outlined),
-    _NavItem('Licencia', '/licencia', Icons.verified_user_outlined),
-    _NavItem('Ajustes', '/configuracion', Icons.settings_outlined),
+    _NavItem(
+      'Productos',
+      '/productos',
+      Icons.shopping_bag_outlined,
+      AppPermissionKeys.productsView,
+    ),
+    _NavItem(
+      'Almacenes',
+      '/almacenes',
+      Icons.warehouse_outlined,
+      AppPermissionKeys.warehousesView,
+    ),
+    _NavItem(
+      'Reportes',
+      '/reportes',
+      Icons.bar_chart_rounded,
+      AppPermissionKeys.reportsGeneral,
+    ),
+    _NavItem(
+      'IPV',
+      '/ipv-reportes',
+      Icons.table_chart_outlined,
+      AppPermissionKeys.reportsIpv,
+    ),
+    _NavItem(
+      'Usuarios y Roles',
+      '/configuracion-usuarios',
+      Icons.manage_accounts_outlined,
+      AppPermissionKeys.usersManage,
+    ),
+    _NavItem(
+      'Licencia',
+      '/licencia',
+      Icons.verified_user_outlined,
+      AppPermissionKeys.settingsLicense,
+    ),
+    _NavItem(
+      'Ajustes',
+      '/configuracion',
+      Icons.settings_outlined,
+      AppPermissionKeys.settingsView,
+    ),
   ];
 
   static const List<_NavItem> _bottomNavItems = <_NavItem>[
-    _NavItem('Principal', '/home', Icons.home_rounded),
-    _NavItem('TPV', '/tpv', Icons.point_of_sale_rounded),
-    _NavItem('Ventas', '/ventas-directas', Icons.receipt_long_rounded),
-    _NavItem('Inventario', '/inventario', Icons.inventory_2_outlined),
-    _NavItem('Ajustes', '/configuracion', Icons.settings_outlined),
+    _NavItem(
+      'Principal',
+      '/home',
+      Icons.home_rounded,
+      AppPermissionKeys.homeView,
+    ),
+    _NavItem(
+      'TPV',
+      '/tpv',
+      Icons.point_of_sale_rounded,
+      AppPermissionKeys.tpvView,
+    ),
+    _NavItem(
+      'Ventas',
+      '/ventas-directas',
+      Icons.receipt_long_rounded,
+      AppPermissionKeys.salesDirect,
+    ),
+    _NavItem(
+      'Inventario',
+      '/inventario',
+      Icons.inventory_2_outlined,
+      AppPermissionKeys.inventoryView,
+    ),
+    _NavItem(
+      'Ajustes',
+      '/configuracion',
+      Icons.settings_outlined,
+      AppPermissionKeys.settingsView,
+    ),
   ];
 
   static const Set<String> _bottomNavHiddenRoutes = <String>{
@@ -71,7 +167,35 @@ class AppScaffold extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final UserSession? session = ref.watch(currentSessionProvider);
+    if (session == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted && _currentLocation(context) != '/login') {
+          context.go('/login');
+        }
+      });
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     final String activeRoute = currentRoute ?? _currentLocation(context);
+    if (!SessionAccess.canAccessRoute(session, activeRoute)) {
+      final String fallback = SessionAccess.firstAllowedRoute(session);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted && _currentLocation(context) != fallback) {
+          _showSoon(
+            context,
+            'No tienes permisos para acceder a esta pantalla.',
+          );
+          context.go(fallback);
+        }
+      });
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     final ThemeData theme = Theme.of(context);
     final LicenseStatus licenseStatus = ref.watch(currentLicenseStatusProvider);
     final bool isDark = theme.brightness == Brightness.dark;
@@ -82,12 +206,28 @@ class AppScaffold extends ConsumerWidget {
         _buildLicenseBanner(context, licenseStatus, activeRoute);
     final bool hideBottomNavByRoute =
         _bottomNavHiddenRoutes.contains(activeRoute);
-    final bool showBottomNav =
-        !hideBottomNavByRoute && (showBottomNavigationBar ?? showTopTabs);
+    final List<_NavItem> bottomItems = _bottomNavItems
+        .where((_NavItem item) => item.isAllowed(session))
+        .where((_NavItem item) {
+      if (_isGeneralReportsRoute(item.route) &&
+          !licenseStatus.canAccessGeneralReports) {
+        return false;
+      }
+      return true;
+    }).toList(growable: false);
+    final bool showBottomNav = !hideBottomNavByRoute &&
+        bottomItems.isNotEmpty &&
+        (showBottomNavigationBar ?? showTopTabs);
 
     return Scaffold(
       drawer: showDrawer
-          ? _buildDrawer(context, ref, activeRoute, licenseStatus)
+          ? _buildDrawer(
+              context,
+              ref,
+              activeRoute,
+              licenseStatus,
+              session,
+            )
           : null,
       floatingActionButton: floatingActionButton,
       appBar: AppBar(
@@ -96,12 +236,12 @@ class AppScaffold extends ConsumerWidget {
           title,
           style: const TextStyle(fontWeight: FontWeight.w700),
         ),
-        actions: _buildAppBarActions(context, ref),
+        actions: _buildAppBarActions(context, ref, session),
       ),
       bottomNavigationBar: bottomNavigationBar ??
           (showBottomNav
               ? AppBottomNavigation(
-                  items: _bottomNavItems
+                  items: bottomItems
                       .map(
                         (_NavItem item) => AppBottomNavigationItem(
                           label: item.label,
@@ -112,7 +252,7 @@ class AppScaffold extends ConsumerWidget {
                       .toList(),
                   activeRoute: activeRoute,
                   onRouteTap: (String route) =>
-                      _go(context, route, activeRoute, licenseStatus),
+                      _go(context, route, activeRoute, licenseStatus, session),
                 )
               : null),
       body: DecoratedBox(
@@ -133,7 +273,11 @@ class AppScaffold extends ConsumerWidget {
     );
   }
 
-  List<Widget> _buildAppBarActions(BuildContext context, WidgetRef ref) {
+  List<Widget> _buildAppBarActions(
+    BuildContext context,
+    WidgetRef ref,
+    UserSession session,
+  ) {
     final List<Widget> actions = <Widget>[];
     if (useDefaultActions) {
       actions.addAll(<Widget>[
@@ -151,7 +295,7 @@ class AppScaffold extends ConsumerWidget {
         PopupMenuButton<String>(
           tooltip: 'Menu',
           onSelected: (String value) {
-            _onTopMenu(value, context, ref);
+            _onTopMenu(value, context, ref, session);
           },
           itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
             if (onRefresh != null)
@@ -187,6 +331,7 @@ class AppScaffold extends ConsumerWidget {
     WidgetRef ref,
     String activeRoute,
     LicenseStatus licenseStatus,
+    UserSession session,
   ) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
@@ -197,6 +342,9 @@ class AppScaffold extends ConsumerWidget {
       (_NavItem item) {
         if (_isGeneralReportsRoute(item.route) &&
             !licenseStatus.canAccessGeneralReports) {
+          return false;
+        }
+        if (!item.isAllowed(session)) {
           return false;
         }
         return true;
@@ -223,7 +371,7 @@ class AppScaffold extends ConsumerWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Ventas y control offline',
+                    'Ventas y control',
                     style: TextStyle(fontSize: 14, color: drawerSubtitleColor),
                   ),
                 ],
@@ -254,7 +402,13 @@ class AppScaffold extends ConsumerWidget {
                       ),
                       onTap: () {
                         Navigator.of(context).pop();
-                        _go(context, item.route, activeRoute, licenseStatus);
+                        _go(
+                          context,
+                          item.route,
+                          activeRoute,
+                          licenseStatus,
+                          session,
+                        );
                       },
                     ),
                   // const SizedBox(height: 8),
@@ -313,12 +467,20 @@ class AppScaffold extends ConsumerWidget {
     String value,
     BuildContext context,
     WidgetRef ref,
+    UserSession session,
   ) async {
     switch (value) {
       case 'refresh':
         await onRefresh?.call();
         return;
       case 'config':
+        if (!SessionAccess.canAccessRoute(session, '/configuracion')) {
+          _showSoon(
+            context,
+            'No tienes permisos para abrir ajustes.',
+          );
+          return;
+        }
         if (_currentLocation(context) != '/configuracion') {
           context.go('/configuracion');
         }
@@ -334,7 +496,7 @@ class AppScaffold extends ConsumerWidget {
   void _logout(BuildContext context, WidgetRef ref) {
     ref.read(localAuthServiceProvider).clearRememberedSession();
     ref.read(currentSessionProvider.notifier).state = null;
-    context.go('/splash');
+    context.go('/login');
   }
 
   void _go(
@@ -342,8 +504,16 @@ class AppScaffold extends ConsumerWidget {
     String route,
     String activeRoute,
     LicenseStatus licenseStatus,
+    UserSession session,
   ) {
     if (activeRoute != route) {
+      if (!SessionAccess.canAccessRoute(session, route)) {
+        _showSoon(
+          context,
+          'No tienes permisos para acceder a ese modulo.',
+        );
+        return;
+      }
       if (_isSalesRoute(route) && !licenseStatus.canSell) {
         _showSoon(
           context,
@@ -432,9 +602,22 @@ class AppScaffold extends ConsumerWidget {
 }
 
 class _NavItem {
-  const _NavItem(this.label, this.route, this.icon);
+  const _NavItem(
+    this.label,
+    this.route,
+    this.icon, [
+    this.permissionKey,
+  ]);
 
   final String label;
   final String route;
   final IconData icon;
+  final String? permissionKey;
+
+  bool isAllowed(UserSession session) {
+    if (permissionKey == null || permissionKey!.trim().isEmpty) {
+      return true;
+    }
+    return session.hasPermission(permissionKey!);
+  }
 }

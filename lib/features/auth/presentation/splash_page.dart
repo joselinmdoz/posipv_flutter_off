@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/security/session_access.dart';
 import 'auth_providers.dart';
 import 'widgets/splash_background_decoration.dart';
 import 'widgets/splash_loading_indicator.dart';
@@ -52,25 +53,22 @@ class _SplashPageState extends ConsumerState<SplashPage>
     final authService = ref.read(localAuthServiceProvider);
     try {
       await authService.ensureDefaultAdmin();
-      final bool appLockEnabled = await authService.isAppLockEnabled();
+      final session = await authService.restoreActiveSession();
+      if (session != null) {
+        ref.read(currentSessionProvider.notifier).state = session;
+        if (!mounted) {
+          return;
+        }
+        context.go(SessionAccess.firstAllowedRoute(session));
+        return;
+      }
+      ref.read(currentSessionProvider.notifier).state = null;
       if (!mounted) {
         return;
       }
-
-      if (appLockEnabled) {
-        ref.read(currentSessionProvider.notifier).state = null;
-        context.go('/login');
-        return;
-      }
-
-      final session = await authService.createOfflineSession();
-      if (!mounted) {
-        return;
-      }
-      ref.read(currentSessionProvider.notifier).state = session;
-      context.go('/home');
+      context.go('/login');
     } catch (error) {
-      debugPrint('No se pudo inicializar sesion offline: $error');
+      debugPrint('No se pudo inicializar autenticacion: $error');
       if (mounted) {
         context.go('/login');
       }

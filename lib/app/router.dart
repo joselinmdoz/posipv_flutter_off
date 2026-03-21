@@ -4,8 +4,12 @@ import '../features/almacenes/presentation/almacenes_page.dart';
 import '../features/auth/presentation/login_page.dart';
 import '../features/auth/presentation/splash_page.dart';
 import '../features/configuracion/presentation/configuracion_page.dart';
+import '../features/configuracion/presentation/dashboard_widgets_settings_page.dart';
 import '../features/configuracion/presentation/currency_settings_page.dart';
 import '../features/configuracion/presentation/security_page.dart';
+import '../features/auth/presentation/user_access_management_page.dart';
+import '../features/auth/presentation/role_permissions_management_page.dart';
+import '../features/clientes/presentation/clientes_page.dart';
 import '../features/home/presentation/home_page.dart';
 import '../features/inventario/presentation/inventario_page.dart';
 import '../features/inventario/presentation/movimientos_inventario_page.dart';
@@ -15,6 +19,7 @@ import '../features/reportes/presentation/reportes_page.dart';
 import '../features/reportes/presentation/ipv_reportes_page.dart';
 import '../features/tpv/presentation/tpv_page.dart';
 import '../features/tpv/presentation/tpv_employees_page.dart';
+import '../features/tpv/presentation/employee_profile_page.dart';
 import '../features/ventas_directas/presentation/ventas_directas_page.dart';
 import '../features/ventas_pos/presentation/ventas_pos_page.dart';
 
@@ -61,6 +66,10 @@ final GoRouter appRouter = GoRouter(
           builder: (context, state) => const VentasDirectasPage(),
         ),
         _branch(
+          path: '/clientes',
+          builder: (context, state) => const ClientesPage(),
+        ),
+        _branch(
           path: '/tpv',
           builder: (context, state) => const TpvPage(),
         ),
@@ -69,6 +78,10 @@ final GoRouter appRouter = GoRouter(
           builder: (context, state) => TpvEmployeesPage(
             openCreateOnLoad: state.uri.queryParameters['new'] == '1',
           ),
+        ),
+        _branch(
+          path: '/perfil-empleado',
+          builder: (context, state) => const EmployeeProfilePage(),
         ),
         _branch(
           path: '/reportes',
@@ -81,6 +94,18 @@ final GoRouter appRouter = GoRouter(
         _branch(
           path: '/configuracion',
           builder: (context, state) => const ConfiguracionPage(),
+        ),
+        _branch(
+          path: '/configuracion-usuarios',
+          builder: (context, state) => const UserAccessManagementPage(),
+        ),
+        _branch(
+          path: '/configuracion-roles',
+          builder: (context, state) => const RolePermissionsManagementPage(),
+        ),
+        _branch(
+          path: '/configuracion-dashboard-widgets',
+          builder: (context, state) => const DashboardWidgetsSettingsPage(),
         ),
         _branch(
           path: '/licencia',

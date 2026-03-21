@@ -745,6 +745,9 @@ class InventarioLocalDataSource {
         refType: refType,
       );
 
+      final String createdBy = row.read<String>('created_by');
+      final String username =
+          (row.readNullable<String>('username') ?? '').trim();
       return InventoryMovementView(
         id: row.read<String>('id'),
         productId: row.read<String>('product_id'),
@@ -761,8 +764,8 @@ class InventarioLocalDataSource {
         refType: refType,
         refId: row.readNullable<String>('ref_id'),
         note: row.readNullable<String>('note'),
-        createdBy: row.read<String>('created_by'),
-        username: (row.readNullable<String>('username') ?? '-').trim(),
+        createdBy: createdBy,
+        username: username.isEmpty ? createdBy : username,
         createdAt: row.read<DateTime>('created_at'),
       );
     }).toList();

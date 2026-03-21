@@ -1,23 +1,21 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../shared/models/user_session.dart';
-import '../../../auth/presentation/auth_providers.dart';
 
-class PosStoreInfoBar extends ConsumerWidget {
-  final String? terminalName;
-  final bool open;
-
+class PosStoreInfoBar extends StatelessWidget {
   const PosStoreInfoBar({
     super.key,
     required this.terminalName,
     required this.open,
+    required this.sellerName,
   });
 
+  final String? terminalName;
+  final bool open;
+  final String? sellerName;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool isDark = theme.brightness == Brightness.dark;
-    final UserSession? session = ref.watch(currentSessionProvider);
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
@@ -93,12 +91,14 @@ class PosStoreInfoBar extends ConsumerWidget {
                 'Vendedor',
                 style: TextStyle(
                   fontSize: 12,
-                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                  color: isDark
+                      ? const Color(0xFF94A3B8)
+                      : const Color(0xFF64748B),
                   fontWeight: FontWeight.w500,
                 ),
               ),
               Text(
-                session?.username ?? 'Admin',
+                (sellerName ?? 'Sin empleado').trim(),
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,

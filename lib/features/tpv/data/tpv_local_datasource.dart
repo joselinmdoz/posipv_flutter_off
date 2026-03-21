@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_models.dart';
 import '../../../core/licensing/license_service.dart';
+import '../../../core/security/app_permissions.dart';
 
 class TpvSessionWithUser {
   const TpvSessionWithUser({
@@ -54,6 +55,18 @@ class TpvUserOption {
 
   final String id;
   final String username;
+}
+
+class TpvWarehouseOption {
+  const TpvWarehouseOption({
+    required this.id,
+    required this.name,
+    required this.warehouseType,
+  });
+
+  final String id;
+  final String name;
+  final String warehouseType;
 }
 
 class TpvTerminalConfig {
@@ -248,8 +261,10 @@ class TpvLocalDataSource {
   Future<String> createTerminal({
     required String name,
     String? code,
+    String? warehouseId,
     TpvTerminalConfig? config,
     String? imagePath,
+    List<String> allowedEmployeeIds = const <String>[],
   }) async {
     await _licenseService.requireWriteAccess();
     final LicenseStatus licenseStatus = await _licenseService.current();
@@ -274,23 +289,32 @@ class TpvLocalDataSource {
     );
 
     return _db.transaction(() async {
-      final String warehouseId = _uuid.v4();
+      final String? requestedWarehouseId = _normalizeOptional(warehouseId);
+      String resolvedWarehouseId;
+      if (requestedWarehouseId == null) {
+        resolvedWarehouseId = _uuid.v4();
+        await _db.into(_db.warehouses).insert(
+              WarehousesCompanion.insert(
+                id: resolvedWarehouseId,
+                name: cleanName,
+                warehouseType: const Value('TPV'),
+              ),
+            );
+      } else {
+        await _requireWarehouseAvailableForTerminal(
+          warehouseId: requestedWarehouseId,
+          excludeTerminalId: null,
+        );
+        resolvedWarehouseId = requestedWarehouseId;
+      }
       final String terminalId = _uuid.v4();
-
-      await _db.into(_db.warehouses).insert(
-            WarehousesCompanion.insert(
-              id: warehouseId,
-              name: cleanName,
-              warehouseType: const Value('TPV'),
-            ),
-          );
 
       await _db.into(_db.posTerminals).insert(
             PosTerminalsCompanion.insert(
               id: terminalId,
               code: resolvedCode,
               name: cleanName,
-              warehouseId: warehouseId,
+              warehouseId: resolvedWarehouseId,
               currencyCode: Value(safeConfig.currencyCode),
               currencySymbol: Value(safeConfig.currencySymbol),
               paymentMethodsJson: Value(
@@ -302,6 +326,11 @@ class TpvLocalDataSource {
               imagePath: Value(imagePath),
             ),
           );
+
+      await _replaceTerminalEmployeeAccess(
+        terminalId: terminalId,
+        employeeIds: allowedEmployeeIds,
+      );
 
       return terminalId;
     });
@@ -320,8 +349,10 @@ class TpvLocalDataSource {
     required String terminalId,
     required String name,
     required String code,
+    String? warehouseId,
     TpvTerminalConfig? config,
     String? imagePath,
+    List<String> allowedEmployeeIds = const <String>[],
   }) async {
     await _licenseService.requireWriteAccess();
     final String cleanName = name.trim();
@@ -341,15 +372,27 @@ class TpvLocalDataSource {
       code: code,
       excludeTerminalId: terminalId,
     );
+    final String requestedWarehouseId =
+        _normalizeOptional(warehouseId) ?? terminal.warehouseId;
+    if (requestedWarehouseId != terminal.warehouseId) {
+      await _requireWarehouseAvailableForTerminal(
+        warehouseId: requestedWarehouseId,
+        excludeTerminalId: terminalId,
+      );
+    }
     final TpvTerminalConfig safeConfig = _sanitizeConfig(config);
 
     await _db.transaction(() async {
+      final Warehouse? currentWarehouse = await (_db.select(_db.warehouses)
+            ..where((Warehouses tbl) => tbl.id.equals(terminal.warehouseId)))
+          .getSingleOrNull();
       await (_db.update(_db.posTerminals)
             ..where((PosTerminals tbl) => tbl.id.equals(terminalId)))
           .write(
         PosTerminalsCompanion(
           name: Value(cleanName),
           code: Value(resolvedCode),
+          warehouseId: Value(requestedWarehouseId),
           currencyCode: Value(safeConfig.currencyCode),
           currencySymbol: Value(safeConfig.currencySymbol),
           paymentMethodsJson: Value(
@@ -363,14 +406,82 @@ class TpvLocalDataSource {
         ),
       );
 
-      await (_db.update(_db.warehouses)
-            ..where((Warehouses tbl) => tbl.id.equals(terminal.warehouseId)))
-          .write(
-        WarehousesCompanion(
-          name: Value(cleanName),
-        ),
+      if (requestedWarehouseId == terminal.warehouseId &&
+          currentWarehouse != null &&
+          currentWarehouse.warehouseType.trim().toUpperCase() == 'TPV' &&
+          currentWarehouse.name.trim() == terminal.name.trim()) {
+        await (_db.update(_db.warehouses)
+              ..where((Warehouses tbl) => tbl.id.equals(terminal.warehouseId)))
+            .write(
+          WarehousesCompanion(
+            name: Value(cleanName),
+          ),
+        );
+      }
+
+      await _replaceTerminalEmployeeAccess(
+        terminalId: terminalId,
+        employeeIds: allowedEmployeeIds,
       );
     });
+  }
+
+  Future<List<TpvWarehouseOption>> listWarehousesEligibleForTerminalAccess({
+    String? terminalId,
+  }) async {
+    final String? cleanTerminalId = _normalizeOptional(terminalId);
+    String? currentWarehouseId;
+    if (cleanTerminalId != null) {
+      final PosTerminal? terminal = await (_db.select(_db.posTerminals)
+            ..where((PosTerminals tbl) => tbl.id.equals(cleanTerminalId)))
+          .getSingleOrNull();
+      currentWarehouseId = terminal?.warehouseId;
+    }
+
+    final List<Warehouse> warehouses = await (_db.select(_db.warehouses)
+          ..where((Warehouses tbl) {
+            if (currentWarehouseId == null) {
+              return tbl.isActive.equals(true);
+            }
+            return tbl.isActive.equals(true) |
+                tbl.id.equals(currentWarehouseId);
+          })
+          ..orderBy(<OrderingTerm Function(Warehouses)>[
+            (Warehouses tbl) => OrderingTerm.asc(tbl.name),
+          ]))
+        .get();
+    if (warehouses.isEmpty) {
+      return const <TpvWarehouseOption>[];
+    }
+
+    final Set<String> warehouseIds =
+        warehouses.map((Warehouse item) => item.id).toSet();
+    final List<PosTerminal> terminals = await (_db.select(_db.posTerminals)
+          ..where((PosTerminals tbl) => tbl.warehouseId.isIn(warehouseIds)))
+        .get();
+    final Map<String, String> terminalByWarehouseId = <String, String>{
+      for (final PosTerminal terminal in terminals)
+        terminal.warehouseId: terminal.id,
+    };
+
+    final List<TpvWarehouseOption> options = <TpvWarehouseOption>[];
+    for (final Warehouse warehouse in warehouses) {
+      final String? ownerTerminalId = terminalByWarehouseId[warehouse.id];
+      final bool canUse = ownerTerminalId == null ||
+          ownerTerminalId == cleanTerminalId ||
+          warehouse.id == currentWarehouseId;
+      if (!canUse) {
+        continue;
+      }
+      options.add(
+        TpvWarehouseOption(
+          id: warehouse.id,
+          name: warehouse.name,
+          warehouseType: warehouse.warehouseType,
+        ),
+      );
+    }
+    return options;
   }
 
   Future<void> deactivateTerminal(String terminalId) async {
@@ -399,6 +510,12 @@ class TpvLocalDataSource {
           isActive: Value(false),
         ),
       );
+
+      await (_db.delete(_db.posTerminalEmployees)
+            ..where(
+              (PosTerminalEmployees tbl) => tbl.terminalId.equals(terminalId),
+            ))
+          .go();
 
       final List<PosSession> openSessions = await (_db.select(_db.posSessions)
             ..where((PosSessions tbl) =>
@@ -535,6 +652,177 @@ class TpvLocalDataSource {
 
   Future<List<TpvEmployee>> listActiveEmployees() {
     return listEmployees(includeInactive: false);
+  }
+
+  Future<List<TpvEmployee>> listEmployeesEligibleForTerminalAccess() async {
+    final Set<String> userIds = await _listUserIdsWithPosSalesAccess();
+    if (userIds.isEmpty) {
+      return <TpvEmployee>[];
+    }
+    final List<TpvEmployee> employees = await listActiveEmployees();
+    return employees.where((TpvEmployee employee) {
+      final String associatedUserId = (employee.associatedUserId ?? '').trim();
+      if (associatedUserId.isEmpty) {
+        return false;
+      }
+      return userIds.contains(associatedUserId);
+    }).toList(growable: false);
+  }
+
+  Future<Set<String>> listAllowedEmployeeIdsForTerminal(
+      String terminalId) async {
+    final String cleanTerminalId = terminalId.trim();
+    if (cleanTerminalId.isEmpty) {
+      return <String>{};
+    }
+    final List<PosTerminalEmployee> rows =
+        await (_db.select(_db.posTerminalEmployees)
+              ..where(
+                (PosTerminalEmployees tbl) =>
+                    tbl.terminalId.equals(cleanTerminalId),
+              ))
+            .get();
+    return rows
+        .map((PosTerminalEmployee row) => row.employeeId.trim())
+        .where((String id) => id.isNotEmpty)
+        .toSet();
+  }
+
+  Future<bool> isEmployeeAllowedForTerminal({
+    required String terminalId,
+    required String employeeId,
+  }) async {
+    final String cleanTerminalId = terminalId.trim();
+    final String cleanEmployeeId = employeeId.trim();
+    if (cleanTerminalId.isEmpty || cleanEmployeeId.isEmpty) {
+      return false;
+    }
+    final List<PosTerminalEmployee> restrictedRows =
+        await (_db.select(_db.posTerminalEmployees)
+              ..where((PosTerminalEmployees tbl) =>
+                  tbl.terminalId.equals(cleanTerminalId))
+              ..limit(1))
+            .get();
+    if (restrictedRows.isEmpty) {
+      return true;
+    }
+
+    final PosTerminalEmployee? row = await (_db.select(_db.posTerminalEmployees)
+          ..where(
+            (PosTerminalEmployees tbl) =>
+                tbl.terminalId.equals(cleanTerminalId) &
+                tbl.employeeId.equals(cleanEmployeeId),
+          ))
+        .getSingleOrNull();
+    return row != null;
+  }
+
+  Future<bool> userCanAccessTerminal({
+    required String terminalId,
+    required String userId,
+  }) async {
+    final String cleanTerminalId = terminalId.trim();
+    final String cleanUserId = userId.trim();
+    if (cleanTerminalId.isEmpty || cleanUserId.isEmpty) {
+      return false;
+    }
+
+    if (await _userHasAdminRole(cleanUserId)) {
+      return true;
+    }
+    final TpvEmployee? employee =
+        await findActiveEmployeeByAssociatedUser(cleanUserId);
+    if (employee == null) {
+      return false;
+    }
+    return isEmployeeAllowedForTerminal(
+      terminalId: cleanTerminalId,
+      employeeId: employee.id,
+    );
+  }
+
+  Future<List<TpvTerminalView>> filterTerminalViewsForEmployee({
+    required List<TpvTerminalView> terminals,
+    required String employeeId,
+  }) async {
+    final String cleanEmployeeId = employeeId.trim();
+    if (cleanEmployeeId.isEmpty || terminals.isEmpty) {
+      return <TpvTerminalView>[];
+    }
+    final Set<String> terminalIds =
+        terminals.map((TpvTerminalView row) => row.terminal.id).toSet();
+    final List<PosTerminalEmployee> rows = await (_db
+            .select(_db.posTerminalEmployees)
+          ..where(
+              (PosTerminalEmployees tbl) => tbl.terminalId.isIn(terminalIds)))
+        .get();
+
+    final Map<String, Set<String>> employeesByTerminal =
+        <String, Set<String>>{};
+    for (final PosTerminalEmployee row in rows) {
+      employeesByTerminal
+          .putIfAbsent(row.terminalId, () => <String>{})
+          .add(row.employeeId);
+    }
+
+    return terminals.where((TpvTerminalView terminal) {
+      final Set<String>? allowed = employeesByTerminal[terminal.terminal.id];
+      if (allowed == null || allowed.isEmpty) {
+        return true;
+      }
+      return allowed.contains(cleanEmployeeId);
+    }).toList(growable: false);
+  }
+
+  Future<TpvEmployee?> findActiveEmployeeByAssociatedUser(
+    String userId,
+  ) async {
+    final String cleanUserId = userId.trim();
+    if (cleanUserId.isEmpty) {
+      return null;
+    }
+    final List<QueryRow> rows = await _db.customSelect(
+      '''
+      SELECT
+        e.id AS id,
+        e.code AS code,
+        e.name AS name,
+        e.sex AS sex,
+        e.identity_number AS identity_number,
+        e.address AS address,
+        e.image_path AS image_path,
+        e.associated_user_id AS associated_user_id,
+        e.is_active AS is_active,
+        u.username AS associated_username
+      FROM employees e
+      LEFT JOIN users u
+        ON u.id = e.associated_user_id
+      WHERE e.is_active = 1
+        AND e.associated_user_id = ?
+      ORDER BY e.created_at ASC
+      LIMIT 1
+      ''',
+      variables: <Variable<Object>>[Variable<String>(cleanUserId)],
+    ).get();
+    if (rows.isEmpty) {
+      return null;
+    }
+    final QueryRow row = rows.first;
+    return TpvEmployee(
+      id: row.read<String>('id'),
+      code: row.read<String>('code'),
+      name: row.read<String>('name'),
+      sex: _normalizeOptional(row.readNullable<String>('sex')),
+      identityNumber:
+          _normalizeOptional(row.readNullable<String>('identity_number')),
+      address: _normalizeOptional(row.readNullable<String>('address')),
+      imagePath: _normalizeOptional(row.readNullable<String>('image_path')),
+      associatedUserId:
+          _normalizeOptional(row.readNullable<String>('associated_user_id')),
+      associatedUsername:
+          _normalizeOptional(row.readNullable<String>('associated_username')),
+      isActive: row.read<bool>('is_active'),
+    );
   }
 
   Future<String> createEmployee({
@@ -904,6 +1192,122 @@ class TpvLocalDataSource {
           ..where(predicate))
         .getSingle();
     return row.read(countExp) ?? 0;
+  }
+
+  Future<Set<String>> _listUserIdsWithPosSalesAccess() async {
+    final List<QueryRow> rows = await _db.customSelect(
+      '''
+      SELECT
+        ur.user_id AS user_id,
+        MAX(CASE WHEN u.is_active = 1 THEN 1 ELSE 0 END) AS is_active,
+        MAX(CASE WHEN ur.role_id = ? THEN 1 ELSE 0 END) AS is_admin,
+        MAX(CASE WHEN rp.permission_key = ? THEN 1 ELSE 0 END) AS has_tpv,
+        MAX(CASE WHEN rp.permission_key = ? THEN 1 ELSE 0 END) AS has_sales_pos
+      FROM user_roles ur
+      LEFT JOIN users u
+        ON u.id = ur.user_id
+      LEFT JOIN role_permissions rp
+        ON rp.role_id = ur.role_id
+      GROUP BY ur.user_id
+      HAVING is_active = 1
+        AND is_admin = 0
+        AND has_tpv = 1
+        AND has_sales_pos = 1
+      ''',
+      variables: <Variable<Object>>[
+        Variable<String>(AppRoleIds.admin),
+        Variable<String>(AppPermissionKeys.tpvView),
+        Variable<String>(AppPermissionKeys.salesPos),
+      ],
+    ).get();
+
+    return rows
+        .map((QueryRow row) => (row.read<String>('user_id')).trim())
+        .where((String value) => value.isNotEmpty)
+        .toSet();
+  }
+
+  Future<bool> _userHasAdminRole(String userId) async {
+    final String cleanUserId = userId.trim();
+    if (cleanUserId.isEmpty) {
+      return false;
+    }
+    final User? user = await (_db.select(_db.users)
+          ..where((Users tbl) => tbl.id.equals(cleanUserId)))
+        .getSingleOrNull();
+    if (user == null) {
+      return false;
+    }
+    if (user.role.trim().toLowerCase() == 'admin' ||
+        user.username.trim().toLowerCase() == 'admin') {
+      return true;
+    }
+    final UserRole? role = await (_db.select(_db.userRoles)
+          ..where(
+            (UserRoles tbl) =>
+                tbl.userId.equals(cleanUserId) &
+                tbl.roleId.equals(AppRoleIds.admin),
+          ))
+        .getSingleOrNull();
+    return role != null;
+  }
+
+  Future<void> _replaceTerminalEmployeeAccess({
+    required String terminalId,
+    required List<String> employeeIds,
+  }) async {
+    final String cleanTerminalId = terminalId.trim();
+    if (cleanTerminalId.isEmpty) {
+      return;
+    }
+    final Set<String> eligibleEmployeeIds =
+        (await listEmployeesEligibleForTerminalAccess())
+            .map((TpvEmployee employee) => employee.id)
+            .toSet();
+    final Set<String> sanitized = employeeIds
+        .map((String value) => value.trim())
+        .where((String value) => value.isNotEmpty)
+        .where((String value) => eligibleEmployeeIds.contains(value))
+        .toSet();
+
+    await (_db.delete(_db.posTerminalEmployees)
+          ..where(
+            (PosTerminalEmployees tbl) =>
+                tbl.terminalId.equals(cleanTerminalId),
+          ))
+        .go();
+
+    for (final String employeeId in sanitized) {
+      await _db.into(_db.posTerminalEmployees).insert(
+            PosTerminalEmployeesCompanion.insert(
+              terminalId: cleanTerminalId,
+              employeeId: employeeId,
+            ),
+          );
+    }
+  }
+
+  Future<void> _requireWarehouseAvailableForTerminal({
+    required String warehouseId,
+    required String? excludeTerminalId,
+  }) async {
+    final String cleanWarehouseId = warehouseId.trim();
+    final Warehouse? warehouse = await (_db.select(_db.warehouses)
+          ..where((Warehouses tbl) => tbl.id.equals(cleanWarehouseId)))
+        .getSingleOrNull();
+    if (warehouse == null || !warehouse.isActive) {
+      throw Exception('El almacén seleccionado no está disponible.');
+    }
+
+    final PosTerminal? owner = await (_db.select(_db.posTerminals)
+          ..where(
+              (PosTerminals tbl) => tbl.warehouseId.equals(cleanWarehouseId)))
+        .getSingleOrNull();
+    if (owner != null && owner.id != excludeTerminalId) {
+      throw Exception(
+        'El almacén "${warehouse.name}" ya está asociado a otro TPV.',
+      );
+    }
   }
 
   Future<void> closeSession({

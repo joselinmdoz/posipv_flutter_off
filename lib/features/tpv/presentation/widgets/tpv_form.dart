@@ -1,12 +1,15 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+
 import '../../../../core/db/app_database.dart';
 import '../../../configuracion/data/configuracion_local_datasource.dart';
 import '../../../configuracion/presentation/configuracion_providers.dart';
 import '../../data/tpv_local_datasource.dart';
 import '../tpv_providers.dart';
+import 'tpv_employee_avatar.dart';
 
 class TpvFormPage extends ConsumerStatefulWidget {
   const TpvFormPage({super.key, this.terminal});
@@ -18,12 +21,18 @@ class TpvFormPage extends ConsumerStatefulWidget {
 }
 
 class _TpvFormPageState extends ConsumerState<TpvFormPage> {
+  static const String _autoCreateWarehouseValue = '__auto_create_warehouse__';
+
   late final TextEditingController _nameCtrl;
   late final TextEditingController _codeCtrl;
   late final TextEditingController _denominationsCtrl;
 
   List<AppCurrencySetting> _currencyOptions = <AppCurrencySetting>[];
+  List<TpvWarehouseOption> _warehouseOptions = <TpvWarehouseOption>[];
+  List<TpvEmployee> _eligibleEmployees = <TpvEmployee>[];
+  Set<String> _selectedEmployeeIds = <String>{};
   String? _selectedCurrencyCode;
+  String? _selectedWarehouseId;
   String _selectedCurrencySymbolFallback =
       TpvTerminalConfig.defaults.currencySymbol;
   String? _imagePath;
@@ -31,6 +40,8 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
   bool _payCard = false;
   bool _payTransfer = false;
   bool _payWallet = false;
+  bool _loadingWarehouseOptions = true;
+  bool _loadingEmployeeAccess = true;
   bool _saving = false;
 
   bool get _isEditing => widget.terminal != null;
@@ -59,7 +70,11 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
     _payTransfer = config.paymentMethods.contains('transfer');
     _payWallet = config.paymentMethods.contains('wallet');
     _imagePath = widget.terminal?.imagePath;
+    _selectedWarehouseId =
+        widget.terminal?.warehouseId ?? _autoCreateWarehouseValue;
     _loadCurrencyOptions();
+    _loadWarehouseOptions();
+    _loadEmployeeAccess();
   }
 
   @override
@@ -183,6 +198,23 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
       _show('La moneda del TPV es obligatoria.');
       return;
     }
+    if (_loadingEmployeeAccess) {
+      _show('Espera a que carguen los empleados permitidos.');
+      return;
+    }
+    if (_loadingWarehouseOptions) {
+      _show('Espera a que carguen los almacenes disponibles.');
+      return;
+    }
+    final String selectedWarehouseValue = (_selectedWarehouseId ?? '').trim();
+    if (_isEditing && selectedWarehouseValue.isEmpty) {
+      _show('Selecciona un almacén para el TPV.');
+      return;
+    }
+    if (_eligibleEmployees.isNotEmpty && _selectedEmployeeIds.isEmpty) {
+      _show('Selecciona al menos un empleado con acceso al TPV.');
+      return;
+    }
 
     setState(() => _saving = true);
     try {
@@ -198,15 +230,23 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
               terminalId: widget.terminal!.id,
               name: name,
               code: code,
+              warehouseId: selectedWarehouseValue,
               config: config,
               imagePath: _imagePath,
+              allowedEmployeeIds: _selectedEmployeeIds.toList(),
             );
       } else {
+        final String? warehouseId =
+            selectedWarehouseValue == _autoCreateWarehouseValue
+                ? null
+                : selectedWarehouseValue;
         await ref.read(tpvLocalDataSourceProvider).createTerminal(
               name: name,
               code: code,
+              warehouseId: warehouseId,
               config: config,
               imagePath: _imagePath,
+              allowedEmployeeIds: _selectedEmployeeIds.toList(),
             );
       }
       if (!mounted) {
@@ -226,6 +266,90 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
   void _show(String message) {
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _loadWarehouseOptions() async {
+    setState(() => _loadingWarehouseOptions = true);
+    try {
+      final TpvLocalDataSource ds = ref.read(tpvLocalDataSourceProvider);
+      final List<TpvWarehouseOption> options =
+          await ds.listWarehousesEligibleForTerminalAccess(
+        terminalId: widget.terminal?.id,
+      );
+      if (!mounted) {
+        return;
+      }
+      String selected = (_selectedWarehouseId ?? '').trim();
+      if (_isEditing) {
+        selected = widget.terminal!.warehouseId;
+      } else if (selected.isEmpty) {
+        selected =
+            options.isEmpty ? _autoCreateWarehouseValue : options.first.id;
+      } else {
+        final bool exists = options.any((TpvWarehouseOption item) {
+          return item.id == selected;
+        });
+        if (!exists && selected != _autoCreateWarehouseValue) {
+          selected =
+              options.isEmpty ? _autoCreateWarehouseValue : options.first.id;
+        }
+      }
+
+      setState(() {
+        _warehouseOptions = options;
+        _selectedWarehouseId = selected;
+        _loadingWarehouseOptions = false;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _warehouseOptions = <TpvWarehouseOption>[];
+        _selectedWarehouseId = _isEditing
+            ? widget.terminal?.warehouseId
+            : _autoCreateWarehouseValue;
+        _loadingWarehouseOptions = false;
+      });
+    }
+  }
+
+  Future<void> _loadEmployeeAccess() async {
+    setState(() => _loadingEmployeeAccess = true);
+    try {
+      final TpvLocalDataSource ds = ref.read(tpvLocalDataSourceProvider);
+      final List<TpvEmployee> eligible =
+          await ds.listEmployeesEligibleForTerminalAccess();
+      Set<String> selected = <String>{};
+      if (_isEditing) {
+        selected =
+            await ds.listAllowedEmployeeIdsForTerminal(widget.terminal!.id);
+      }
+      if (selected.isEmpty) {
+        selected = eligible.map((TpvEmployee e) => e.id).toSet();
+      } else {
+        selected = selected.where((String id) {
+          return eligible.any((TpvEmployee employee) => employee.id == id);
+        }).toSet();
+      }
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _eligibleEmployees = eligible;
+        _selectedEmployeeIds = selected;
+        _loadingEmployeeAccess = false;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _eligibleEmployees = <TpvEmployee>[];
+        _selectedEmployeeIds = <String>{};
+        _loadingEmployeeAccess = false;
+      });
+    }
   }
 
   List<String> _selectedPaymentMethods() {
@@ -341,6 +465,8 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
                 ),
               ],
             ),
+            const SizedBox(height: 20),
+            _buildWarehouseSelector(theme),
 
             const SizedBox(height: 32),
             _buildSectionLabel('Configuración Monetaria'),
@@ -426,6 +552,59 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
               ],
             ),
 
+            const SizedBox(height: 32),
+            _buildSectionLabel('Acceso de Empleados'),
+            const SizedBox(height: 12),
+            if (_loadingEmployeeAccess)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: LinearProgressIndicator(minHeight: 3),
+              )
+            else if (_eligibleEmployees.isEmpty)
+              Text(
+                'No hay empleados elegibles con permisos de TPV y venta POS.',
+                style: TextStyle(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+              )
+            else
+              Column(
+                children: _eligibleEmployees.map((TpvEmployee employee) {
+                  final bool selected =
+                      _selectedEmployeeIds.contains(employee.id);
+                  return CheckboxListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    value: selected,
+                    onChanged: _saving
+                        ? null
+                        : (bool? value) {
+                            setState(() {
+                              if (value == true) {
+                                _selectedEmployeeIds.add(employee.id);
+                              } else {
+                                _selectedEmployeeIds.remove(employee.id);
+                              }
+                            });
+                          },
+                    secondary: TpvEmployeeAvatar(
+                      imagePath: employee.imagePath,
+                      radius: 18,
+                      backgroundColor:
+                          Theme.of(context).colorScheme.surfaceContainerHighest,
+                      iconColor: Theme.of(context).colorScheme.primary,
+                    ),
+                    title: Text(employee.name),
+                    subtitle: Text(
+                      (employee.associatedUsername ?? '').trim().isNotEmpty
+                          ? '@${employee.associatedUsername}'
+                          : 'Sin usuario asociado',
+                    ),
+                  );
+                }).toList(growable: false),
+              ),
+
             const SizedBox(height: 48),
             SizedBox(
               width: double.infinity,
@@ -458,6 +637,99 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
         ),
       ),
     );
+  }
+
+  Widget _buildWarehouseSelector(ThemeData theme) {
+    final bool hasSelection = _warehouseOptions.any((TpvWarehouseOption item) {
+      return item.id == _selectedWarehouseId;
+    });
+    final bool useAutoCreate =
+        !_isEditing && _selectedWarehouseId == _autoCreateWarehouseValue;
+    final String? selectedValue = useAutoCreate
+        ? _autoCreateWarehouseValue
+        : (hasSelection ? _selectedWarehouseId : null);
+
+    final List<DropdownMenuItem<String>> items = <DropdownMenuItem<String>>[
+      if (!_isEditing)
+        const DropdownMenuItem<String>(
+          value: _autoCreateWarehouseValue,
+          child: Text('Crear almacén TPV automático'),
+        ),
+      ..._warehouseOptions.map((TpvWarehouseOption warehouse) {
+        final String type = warehouse.warehouseType.trim();
+        final String suffix = type.isEmpty ? '' : ' • $type';
+        return DropdownMenuItem<String>(
+          value: warehouse.id,
+          child: Text('${warehouse.name}$suffix'),
+        );
+      }),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        DropdownButtonFormField<String>(
+          key: ValueKey<String?>('warehouse-$selectedValue'),
+          initialValue: selectedValue,
+          isExpanded: true,
+          decoration: InputDecoration(
+            labelText: 'Almacén asociado',
+            hintText: 'Selecciona un almacén',
+            prefixIcon: const Icon(Icons.warehouse_outlined, size: 20),
+            filled: true,
+            fillColor: theme.colorScheme.surfaceContainerHighest
+                .withValues(alpha: 0.3),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide.none,
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(
+                color: Color(0xFF1152D4),
+                width: 1.5,
+              ),
+            ),
+          ),
+          items: items,
+          onChanged: (_saving || _loadingWarehouseOptions)
+              ? null
+              : (String? value) {
+                  setState(() => _selectedWarehouseId = value);
+                },
+        ),
+        const SizedBox(height: 10),
+        if (_loadingWarehouseOptions)
+          const LinearProgressIndicator(minHeight: 3)
+        else
+          Text(
+            _warehouseHelperText(),
+            style: TextStyle(
+              color: theme.colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+      ],
+    );
+  }
+
+  String _warehouseHelperText() {
+    final String selected = (_selectedWarehouseId ?? '').trim();
+    if (!_isEditing && selected == _autoCreateWarehouseValue) {
+      return 'Se creará un almacén dedicado para este TPV.';
+    }
+    for (final TpvWarehouseOption item in _warehouseOptions) {
+      if (item.id == selected) {
+        return 'Almacén seleccionado: ${item.name}';
+      }
+    }
+    return _warehouseOptions.isEmpty
+        ? 'No hay almacenes disponibles para seleccionar.'
+        : 'Selecciona el almacén de trabajo para este TPV.';
   }
 
   Widget _buildSectionLabel(String label) {

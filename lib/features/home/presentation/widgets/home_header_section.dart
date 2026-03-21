@@ -4,20 +4,47 @@ import '../../../../shared/models/user_session.dart';
 
 class HomeHeaderSection extends StatelessWidget {
   final UserSession? session;
+  final String? displayName;
 
-  const HomeHeaderSection({super.key, required this.session});
+  const HomeHeaderSection({
+    super.key,
+    required this.session,
+    this.displayName,
+  });
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool isDark = theme.brightness == Brightness.dark;
 
-    final String username = session?.username ?? 'Usuario';
+    final String username =
+        (displayName ?? session?.username ?? 'Usuario').trim();
     final DateTime now = DateTime.now();
-    
-    final List<String> days = ['LUNES', 'MARTES', 'MIÉRCOLES', 'JUEVES', 'VIERNES', 'SÁBADO', 'DOMINGO'];
-    final List<String> months = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
-    
+
+    final List<String> days = [
+      'LUNES',
+      'MARTES',
+      'MIÉRCOLES',
+      'JUEVES',
+      'VIERNES',
+      'SÁBADO',
+      'DOMINGO',
+    ];
+    final List<String> months = [
+      'ENERO',
+      'FEBRERO',
+      'MARZO',
+      'ABRIL',
+      'MAYO',
+      'JUNIO',
+      'JULIO',
+      'AGOSTO',
+      'SEPTIEMBRE',
+      'OCTUBRE',
+      'NOVIEMBRE',
+      'DICIEMBRE',
+    ];
+
     final String dayName = days[now.weekday - 1];
     final String monthName = months[now.month - 1];
     final String dateStr = '$dayName, ${now.day} DE $monthName';

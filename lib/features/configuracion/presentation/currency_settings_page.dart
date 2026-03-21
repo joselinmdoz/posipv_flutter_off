@@ -469,7 +469,7 @@ class _CurrencySettingsPageState extends ConsumerState<CurrencySettingsPage> {
 
     return AppScaffold(
       title: 'Monedas y tasas',
-      currentRoute: '/configuracion',
+      currentRoute: '/configuracion-monedas',
       showDrawer: false,
       showTopTabs: false,
       showBottomNavigationBar: false,

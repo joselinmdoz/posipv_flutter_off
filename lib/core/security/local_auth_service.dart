@@ -28,32 +28,25 @@ class LocalAuthService {
     required String username,
     required String password,
   }) async {
-    final user = await _authLocalDataSource.validateCredentials(
+    final AuthLoginProfile? profile =
+        await _authLocalDataSource.validateCredentialsWithAccess(
       username: username,
       password: password,
     );
-    if (user == null) {
+    if (profile == null) {
       return null;
     }
 
-    return UserSession(
-      userId: user.id,
-      username: user.username,
-      role: user.role,
+    final UserSession session = UserSession(
+      userId: profile.user.id,
+      username: profile.user.username,
+      role: profile.user.role,
+      roleIds: profile.roleIds,
+      roleNames: profile.roleNames,
+      permissions: profile.permissionKeys,
     );
-  }
-
-  Future<UserSession> createOfflineSession() async {
-    await ensureDefaultAdmin();
-    final user = await _authLocalDataSource.findPreferredActiveUser();
-    if (user == null) {
-      throw StateError('No hay usuarios activos para crear sesion.');
-    }
-    return UserSession(
-      userId: user.id,
-      username: user.username,
-      role: user.role,
-    );
+    await persistSession(session: session, rememberOnDevice: true);
+    return session;
   }
 
   Future<bool> isAppLockEnabled() async {
@@ -97,7 +90,7 @@ class LocalAuthService {
     if (!canUnlock) {
       return null;
     }
-    return createOfflineSession();
+    return null;
   }
 
   Future<void> persistSession({
@@ -129,13 +122,37 @@ class LocalAuthService {
       );
       if (session.userId.isEmpty ||
           session.username.isEmpty ||
-          session.role.isEmpty) {
+          (session.role.isEmpty && session.roleIds.isEmpty)) {
         return null;
       }
       return session;
     } catch (_) {
       return null;
     }
+  }
+
+  Future<UserSession?> restoreActiveSession() async {
+    final UserSession? remembered = await restoreRememberedSession();
+    if (remembered == null) {
+      return null;
+    }
+    final AuthLoginProfile? profile =
+        await _authLocalDataSource.loadActiveProfileByUserId(remembered.userId);
+    if (profile == null) {
+      await clearRememberedSession();
+      return null;
+    }
+    final UserSession refreshed = UserSession(
+      userId: profile.user.id,
+      username: profile.user.username,
+      role: profile.user.role,
+      roleIds: profile.roleIds,
+      roleNames: profile.roleNames,
+      permissions: profile.permissionKeys,
+      activeTerminalId: remembered.activeTerminalId,
+    );
+    await persistSession(session: refreshed, rememberOnDevice: true);
+    return refreshed;
   }
 
   Future<void> clearRememberedSession() {

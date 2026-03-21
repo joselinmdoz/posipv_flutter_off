@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/licensing/license_providers.dart';
 import '../../../core/utils/perf_trace.dart';
+import '../../../shared/models/dashboard_widget_config.dart';
 import '../../../shared/models/user_session.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../almacenes/presentation/almacenes_providers.dart';
@@ -16,11 +18,12 @@ import '../../inventario/presentation/inventario_providers.dart';
 import '../../productos/presentation/productos_providers.dart';
 import '../../reportes/data/reportes_local_datasource.dart';
 import '../../reportes/presentation/reportes_providers.dart';
+import '../../tpv/data/tpv_local_datasource.dart';
 import '../../tpv/presentation/tpv_providers.dart';
+import 'widgets/home_dashboard_content.dart';
+import 'widgets/home_dashboard_empty.dart';
+import 'widgets/home_dashboard_loading.dart';
 import 'widgets/home_header_section.dart';
-import 'widgets/home_metric_cards.dart';
-import 'widgets/home_quick_actions.dart';
-import 'widgets/home_recent_activity.dart';
 
 class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
@@ -34,6 +37,8 @@ class _HomePageState extends ConsumerState<HomePage> {
   HomeOperationalInsight _insight = const HomeOperationalInsight.empty();
   String _businessName = 'POSIPV';
   String _currencySymbol = AppConfig.defaultCurrencySymbol;
+  TpvEmployee? _currentEmployee;
+  DashboardWidgetLayout _dashboardWidgetLayout = DashboardWidgetLayout.defaults;
   bool _loading = true;
   bool _prewarmStarted = false;
 
@@ -169,6 +174,17 @@ class _HomePageState extends ConsumerState<HomePage> {
     final Future<AppConfig> configFuture = configDs.loadConfig();
     final Future<HomeOperationalInsight> insightFuture =
         reportesDs.loadHomeOperationalInsight();
+    final UserSession? session = ref.read(currentSessionProvider);
+    final Future<TpvEmployee?> employeeFuture = session == null
+        ? Future<TpvEmployee?>.value(null)
+        : ref
+            .read(tpvLocalDataSourceProvider)
+            .findActiveEmployeeByAssociatedUser(session.userId);
+    final Future<DashboardWidgetLayout> dashboardWidgetsFuture = session == null
+        ? Future<DashboardWidgetLayout>.value(
+            DashboardWidgetLayout.defaults,
+          )
+        : configDs.loadDashboardWidgetLayout(userId: session.userId);
 
     ReportesDashboard dashboard = const ReportesDashboard(
       today: SalesSummary(salesCount: 0, totalCents: 0, taxCents: 0),
@@ -180,6 +196,9 @@ class _HomePageState extends ConsumerState<HomePage> {
     );
     HomeOperationalInsight insight = const HomeOperationalInsight.empty();
     AppConfig config = AppConfig.defaults;
+    TpvEmployee? employee;
+    DashboardWidgetLayout dashboardWidgetLayout =
+        DashboardWidgetLayout.defaults;
     String? warningMessage;
 
     try {
@@ -204,6 +223,18 @@ class _HomePageState extends ConsumerState<HomePage> {
           warningMessage == null ? message : '$warningMessage\n$message';
     }
 
+    try {
+      employee = await employeeFuture;
+    } catch (_) {
+      employee = null;
+    }
+
+    try {
+      dashboardWidgetLayout = await dashboardWidgetsFuture;
+    } catch (_) {
+      dashboardWidgetLayout = DashboardWidgetLayout.defaults;
+    }
+
     if (!mounted) {
       return;
     }
@@ -213,6 +244,8 @@ class _HomePageState extends ConsumerState<HomePage> {
       _insight = insight;
       _businessName = config.businessName;
       _currencySymbol = config.currencySymbol;
+      _currentEmployee = employee;
+      _dashboardWidgetLayout = dashboardWidgetLayout;
       _loading = false;
     });
 
@@ -232,6 +265,13 @@ class _HomePageState extends ConsumerState<HomePage> {
     final SalesSummary today = dashboard?.today ??
         const SalesSummary(salesCount: 0, totalCents: 0, taxCents: 0);
 
+    final String employeeImagePath = (_currentEmployee?.imagePath ?? '').trim();
+    final bool hasEmployeeImage =
+        employeeImagePath.isNotEmpty && File(employeeImagePath).existsSync();
+    final String displayName = (_currentEmployee?.name ?? '').trim().isNotEmpty
+        ? _currentEmployee!.name
+        : (session?.username ?? 'Usuario');
+
     return AppScaffold(
       title: _businessName,
       currentRoute: '/home',
@@ -247,12 +287,16 @@ class _HomePageState extends ConsumerState<HomePage> {
         ),
         const SizedBox(width: 8),
         InkWell(
-          onTap: () {},
+          onTap: () => context.push('/perfil-empleado'),
           borderRadius: BorderRadius.circular(20),
           child: CircleAvatar(
             radius: 16,
             backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-            child: const Icon(Icons.person_outline_rounded, size: 20),
+            backgroundImage:
+                hasEmployeeImage ? FileImage(File(employeeImagePath)) : null,
+            child: !hasEmployeeImage
+                ? const Icon(Icons.person_outline_rounded, size: 20)
+                : null,
           ),
         ),
         const SizedBox(width: 12),
@@ -262,36 +306,22 @@ class _HomePageState extends ConsumerState<HomePage> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 100),
           children: <Widget>[
-            HomeHeaderSection(session: session),
+            HomeHeaderSection(session: session, displayName: displayName),
             const SizedBox(height: 24),
             if (_loading && dashboard == null)
-              const SizedBox(
-                height: 260,
-                child: Center(child: CircularProgressIndicator()),
-              )
+              const HomeDashboardLoading()
             else if (dashboard == null)
-              const Card(
-                child: Padding(
-                  padding: EdgeInsets.all(18),
-                  child: Text('No hay datos para mostrar.'),
-                ),
-              )
+              const HomeDashboardEmpty()
             else ...<Widget>[
-              HomeMetricCards(
+              HomeDashboardContent(
+                dashboard: dashboard,
                 today: today,
-                ordersCount: today.salesCount,
-                lowStockCount: insight.lowStockProducts + insight.zeroStockProducts,
+                lowStockCount:
+                    insight.lowStockProducts + insight.zeroStockProducts,
+                layout: _dashboardWidgetLayout,
                 moneyFormatter: _money,
-              ),
-              const SizedBox(height: 24),
-              HomeQuickActions(
                 onNewSaleTap: () => context.go('/tpv'),
                 onAddStockTap: () => context.go('/inventario-movimientos'),
-              ),
-              const SizedBox(height: 24),
-              HomeRecentActivity(
-                recentSales: dashboard.recentSales,
-                moneyFormatter: _money,
               ),
             ],
           ],

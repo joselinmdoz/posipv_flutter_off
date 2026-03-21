@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/licensing/license_models.dart';
 import '../../../core/licensing/license_providers.dart';
+import '../../../core/security/app_permissions.dart';
 import '../../../core/utils/perf_trace.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../auth/presentation/auth_providers.dart';
@@ -232,6 +233,7 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
 
   @override
   Widget build(BuildContext context) {
+    final session = ref.watch(currentSessionProvider);
     final LicenseStatus license = ref.watch(currentLicenseStatusProvider);
     final AsyncValue<bool> appLockEnabledAsync =
         ref.watch(appLockEnabledProvider);
@@ -246,6 +248,19 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
         : 0;
     final String currencySubtitle =
         '${currencyConfig.primaryCurrencyCode} principal • $secondaryCount secundarias';
+    final bool canManageCurrency =
+        session?.hasPermission(AppPermissionKeys.settingsCurrency) ?? false;
+    final bool canManageSecurity =
+        session?.hasPermission(AppPermissionKeys.settingsSecurity) ?? false;
+    final bool canManageData =
+        session?.hasPermission(AppPermissionKeys.settingsData) ?? false;
+    final bool canManageUsers =
+        session?.hasPermission(AppPermissionKeys.usersManage) ?? false;
+    final bool canManageDashboardWidgets =
+        session?.hasPermission(AppPermissionKeys.settingsDashboardWidgets) ??
+            false;
+    final bool canSeeLicense =
+        session?.hasPermission(AppPermissionKeys.settingsLicense) ?? false;
 
     return AppScaffold(
       title: 'Ajustes',
@@ -278,7 +293,9 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
                   icon: Icons.currency_exchange_rounded,
                   title: 'Configuracion de moneda',
                   subtitle: currencySubtitle,
-                  onTap: _saving ? null : _openCurrencySettings,
+                  onTap: (_saving || !canManageCurrency)
+                      ? null
+                      : _openCurrencySettings,
                 ),
                 ConfigOptionTile(
                   icon: Icons.date_range_rounded,
@@ -299,7 +316,7 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
                   icon: Icons.storage_outlined,
                   title: 'Gestión de datos',
                   subtitle: 'Copias de seguridad y CSV',
-                  onTap: _openDataManagement,
+                  onTap: canManageData ? _openDataManagement : null,
                 ),
                 // ConfigOptionTile(
                 //   icon: Icons.sync_rounded,
@@ -328,19 +345,44 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
                   icon: Icons.fingerprint_rounded,
                   title: 'Seguridad',
                   subtitle: securitySubtitle,
-                  onTap: () async {
-                    await context.push('/configuracion-seguridad');
-                    ref.invalidate(appLockEnabledProvider);
-                  },
+                  onTap: canManageSecurity
+                      ? () async {
+                          await context.push('/configuracion-seguridad');
+                          ref.invalidate(appLockEnabledProvider);
+                        }
+                      : null,
                 ),
+                if (canManageUsers)
+                  ConfigOptionTile(
+                    icon: Icons.manage_accounts_outlined,
+                    title: 'Usuarios',
+                    subtitle: 'Gestiona cuentas de acceso',
+                    onTap: () => context.push('/configuracion-usuarios'),
+                  ),
+                if (canManageUsers)
+                  ConfigOptionTile(
+                    icon: Icons.verified_user_outlined,
+                    title: 'Roles y permisos',
+                    subtitle: 'Define jerarquías y permisos',
+                    onTap: () => context.push('/configuracion-roles'),
+                  ),
+                if (canManageDashboardWidgets)
+                  ConfigOptionTile(
+                    icon: Icons.dashboard_customize_outlined,
+                    title: 'Widgets del dashboard',
+                    subtitle: 'Controla qué widgets ve cada usuario',
+                    onTap: () =>
+                        context.push('/configuracion-dashboard-widgets'),
+                  ),
                 const SizedBox(height: 14),
                 const ConfigSectionLabel(text: 'Acerca de'),
-                ConfigOptionTile(
-                  icon: Icons.verified_user_outlined,
-                  title: 'Licencia',
-                  subtitle: license.statusLabel,
-                  onTap: () => context.go('/licencia'),
-                ),
+                if (canSeeLicense)
+                  ConfigOptionTile(
+                    icon: Icons.verified_user_outlined,
+                    title: 'Licencia',
+                    subtitle: license.statusLabel,
+                    onTap: () => context.go('/licencia'),
+                  ),
                 ConfigOptionTile(
                   icon: Icons.mail_outline_rounded,
                   title: 'Soporte',

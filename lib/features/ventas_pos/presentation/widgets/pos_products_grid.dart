@@ -22,6 +22,8 @@ class PosProductsGrid extends StatelessWidget {
     required this.onQtyChanged,
   });
 
+  static const double _kGridSpacing = 12;
+
   @override
   Widget build(BuildContext context) {
     if (products.isEmpty) {
@@ -37,26 +39,64 @@ class PosProductsGrid extends StatelessWidget {
         ),
       );
     }
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 0.78,
-        crossAxisSpacing: 14,
-        mainAxisSpacing: 14,
-      ),
-      itemCount: products.length,
-      itemBuilder: (BuildContext context, int index) {
-        final product = products[index];
-        return PosProductCard(
-          product: product,
-          qty: qtyByProductId[product.id] ?? 0,
-          stock: stockByProductId[product.id] ?? 0,
-          currencySymbol: currencySymbol,
-          isPosting: isPosting,
-          onQtyChanged: (delta) => onQtyChanged(product.id, delta),
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double width = constraints.maxWidth;
+        final int preferredColumns = _gridColumnsForWidth(width);
+        final int columns = preferredColumns > products.length
+            ? products.length
+            : preferredColumns;
+        final double tileWidth =
+            (width - (_kGridSpacing * (columns - 1)) - 32) / columns;
+
+        return GridView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: columns < 1 ? 1 : columns,
+            crossAxisSpacing: _kGridSpacing,
+            mainAxisSpacing: _kGridSpacing,
+            mainAxisExtent: _gridMainAxisExtent(tileWidth),
+          ),
+          itemCount: products.length,
+          itemBuilder: (BuildContext context, int index) {
+            final product = products[index];
+            return PosProductCard(
+              product: product,
+              qty: qtyByProductId[product.id] ?? 0,
+              stock: stockByProductId[product.id] ?? 0,
+              currencySymbol: currencySymbol,
+              isPosting: isPosting,
+              onQtyChanged: (delta) => onQtyChanged(product.id, delta),
+            );
+          },
         );
       },
     );
+  }
+
+  int _gridColumnsForWidth(double width) {
+    if (width >= 1400) {
+      return 6;
+    }
+    if (width >= 1100) {
+      return 5;
+    }
+    if (width >= 860) {
+      return 4;
+    }
+    if (width >= 640) {
+      return 3;
+    }
+    return 2;
+  }
+
+  double _gridMainAxisExtent(double tileWidth) {
+    if (tileWidth >= 280) {
+      return 278;
+    }
+    if (tileWidth >= 220) {
+      return 258;
+    }
+    return 236;
   }
 }

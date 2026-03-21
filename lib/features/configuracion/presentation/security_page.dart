@@ -151,7 +151,7 @@ class _SecurityPageState extends ConsumerState<SecurityPage> {
   Widget build(BuildContext context) {
     return AppScaffold(
       title: 'Seguridad',
-      currentRoute: '/configuracion',
+      currentRoute: '/configuracion-seguridad',
       showTopTabs: false,
       showDrawer: false,
       appBarLeading: IconButton(

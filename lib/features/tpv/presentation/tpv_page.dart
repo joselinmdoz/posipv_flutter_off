@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -16,7 +18,6 @@ import 'tpv_session_history_page.dart';
 import 'tpv_providers.dart';
 import 'widgets/tpv_terminal_card.dart';
 import 'widgets/tpv_form.dart';
-import 'widgets/tpv_open_session_dialog.dart';
 import '../../reportes/presentation/widgets/ipv_reporte_detail_page.dart';
 
 class TpvPage extends ConsumerStatefulWidget {
@@ -48,15 +49,29 @@ class _TpvPageState extends ConsumerState<TpvPage> {
     final PerfTrace trace = PerfTrace('tpv.load');
     setState(() => _loading = true);
     try {
-      final List<TpvTerminalView> data =
-          await ref.read(tpvLocalDataSourceProvider).listActiveTerminalViews();
+      final UserSession? session = ref.read(currentSessionProvider);
+      final TpvLocalDataSource tpvDs = ref.read(tpvLocalDataSourceProvider);
+      final List<TpvTerminalView> data = await tpvDs.listActiveTerminalViews();
       trace.mark('consulta completada');
+      List<TpvTerminalView> visible = data;
+      if (session != null && !session.isAdmin) {
+        final TpvEmployee? employee =
+            await tpvDs.findActiveEmployeeByAssociatedUser(session.userId);
+        if (employee == null) {
+          visible = <TpvTerminalView>[];
+        } else {
+          visible = await tpvDs.filterTerminalViewsForEmployee(
+            terminals: data,
+            employeeId: employee.id,
+          );
+        }
+      }
       if (!mounted) {
         trace.end('unmounted');
         return;
       }
       setState(() {
-        _terminals = data;
+        _terminals = visible;
         _loading = false;
       });
       trace.end('ok');
@@ -79,9 +94,7 @@ class _TpvPageState extends ConsumerState<TpvPage> {
     );
     if (saved == true) {
       await _load();
-      _show(terminal == null
-          ? 'TPV creado con su almacen asociado.'
-          : 'TPV actualizado.');
+      _show(terminal == null ? 'TPV creado.' : 'TPV actualizado.');
     }
   }
 
@@ -100,56 +113,47 @@ class _TpvPageState extends ConsumerState<TpvPage> {
     }
 
     final TpvLocalDataSource tpvDs = ref.read(tpvLocalDataSourceProvider);
-    List<TpvEmployee> employees = <TpvEmployee>[];
-    bool allowMultipleResponsible = true;
-    try {
-      employees = await tpvDs.listActiveEmployees();
-      final licenseStatus =
-          await ref.read(offlineLicenseServiceProvider).current();
-      allowMultipleResponsible = licenseStatus.isFull;
-    } catch (e) {
-      _show('No se pudieron cargar empleados: $e');
-      return;
-    }
-    if (employees.isEmpty) {
-      _show('Primero debes crear empleados responsables para abrir turno.');
-      await _openEmployeesManager(create: true);
-      return;
-    }
-    if (!mounted) {
-      return;
-    }
-    final dynamic result = await showDialog<dynamic>(
-      context: context,
-      builder: (BuildContext context) {
-        return TpvOpenSessionDialog(
-          terminal: terminal,
-          employees: employees,
-          allowMultipleSelection: allowMultipleResponsible,
-          onManageEmployees: () => Navigator.pop(context, 'manage_employees'),
-        );
-      },
+    final bool allowedForTerminal = await tpvDs.userCanAccessTerminal(
+      terminalId: terminal.terminal.id,
+      userId: userSession.userId,
     );
-
-    if (result == 'manage_employees') {
-      await _openEmployeesManager(create: true);
+    if (!allowedForTerminal) {
+      _show('No tienes acceso autorizado a este TPV.');
       return;
     }
-    if (result == null || result is! List<String>) {
+    TpvEmployee? associatedEmployee;
+    try {
+      associatedEmployee =
+          await tpvDs.findActiveEmployeeByAssociatedUser(userSession.userId);
+    } catch (e) {
+      _show('No se pudo validar el empleado asociado: $e');
       return;
     }
-    final List<String> selectedEmployeeIds = result;
+    if (associatedEmployee == null) {
+      _show(
+        'No tienes un empleado activo asociado a este usuario. '
+        'Asocialo desde Empleados TPV para poder abrir turno.',
+      );
+      return;
+    }
 
     try {
       await tpvDs.openSession(
         terminalId: terminal.terminal.id,
         userId: userSession.userId,
-        responsibleEmployeeIds: selectedEmployeeIds,
+        responsibleEmployeeIds: <String>[associatedEmployee.id],
         openingFloatCents: 0,
         note: null,
       );
-      ref.read(currentSessionProvider.notifier).state =
+      final UserSession nextSession =
           userSession.copyWith(activeTerminalId: terminal.terminal.id);
+      ref.read(currentSessionProvider.notifier).state = nextSession;
+      unawaited(
+        ref.read(localAuthServiceProvider).persistSession(
+              session: nextSession,
+              rememberOnDevice: true,
+            ),
+      );
       if (!mounted) {
         return;
       }
@@ -174,7 +178,7 @@ class _TpvPageState extends ConsumerState<TpvPage> {
       return;
     }
 
-    final bool isAdmin = userSession.role == 'admin';
+    final bool isAdmin = userSession.isAdmin;
     if (!isAdmin && open.user.id != userSession.userId) {
       _show('Solo el usuario que abrio el turno puede cerrarlo.');
       return;
@@ -468,8 +472,15 @@ class _TpvPageState extends ConsumerState<TpvPage> {
       await _load();
       ref.invalidate(tpvTerminalsProvider);
       if (userSession.activeTerminalId == terminal.terminal.id) {
-        ref.read(currentSessionProvider.notifier).state =
+        final UserSession nextSession =
             userSession.copyWith(activeTerminalId: null);
+        ref.read(currentSessionProvider.notifier).state = nextSession;
+        unawaited(
+          ref.read(localAuthServiceProvider).persistSession(
+                session: nextSession,
+                rememberOnDevice: true,
+              ),
+        );
       }
       _show('Turno cerrado.');
     } catch (e) {
@@ -563,8 +574,15 @@ class _TpvPageState extends ConsumerState<TpvPage> {
   void _goToPos(TpvTerminalView terminal) {
     final UserSession? current = ref.read(currentSessionProvider);
     if (current != null) {
-      ref.read(currentSessionProvider.notifier).state =
+      final UserSession nextSession =
           current.copyWith(activeTerminalId: terminal.terminal.id);
+      ref.read(currentSessionProvider.notifier).state = nextSession;
+      unawaited(
+        ref.read(localAuthServiceProvider).persistSession(
+              session: nextSession,
+              rememberOnDevice: true,
+            ),
+      );
     }
     context.go('/ventas-pos');
   }

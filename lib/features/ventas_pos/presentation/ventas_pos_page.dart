@@ -12,6 +12,10 @@ import '../../../shared/models/user_session.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../../shared/widgets/code_scanner_page.dart';
 import '../../auth/presentation/auth_providers.dart';
+import '../../clientes/data/clientes_local_datasource.dart';
+import '../../clientes/presentation/clientes_providers.dart';
+import '../../clientes/presentation/widgets/sale_customer_picker_dialog.dart';
+import '../../clientes/presentation/widgets/sale_customer_selector_tile.dart';
 import '../../configuracion/data/configuracion_local_datasource.dart';
 import '../../configuracion/presentation/configuracion_providers.dart';
 import '../../inventario/data/inventario_local_datasource.dart';
@@ -62,6 +66,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
   String? _terminalId;
   String? _terminalName;
   String? _openSessionId;
+  String? _sellerName;
   TpvTerminalConfig _terminalConfig = TpvTerminalConfig.defaults;
   String _terminalCurrencyCode = TpvTerminalConfig.defaults.currencyCode;
   String _currencySymbol = AppConfig.defaultCurrencySymbol;
@@ -71,6 +76,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
   bool _closingSession = false;
   bool _showingIpvSheet = false;
   bool _redirectingToTpv = false;
+  ClienteListItem? _selectedCustomer;
 
   @override
   void initState() {
@@ -173,6 +179,25 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
 
       final TpvTerminalConfig terminalConfig =
           tpvDs.configFromTerminal(terminalView.terminal);
+      final bool canAccessTerminal = await tpvDs.userCanAccessTerminal(
+        terminalId: terminalView.terminal.id,
+        userId: session.userId,
+      );
+      if (!canAccessTerminal) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _resetPosState(
+            currencySymbol: config.currencySymbol,
+            allowNegativeStock: config.allowNegativeStock,
+          );
+          _loading = false;
+        });
+        trace.end('sin acceso tpv');
+        _redirectToTpv('No tienes permiso para operar este TPV.');
+        return;
+      }
       final Future<PosSession?> openSessionFuture =
           tpvDs.getOpenSessionForTerminalAndUser(
         terminalId: terminalView.terminal.id,
@@ -183,6 +208,19 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
           .listStocked(warehouseId: terminalView.warehouse.id);
 
       final PosSession? openSession = await openSessionFuture;
+      String sellerName = session.username;
+      final TpvSessionWithUser? sessionInfo = terminalView.openSession;
+      if (sessionInfo != null &&
+          sessionInfo.session.userId == session.userId &&
+          sessionInfo.responsibleEmployees.isNotEmpty) {
+        sellerName = sessionInfo.responsibleEmployees.first.name;
+      } else if (openSession != null) {
+        final List<TpvEmployee> responsible =
+            await tpvDs.listSessionResponsibleEmployees(openSession.id);
+        if (responsible.isNotEmpty) {
+          sellerName = responsible.first.name;
+        }
+      }
       final List<InventoryView> stockedRows = await stockedFuture;
       trace.mark('session + stock cargados');
 
@@ -218,6 +256,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
         _terminalId = terminalView.terminal.id;
         _terminalName = terminalView.terminal.name;
         _openSessionId = openSession?.id;
+        _sellerName = sellerName;
         _terminalConfig = terminalConfig;
         _currencySymbol = terminalConfig.currencySymbol;
         _allowNegativeStock = config.allowNegativeStock;
@@ -253,10 +292,12 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     _terminalId = null;
     _terminalName = null;
     _openSessionId = null;
+    _sellerName = null;
     _terminalConfig = TpvTerminalConfig.defaults;
     _terminalCurrencyCode = TpvTerminalConfig.defaults.currencyCode;
     _currencySymbol = currencySymbol;
     _allowNegativeStock = allowNegativeStock;
+    _selectedCustomer = null;
   }
 
   void _applyStockedProducts({
@@ -394,16 +435,6 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
         })
         .whereType<_CartLine>()
         .toList();
-  }
-
-  int get _cartUnits {
-    double total = 0;
-    for (final double qty in _qtyByProductId.values) {
-      if (qty > 0) {
-        total += qty;
-      }
-    }
-    return total.round();
   }
 
   int _subtotalFromLines(List<_CartLine> lines) {
@@ -721,6 +752,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     final CreateSaleInput input = CreateSaleInput(
       warehouseId: _warehouseId!,
       cashierId: session.userId,
+      customerId: _selectedCustomer?.id,
       terminalId: _terminalId!,
       terminalSessionId: _openSessionId!,
       items: items,
@@ -748,7 +780,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
         final SaleReceipt receipt = SaleReceipt(
           folio: data.folio,
           createdAt: DateTime.now(),
-          cashierUsername: session.username,
+          cashierUsername: _sellerName ?? session.username,
           terminalName: _terminalName ?? '',
           warehouseName: _warehouseName ?? '',
           currencySymbol: _currencySymbol,
@@ -796,6 +828,47 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       case AppFailure<CreateSaleResult>(:final message):
         _show(message);
     }
+  }
+
+  Future<void> _selectCustomerForSale() async {
+    if (_posting) {
+      return;
+    }
+    try {
+      final List<ClienteListItem> customers =
+          await ref.read(clientesLocalDataSourceProvider).listClients(
+                limit: 300,
+              );
+      if (!mounted) {
+        return;
+      }
+      if (customers.isEmpty) {
+        _show('No hay clientes registrados.');
+        return;
+      }
+      final ClienteListItem? selected = await showDialog<ClienteListItem>(
+        context: context,
+        builder: (BuildContext context) {
+          return SaleCustomerPickerDialog(
+            customers: customers,
+            initialSelectedId: _selectedCustomer?.id,
+          );
+        },
+      );
+      if (!mounted || selected == null) {
+        return;
+      }
+      setState(() => _selectedCustomer = selected);
+    } catch (e) {
+      _show('No se pudo cargar la lista de clientes: $e');
+    }
+  }
+
+  void _clearSelectedCustomer() {
+    if (_posting || _selectedCustomer == null || !mounted) {
+      return;
+    }
+    setState(() => _selectedCustomer = null);
   }
 
   Future<void> _showReceiptDialog(SaleReceipt receipt) async {
@@ -1024,8 +1097,15 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
         closedByUserId: userSession.userId,
         cashCountByDenomination: breakdown,
       );
-      ref.read(currentSessionProvider.notifier).state =
+      final UserSession nextSession =
           userSession.copyWith(clearActiveTerminal: true);
+      ref.read(currentSessionProvider.notifier).state = nextSession;
+      unawaited(
+        ref.read(localAuthServiceProvider).persistSession(
+              session: nextSession,
+              rememberOnDevice: true,
+            ),
+      );
 
       // Invalidate TPV terminals to force refresh when returning to TPV selection
       ref.invalidate(tpvTerminalsProvider);
@@ -1181,6 +1261,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
                     PosStoreInfoBar(
                       terminalName: _terminalName,
                       open: _openSessionId != null,
+                      sellerName: _sellerName,
                     ),
                     Expanded(
                       child: Column(
@@ -1193,6 +1274,15 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
                               categories: _categories,
                               selectedCategory: _selectedCategory,
                               onCategoryChanged: _onCategoryChanged,
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                            child: SaleCustomerSelectorTile(
+                              selectedCustomer: _selectedCustomer,
+                              enabled: !_posting,
+                              onSelect: _selectCustomerForSale,
+                              onClear: _clearSelectedCustomer,
                             ),
                           ),
                           const SizedBox(height: 8),

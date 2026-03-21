@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../../shared/models/dashboard_widget_config.dart';
 
 enum AppThemePreference {
   light,
@@ -348,6 +349,8 @@ class ConfiguracionLocalDataSource {
   static const String _kCurrencyConfigJson = 'currency_config_json_v1';
   static const String _kAllowNegativeStock = 'allow_negative_stock';
   static const String _kThemePreference = 'theme_preference';
+  static const String _kDashboardWidgetsPrefix =
+      'dashboard_widgets_visible_v1::';
 
   Future<AppConfig> loadConfig() async {
     final List<AppSetting> rows = await (_db.select(_db.appSettings)
@@ -412,6 +415,65 @@ class ConfiguracionLocalDataSource {
     return config.currencyConfig;
   }
 
+  Future<DashboardWidgetLayout> loadDashboardWidgetLayout({
+    required String userId,
+  }) async {
+    final String cleanUserId = userId.trim();
+    if (cleanUserId.isEmpty) {
+      return DashboardWidgetLayout.defaults;
+    }
+
+    final String storageKey = '$_kDashboardWidgetsPrefix$cleanUserId';
+    final AppSetting? row = await (_db.select(_db.appSettings)
+          ..where((AppSettings tbl) => tbl.key.equals(storageKey)))
+        .getSingleOrNull();
+    if (row == null) {
+      return DashboardWidgetLayout.defaults;
+    }
+    return _decodeDashboardWidgetLayout(row.value);
+  }
+
+  Future<Set<String>> loadDashboardVisibleWidgetKeys({
+    required String userId,
+  }) async {
+    final DashboardWidgetLayout layout = await loadDashboardWidgetLayout(
+      userId: userId,
+    );
+    return layout.visibleKeys;
+  }
+
+  Future<void> saveDashboardWidgetLayout({
+    required String userId,
+    required DashboardWidgetLayout layout,
+  }) async {
+    final String cleanUserId = userId.trim();
+    if (cleanUserId.isEmpty) {
+      throw Exception('Usuario inválido para guardar widgets.');
+    }
+    final DashboardWidgetLayout normalized = layout.normalized();
+    final Map<String, Object?> payload = <String, Object?>{
+      'visible': normalized.visibleKeys.toList(growable: false)..sort(),
+      'order': normalized.orderedKeys,
+    };
+    await _upsert(
+      '$_kDashboardWidgetsPrefix$cleanUserId',
+      jsonEncode(payload),
+    );
+  }
+
+  Future<void> saveDashboardVisibleWidgetKeys({
+    required String userId,
+    required Set<String> visibleWidgetKeys,
+  }) async {
+    final DashboardWidgetLayout current = await loadDashboardWidgetLayout(
+      userId: userId,
+    );
+    await saveDashboardWidgetLayout(
+      userId: userId,
+      layout: current.copyWith(visibleKeys: visibleWidgetKeys),
+    );
+  }
+
   AppCurrencyConfig _parseCurrencyConfig(Map<String, String> values) {
     final String? rawConfig = values[_kCurrencyConfigJson];
     if (rawConfig != null && rawConfig.trim().isNotEmpty) {
@@ -450,6 +512,52 @@ class ConfiguracionLocalDataSource {
             updatedAt: Value(DateTime.now()),
           ),
         );
+  }
+
+  DashboardWidgetLayout _decodeDashboardWidgetLayout(String raw) {
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is List) {
+        final Set<String> visible = decoded
+            .map((Object? item) => (item as String? ?? '').trim())
+            .where((String key) => key.isNotEmpty)
+            .toSet();
+        return DashboardWidgetLayout(
+          visibleKeys: visible,
+          orderedKeys: DashboardWidgetCatalog.defaultOrderKeys,
+        ).normalized();
+      }
+      if (decoded is Map) {
+        final Map<String, Object?> map = decoded.cast<String, Object?>();
+        final Set<String> visible = _readDashboardKeySet(map['visible']);
+        final List<String> ordered = _readDashboardKeyList(map['order']);
+        return DashboardWidgetLayout(
+          visibleKeys: visible,
+          orderedKeys: ordered,
+        ).normalized();
+      }
+    } catch (_) {}
+    return DashboardWidgetLayout.defaults;
+  }
+
+  Set<String> _readDashboardKeySet(Object? raw) {
+    if (raw is! List) {
+      return DashboardWidgetCatalog.defaultVisibleKeys;
+    }
+    return raw
+        .map((Object? item) => (item as String? ?? '').trim())
+        .where((String key) => key.isNotEmpty)
+        .toSet();
+  }
+
+  List<String> _readDashboardKeyList(Object? raw) {
+    if (raw is! List) {
+      return DashboardWidgetCatalog.defaultOrderKeys;
+    }
+    return raw
+        .map((Object? item) => (item as String? ?? '').trim())
+        .where((String key) => key.isNotEmpty)
+        .toList(growable: false);
   }
 }
 

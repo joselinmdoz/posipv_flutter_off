@@ -7,6 +7,8 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../security/app_permissions.dart';
+
 part 'app_database.g.dart';
 
 class Users extends Table {
@@ -21,6 +23,48 @@ class Users extends Table {
 
   @override
   Set<Column> get primaryKey => <Column>{id};
+}
+
+class Roles extends Table {
+  TextColumn get id => text()();
+  TextColumn get name => text().unique()();
+  TextColumn get description => text().nullable()();
+  BoolColumn get isSystem => boolean().withDefault(const Constant(false))();
+  BoolColumn get isActive => boolean().withDefault(const Constant(true))();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get updatedAt => dateTime().nullable()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{id};
+}
+
+class Permissions extends Table {
+  TextColumn get key => text()();
+  TextColumn get module => text()();
+  TextColumn get label => text()();
+  TextColumn get description => text().nullable()();
+  BoolColumn get isSystem => boolean().withDefault(const Constant(true))();
+
+  @override
+  Set<Column> get primaryKey => <Column>{key};
+}
+
+class RolePermissions extends Table {
+  TextColumn get roleId => text().references(Roles, #id)();
+  TextColumn get permissionKey => text().references(Permissions, #key)();
+  DateTimeColumn get grantedAt => dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column> get primaryKey => <Column>{roleId, permissionKey};
+}
+
+class UserRoles extends Table {
+  TextColumn get userId => text().references(Users, #id)();
+  TextColumn get roleId => text().references(Roles, #id)();
+  DateTimeColumn get assignedAt => dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column> get primaryKey => <Column>{userId, roleId};
 }
 
 class Products extends Table {
@@ -144,6 +188,15 @@ class PosSessionEmployees extends Table {
   Set<Column> get primaryKey => <Column>{sessionId, employeeId};
 }
 
+class PosTerminalEmployees extends Table {
+  TextColumn get terminalId => text().references(PosTerminals, #id)();
+  TextColumn get employeeId => text().references(Employees, #id)();
+  DateTimeColumn get assignedAt => dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column> get primaryKey => <Column>{terminalId, employeeId};
+}
+
 class StockBalances extends Table {
   TextColumn get productId => text().references(Products, #id)();
   TextColumn get warehouseId => text().references(Warehouses, #id)();
@@ -173,11 +226,36 @@ class StockMovements extends Table {
   Set<Column> get primaryKey => <Column>{id};
 }
 
+class Customers extends Table {
+  TextColumn get id => text()();
+  TextColumn get code => text().unique()();
+  TextColumn get fullName => text()();
+  TextColumn get phone => text().nullable()();
+  TextColumn get email => text().nullable()();
+  TextColumn get address => text().nullable()();
+  TextColumn get company => text().nullable()();
+  TextColumn get avatarPath => text().nullable()();
+  TextColumn get customerType =>
+      text().withDefault(const Constant('general'))();
+  BoolColumn get isVip => boolean().withDefault(const Constant(false))();
+  IntColumn get creditAvailableCents =>
+      integer().withDefault(const Constant(0))();
+  IntColumn get discountBps => integer().withDefault(const Constant(0))();
+  TextColumn get adminNote => text().nullable()();
+  BoolColumn get isActive => boolean().withDefault(const Constant(true))();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get updatedAt => dateTime().nullable()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{id};
+}
+
 class Sales extends Table {
   TextColumn get id => text()();
   TextColumn get folio => text().unique()();
   TextColumn get warehouseId => text().references(Warehouses, #id)();
   TextColumn get cashierId => text().references(Users, #id)();
+  TextColumn get customerId => text().references(Customers, #id).nullable()();
   TextColumn get terminalId =>
       text().references(PosTerminals, #id).nullable()();
   TextColumn get terminalSessionId =>
@@ -280,6 +358,10 @@ class AuditLogs extends Table {
 @DriftDatabase(
   tables: <Type>[
     Users,
+    Roles,
+    Permissions,
+    RolePermissions,
+    UserRoles,
     Products,
     ProductCatalogItems,
     Warehouses,
@@ -288,8 +370,10 @@ class AuditLogs extends Table {
     PosSessionCashBreakdowns,
     Employees,
     PosSessionEmployees,
+    PosTerminalEmployees,
     StockBalances,
     StockMovements,
+    Customers,
     Sales,
     SaleItems,
     Payments,
@@ -304,12 +388,13 @@ class AppDatabase extends _$AppDatabase {
   final Uuid _uuid = const Uuid();
 
   @override
-  int get schemaVersion => 15;
+  int get schemaVersion => 18;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (Migrator m) async {
           await m.createAll();
+          await _seedAccessControlDefaults();
           await _createPerformanceIndexes();
           await _seedDefaultProductCatalogItems();
           await _bootstrapTerminalsForTpvWarehouses();
@@ -482,6 +567,38 @@ class AppDatabase extends _$AppDatabase {
               () => m.addColumn(payments, payments.sourceAmountCents),
             );
           }
+          if (from < 16) {
+            if (!await _tableExists('roles')) {
+              await m.createTable(roles);
+            }
+            if (!await _tableExists('permissions')) {
+              await m.createTable(permissions);
+            }
+            if (!await _tableExists('role_permissions')) {
+              await m.createTable(rolePermissions);
+            }
+            if (!await _tableExists('user_roles')) {
+              await m.createTable(userRoles);
+            }
+            await _seedAccessControlDefaults();
+          }
+          if (from < 17) {
+            if (!await _tableExists('pos_terminal_employees')) {
+              await m.createTable(posTerminalEmployees);
+            }
+          }
+          if (from < 18) {
+            if (!await _tableExists('customers')) {
+              await m.createTable(customers);
+            }
+            await _addSalesColumnIfMissing(
+              m,
+              'customer_id',
+              () => m.addColumn(sales, sales.customerId),
+            );
+            await _seedAccessControlDefaults();
+            await _createPerformanceIndexes();
+          }
         },
       );
 
@@ -551,6 +668,90 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
+  Future<void> _seedAccessControlDefaults() async {
+    for (final AppPermissionDefinition definition
+        in AppPermissionsCatalog.definitions) {
+      await into(permissions).insert(
+        PermissionsCompanion.insert(
+          key: definition.key,
+          module: definition.module,
+          label: definition.label,
+          description: Value(definition.description),
+          isSystem: const Value(true),
+        ),
+        mode: InsertMode.insertOrIgnore,
+      );
+    }
+
+    await into(roles).insert(
+      RolesCompanion.insert(
+        id: AppRoleIds.admin,
+        name: 'Administrador',
+        description: const Value('Acceso total a la aplicacion.'),
+        isSystem: const Value(true),
+      ),
+      mode: InsertMode.insertOrIgnore,
+    );
+    await into(roles).insert(
+      RolesCompanion.insert(
+        id: AppRoleIds.cashier,
+        name: 'Cajero',
+        description: const Value('Acceso basico de caja y TPV.'),
+        isSystem: const Value(true),
+      ),
+      mode: InsertMode.insertOrIgnore,
+    );
+
+    for (final String permissionKey in AppPermissionsCatalog.allKeys) {
+      await into(rolePermissions).insert(
+        RolePermissionsCompanion.insert(
+          roleId: AppRoleIds.admin,
+          permissionKey: permissionKey,
+        ),
+        mode: InsertMode.insertOrIgnore,
+      );
+    }
+
+    for (final String permissionKey
+        in AppPermissionsCatalog.defaultCashierPermissions) {
+      await into(rolePermissions).insert(
+        RolePermissionsCompanion.insert(
+          roleId: AppRoleIds.cashier,
+          permissionKey: permissionKey,
+        ),
+        mode: InsertMode.insertOrIgnore,
+      );
+    }
+
+    final List<User> existingUsers = await select(users).get();
+    for (final User user in existingUsers) {
+      final bool shouldBeAdmin =
+          user.username.trim().toLowerCase() == 'admin' ||
+              user.role.trim().toLowerCase() == 'admin';
+      final String targetRoleId =
+          shouldBeAdmin ? AppRoleIds.admin : AppRoleIds.cashier;
+      final String targetLegacyRole = shouldBeAdmin ? 'admin' : 'cajero';
+
+      await into(userRoles).insert(
+        UserRolesCompanion.insert(
+          userId: user.id,
+          roleId: targetRoleId,
+        ),
+        mode: InsertMode.insertOrIgnore,
+      );
+
+      if (user.role.trim().toLowerCase() != targetLegacyRole) {
+        await (update(users)..where((Users tbl) => tbl.id.equals(user.id)))
+            .write(
+          UsersCompanion(
+            role: Value(targetLegacyRole),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _createPerformanceIndexes() async {
     await customStatement(
       '''
@@ -596,6 +797,18 @@ class AppDatabase extends _$AppDatabase {
     );
     await customStatement(
       '''
+      CREATE INDEX IF NOT EXISTS idx_sales_customer_created_at
+      ON sales (customer_id, created_at)
+      ''',
+    );
+    await customStatement(
+      '''
+      CREATE INDEX IF NOT EXISTS idx_customers_active_type_name
+      ON customers (is_active, customer_type, full_name)
+      ''',
+    );
+    await customStatement(
+      '''
       CREATE INDEX IF NOT EXISTS idx_sales_warehouse_created_at
       ON sales (warehouse_id, created_at)
       ''',
@@ -622,6 +835,12 @@ class AppDatabase extends _$AppDatabase {
       '''
       CREATE INDEX IF NOT EXISTS idx_pos_sessions_terminal_user_status
       ON pos_sessions (terminal_id, user_id, status)
+      ''',
+    );
+    await customStatement(
+      '''
+      CREATE INDEX IF NOT EXISTS idx_pos_terminal_employees_employee_terminal
+      ON pos_terminal_employees (employee_id, terminal_id)
       ''',
     );
     await customStatement(

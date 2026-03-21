@@ -30,6 +30,7 @@ class CreateSaleInput {
   const CreateSaleInput({
     required this.warehouseId,
     required this.cashierId,
+    this.customerId,
     this.terminalId,
     this.terminalSessionId,
     required this.items,
@@ -41,6 +42,7 @@ class CreateSaleInput {
 
   final String warehouseId;
   final String cashierId;
+  final String? customerId;
   final String? terminalId;
   final String? terminalSessionId;
   final List<SaleItemInput> items;

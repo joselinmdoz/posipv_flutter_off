@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_providers.dart';
@@ -13,10 +12,11 @@ import '../../../shared/widgets/app_scaffold.dart';
 import '../../configuracion/presentation/configuracion_providers.dart';
 import '../../almacenes/presentation/almacenes_providers.dart';
 import '../../auth/presentation/auth_providers.dart';
-import '../../productos/presentation/productos_providers.dart';
 import '../../ventas_pos/presentation/widgets/pos_inventory_movement_dialog.dart';
 import '../data/inventario_local_datasource.dart';
 import 'inventario_providers.dart';
+import 'widgets/inventory_movement_card.dart';
+import 'widgets/inventory_movement_type_tabs.dart';
 
 class MovimientosInventarioPage extends ConsumerStatefulWidget {
   const MovimientosInventarioPage({super.key});
@@ -29,7 +29,6 @@ class MovimientosInventarioPage extends ConsumerStatefulWidget {
 class _MovimientosInventarioPageState
     extends ConsumerState<MovimientosInventarioPage> {
   final TextEditingController _searchCtrl = TextEditingController();
-  final FocusNode _searchFocusNode = FocusNode();
 
   List<Warehouse> _warehouses = <Warehouse>[];
   List<InventoryMovementReason> _reasons = <InventoryMovementReason>[];
@@ -54,7 +53,6 @@ class _MovimientosInventarioPageState
   @override
   void dispose() {
     _searchCtrl.dispose();
-    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -76,12 +74,9 @@ class _MovimientosInventarioPageState
               })
           ? _selectedReasonCode
           : 'all';
-      final List<InventoryMovementView> movements =
-          await ref.read(inventarioLocalDataSourceProvider).listMovements(
-                warehouseId: _selectedWarehouseId,
-                movementType: _selectedType,
-                reasonCode: selectedReason,
-              );
+      final List<InventoryMovementView> movements = await _fetchMovements(
+        selectedReasonCode: selectedReason,
+      );
       trace.mark('movimientos cargados');
       if (!mounted) {
         trace.end('unmounted');
@@ -106,18 +101,33 @@ class _MovimientosInventarioPageState
   }
 
   Future<void> _reloadMovements() async {
-    final List<InventoryMovementView> movements =
-        await ref.read(inventarioLocalDataSourceProvider).listMovements(
-              warehouseId: _selectedWarehouseId,
-              movementType: _selectedType,
-              reasonCode: _selectedReasonCode,
-            );
+    final List<InventoryMovementView> movements = await _fetchMovements();
     if (!mounted) {
       return;
     }
     setState(() {
       _movements = movements;
     });
+  }
+
+  Future<List<InventoryMovementView>> _fetchMovements({
+    String? selectedReasonCode,
+  }) async {
+    final String reasonCode = selectedReasonCode ?? _selectedReasonCode;
+    final String queryType = _selectedType == 'adjust' ? 'all' : _selectedType;
+    final List<InventoryMovementView> rows =
+        await ref.read(inventarioLocalDataSourceProvider).listMovements(
+              warehouseId: _selectedWarehouseId,
+              movementType: queryType,
+              reasonCode: reasonCode,
+            );
+    if (_selectedType != 'adjust') {
+      return rows;
+    }
+    return rows
+        .where(
+            (InventoryMovementView movement) => _isAdjustmentMovement(movement))
+        .toList(growable: false);
   }
 
   Future<void> _openMovementForm() async {
@@ -618,13 +628,6 @@ class _MovimientosInventarioPageState
     }
   }
 
-  String _formatQty(double qty) {
-    if (qty == qty.roundToDouble()) {
-      return qty.toStringAsFixed(0);
-    }
-    return qty.toStringAsFixed(2);
-  }
-
   String _formatDateTime(DateTime date) {
     final DateTime local = date.toLocal();
     final String y = local.year.toString().padLeft(4, '0');
@@ -655,12 +658,12 @@ class _MovimientosInventarioPageState
     final DateTime today = DateTime(now.year, now.month, now.day);
     final DateTime movementDay = DateTime(local.year, local.month, local.day);
     if (movementDay == today) {
-      return 'HOY, ${monthShort[local.month - 1]} ${local.day}';
+      return 'HOY — ${local.day} ${monthShort[local.month - 1]}';
     }
     if (movementDay == today.subtract(const Duration(days: 1))) {
-      return 'AYER, ${monthShort[local.month - 1]} ${local.day}';
+      return 'AYER — ${local.day} ${monthShort[local.month - 1]}';
     }
-    return '${monthShort[local.month - 1]} ${local.day}, ${local.year}';
+    return '${local.day} ${monthShort[local.month - 1]} ${local.year}';
   }
 
   String _formatTimeShort(DateTime date) {
@@ -671,10 +674,15 @@ class _MovimientosInventarioPageState
     return '$hour12:$mm $period';
   }
 
-  bool _isNeutralMovement(InventoryMovementView movement) {
+  bool _isAdjustmentMovement(InventoryMovementView movement) {
     final String reason = movement.reasonCode.toLowerCase();
-    final String label = movement.reasonLabel.toLowerCase();
-    return reason.contains('transfer') || label.contains('transfer');
+    if (reason == 'adjust' || reason == 'breakage' || reason == 'shrinkage') {
+      return true;
+    }
+    if (reason == 'sale' || reason == 'purchase') {
+      return false;
+    }
+    return movement.movementSource == 'manual';
   }
 
   bool _matchesSearch(InventoryMovementView movement, String query) {
@@ -702,12 +710,29 @@ class _MovimientosInventarioPageState
     }
     final List<String> orderedKeys = grouped.keys.toList()
       ..sort((String a, String b) => b.compareTo(a));
-    return orderedKeys.map((String key) {
-      return _MovementDateGroup(
-        date: dateByKey[key]!,
-        items: grouped[key]!,
+    final List<_MovementDateGroup> result = <_MovementDateGroup>[];
+    for (final String key in orderedKeys) {
+      final DateTime? day = dateByKey[key];
+      final List<InventoryMovementView>? items = grouped[key];
+      if (day == null || items == null || items.isEmpty) {
+        continue;
+      }
+      result.add(
+        _MovementDateGroup(
+          date: day,
+          items: items,
+        ),
       );
-    }).toList();
+    }
+    return result;
+  }
+
+  Future<void> _onTypeChanged(String value) async {
+    if (_selectedType == value) {
+      return;
+    }
+    setState(() => _selectedType = value);
+    await _reloadMovements();
   }
 
   void _show(String message) {
@@ -719,202 +744,37 @@ class _MovimientosInventarioPageState
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Widget _movementCard(InventoryMovementView movement) {
-    final ThemeData theme = Theme.of(context);
-    final bool isDark = theme.brightness == Brightness.dark;
-    final bool isIn = movement.movementType == 'in';
-    final bool neutral = _isNeutralMovement(movement);
-
-    final Color tone = neutral
-        ? (isDark
-            ? const Color(0x4D1E293B)
-            : const Color(0xFFF1F5F9)) // slate-800/30 : slate-100
-        : isIn
-            ? (isDark
-                ? const Color(0x4D14532D)
-                : const Color(0xFFDCFCE7)) // green-900/30 : green-100
-            : (isDark
-                ? const Color(0x4D7F1D1D)
-                : const Color(0xFFFEE2E2)); // red-900/30 : red-100
-    final Color ink = neutral
-        ? (isDark
-            ? const Color(0xFF94A3B8)
-            : const Color(0xFF475569)) // slate-400 : slate-600
-        : isIn
-            ? const Color(0xFF16A34A) // green-600
-            : const Color(0xFFDC2626); // red-600
-    final IconData icon = neutral
-        ? Icons.sync_alt_rounded
-        : isIn
-            ? Icons.south_west_rounded
-            : Icons.north_east_rounded;
-
-    final String amountText = neutral
-        ? _formatQty(movement.qty)
-        : isIn
-            ? '+${_formatQty(movement.qty)}'
-            : '-${_formatQty(movement.qty)}';
-    final String skuText = 'SKU: ${movement.sku}';
-    final String warehouseText = 'Almacén: ${movement.warehouseName}';
-    final String reasonText = 'Motivo: ${movement.reasonLabel}';
-
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        border: Border(
-          bottom: BorderSide(
-            color: isDark
-                ? const Color(0xFF1E293B)
-                : const Color(
-                    0xFFF1F5F9), // border-slate-800 : border-slate-100
-          ),
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        child: Row(
-          children: <Widget>[
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: tone,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(icon, color: ink, size: 24),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    movement.productName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    skuText,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: isDark
-                          ? const Color(0xFF64748B)
-                          : const Color(0xFF64748B), // slate-500
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    warehouseText,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: isDark
-                          ? const Color(0xFF64748B)
-                          : const Color(0xFF64748B),
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    reasonText,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: isDark
-                          ? const Color(0xFF94A3B8)
-                          : const Color(0xFF64748B),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: <Widget>[
-                Text(
-                  amountText,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 16,
-                    color: ink,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  _formatTimeShort(movement.createdAt),
-                  style: TextStyle(
-                    color: isDark
-                        ? const Color(0xFF94A3B8)
-                        : const Color(0xFF94A3B8), // slate-400
-                    fontSize: 10,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTypeTab({
-    required String label,
-    required String value,
-    required ThemeData theme,
-  }) {
-    final bool selected = _selectedType == value;
-    return InkWell(
-      onTap: () async {
-        if (_selectedType == value) {
-          return;
-        }
-        setState(() => _selectedType = value);
-        await _reloadMovements();
-      },
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(0, 8, 0, 12),
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: selected ? const Color(0xFF1152D4) : Colors.transparent,
-              width: 2,
+  List<Widget> _buildGroupedMovementWidgets(List<_MovementDateGroup> groups) {
+    final List<Widget> widgets = <Widget>[];
+    for (final _MovementDateGroup group in groups) {
+      widgets.add(
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 14, 10, 10),
+          child: Text(
+            _formatDateGroup(group.date),
+            style: const TextStyle(
+              letterSpacing: 1.0,
+              fontSize: 34 / 2,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF374151),
             ),
           ),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected
-                ? const Color(0xFF1152D4)
-                : theme.colorScheme.onSurfaceVariant,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-            fontSize: 14,
+      );
+      for (final InventoryMovementView movement in group.items) {
+        widgets.add(
+          InventoryMovementCard(
+            movement: movement,
+            timeLabel: _formatTimeShort(movement.createdAt),
           ),
-        ),
-      ),
-    );
+        );
+      }
+    }
+    return widgets;
   }
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<int>(productosCatalogRevisionProvider,
-        (int? previous, int next) {
-      if (previous == null || previous == next || !mounted) {
-        return;
-      }
-      unawaited(_reloadMovements());
-    });
-
     final ThemeData theme = Theme.of(context);
     final String query = _searchCtrl.text.trim().toLowerCase();
     final List<InventoryMovementView> filteredMovements = query.isEmpty
@@ -926,28 +786,27 @@ class _MovimientosInventarioPageState
     final license = ref.watch(currentLicenseStatusProvider);
 
     return AppScaffold(
-      title: 'Movimientos',
+      title: 'Inventario',
       currentRoute: '/inventario-movimientos',
       onRefresh: _bootstrap,
       showTopTabs: false,
       useDefaultActions: false,
-      showDrawer: false,
-      appBarLeading: IconButton(
-        onPressed: () => context.go('/inventario'),
-        icon: const Icon(Icons.arrow_back_rounded),
-      ),
+      showDrawer: true,
       appBarActions: <Widget>[
-        IconButton(
-          tooltip: 'Buscar',
-          onPressed: () => _searchFocusNode.requestFocus(),
-          icon: const Icon(Icons.search_rounded),
-        ),
         IconButton(
           tooltip: 'Filtros',
           onPressed: _openQuickFilters,
-          icon: const Icon(
-            Icons.filter_list_rounded,
-            color: Color(0xFF1152D4),
+          icon: Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF6D4BB),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.tune_rounded,
+              color: Color(0xFFB45309),
+              size: 20,
+            ),
           ),
         ),
       ],
@@ -961,149 +820,71 @@ class _MovimientosInventarioPageState
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _reloadMovements,
-              child: CustomScrollView(
-                key: const PageStorageKey<String>(
-                  'inventario-movimientos-groups',
-                ),
-                slivers: <Widget>[
-                  SliverToBoxAdapter(
-                    child: Container(
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: theme.appBarTheme.backgroundColor ??
-                            theme.colorScheme.surface,
-                        border: Border(
-                          bottom: BorderSide(
-                            color: theme.brightness == Brightness.dark
-                                ? const Color(0xFF1E293B) // slate-800
-                                : const Color(0xFFE2E8F0), // slate-200
-                          ),
-                        ),
+              child: ListView(
+                key:
+                    const PageStorageKey<String>('inventario-movimientos-list'),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 92),
+                children: <Widget>[
+                  TextField(
+                    controller: _searchCtrl,
+                    decoration: InputDecoration(
+                      hintText: 'Buscar movimientos, SKU o productos...',
+                      hintStyle: const TextStyle(
+                        fontSize: 17,
+                        color: Color(0xFF6B7280),
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-                        child: Row(
-                          children: <Widget>[
-                            _buildTypeTab(
-                              label: 'Todos',
-                              value: 'all',
-                              theme: theme,
-                            ),
-                            const SizedBox(width: 24),
-                            _buildTypeTab(
-                              label: 'Entradas',
-                              value: 'in',
-                              theme: theme,
-                            ),
-                            const SizedBox(width: 24),
-                            _buildTypeTab(
-                              label: 'Salidas',
-                              value: 'out',
-                              theme: theme,
-                            ),
-                          ],
+                      prefixIcon: const Icon(
+                        Icons.search_rounded,
+                        color: Color(0xFF4B5563),
+                        size: 28,
+                      ),
+                      filled: true,
+                      fillColor: const Color(0xFFE5E7EB),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 16,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: const BorderSide(
+                          color: Color(0xFF93C5FD),
+                          width: 2,
                         ),
                       ),
                     ),
+                    onChanged: (_) => setState(() {}),
                   ),
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                      child: TextField(
-                        controller: _searchCtrl,
-                        focusNode: _searchFocusNode,
-                        decoration: InputDecoration(
-                          hintText: 'Buscar SKU, producto, almacén o motivo',
-                          hintStyle: TextStyle(
-                            fontSize: 14,
-                            color: theme.brightness == Brightness.dark
-                                ? const Color(0xFF94A3B8) // slate-400
-                                : const Color(0xFF94A3B8),
-                          ),
-                          prefixIcon: const Icon(Icons.search_rounded,
-                              size: 20, color: Color(0xFF94A3B8)),
-                          filled: true,
-                          fillColor: theme.cardColor,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 40, // accommodate prefix icon properly
-                            vertical: 12,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide.none,
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide.none,
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide(
-                              color: theme.colorScheme.primary
-                                  .withValues(alpha: 0.2),
-                              width: 2,
-                            ),
-                          ),
-                        ),
-                        onChanged: (_) => setState(() {}),
-                      ),
-                    ),
+                  const SizedBox(height: 14),
+                  InventoryMovementTypeTabs(
+                    selectedType: _selectedType,
+                    onChanged: (String value) {
+                      unawaited(_onTypeChanged(value));
+                    },
                   ),
+                  const SizedBox(height: 14),
                   if (groups.isEmpty)
-                    SliverFillRemaining(
-                      hasScrollBody: false,
+                    Padding(
+                      padding: const EdgeInsets.only(top: 120),
                       child: Center(
                         child: Text(
                           'Sin movimientos para mostrar.',
                           style: TextStyle(
                             color: theme.colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
                     )
                   else
-                    SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (BuildContext context, int index) {
-                          int itemIndex = 0;
-                          for (final _MovementDateGroup group in groups) {
-                            if (index == itemIndex) {
-                              return Padding(
-                                padding:
-                                    const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                                child: Text(
-                                  _formatDateGroup(group.date).toUpperCase(),
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 0.5,
-                                    fontSize: 12,
-                                    color: theme.brightness == Brightness.dark
-                                        ? const Color(0xFF64748B) // slate-500
-                                        : const Color(0xFF94A3B8), // slate-400
-                                  ),
-                                ),
-                              );
-                            }
-                            itemIndex++;
-                            for (final movement in group.items) {
-                              if (index == itemIndex) {
-                                return _movementCard(movement);
-                              }
-                              itemIndex++;
-                            }
-                          }
-                          return null;
-                        },
-                        childCount: groups.fold<int>(
-                          0,
-                          (int sum, _MovementDateGroup g) =>
-                              sum + 1 + g.items.length,
-                        ),
-                      ),
-                    ),
-                  const SliverToBoxAdapter(
-                    child: SizedBox(height: 80),
-                  ),
+                    ..._buildGroupedMovementWidgets(groups),
                 ],
               ),
             ),

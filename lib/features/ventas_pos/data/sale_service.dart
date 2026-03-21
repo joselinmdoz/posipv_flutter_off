@@ -106,6 +106,18 @@ class SaleService {
           throw const _SaleException('El almacen seleccionado no es valido.');
         }
 
+        final String? cleanCustomerId = input.customerId?.trim().isEmpty ?? true
+            ? null
+            : input.customerId!.trim();
+        if (cleanCustomerId != null) {
+          final Customer? customer = await (_db.select(_db.customers)
+                ..where((Customers tbl) => tbl.id.equals(cleanCustomerId)))
+              .getSingleOrNull();
+          if (customer == null || !customer.isActive) {
+            throw const _SaleException('El cliente seleccionado no es valido.');
+          }
+        }
+
         final DateTime now = DateTime.now();
         await _enforceDailySalesLimit(now);
         final String saleId = _uuid.v4();
@@ -199,6 +211,7 @@ class SaleService {
                 folio: folio,
                 warehouseId: input.warehouseId,
                 cashierId: input.cashierId,
+                customerId: Value(cleanCustomerId),
                 terminalId: Value(saleTerminalId),
                 terminalSessionId: Value(saleTerminalSessionId),
                 subtotalCents: subtotalCents,

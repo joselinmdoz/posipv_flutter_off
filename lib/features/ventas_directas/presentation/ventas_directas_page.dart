@@ -11,6 +11,10 @@ import '../../../shared/widgets/app_scaffold.dart';
 import '../../../shared/widgets/code_scanner_page.dart';
 import '../../almacenes/presentation/almacenes_providers.dart';
 import '../../auth/presentation/auth_providers.dart';
+import '../../clientes/data/clientes_local_datasource.dart';
+import '../../clientes/presentation/clientes_providers.dart';
+import '../../clientes/presentation/widgets/sale_customer_picker_dialog.dart';
+import '../../clientes/presentation/widgets/sale_customer_selector_tile.dart';
 import '../../configuracion/data/configuracion_local_datasource.dart';
 import '../../configuracion/presentation/configuracion_providers.dart';
 import '../../inventario/data/inventario_local_datasource.dart';
@@ -48,6 +52,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
   bool _allowNegativeStock = false;
   bool _loading = true;
   bool _posting = false;
+  ClienteListItem? _selectedCustomer;
 
   final Map<String, double> _qtyByProductId = <String, double>{};
   final Map<String, double> _stockByProductId = <String, double>{};
@@ -660,6 +665,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
     final CreateSaleInput input = CreateSaleInput(
       warehouseId: _selectedWarehouseId!,
       cashierId: session.userId,
+      customerId: _selectedCustomer?.id,
       terminalId: null,
       terminalSessionId: null,
       items: items,
@@ -731,6 +737,47 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
       case AppFailure<CreateSaleResult>(:final message):
         _show(message);
     }
+  }
+
+  Future<void> _selectCustomerForSale() async {
+    if (_posting) {
+      return;
+    }
+    try {
+      final List<ClienteListItem> customers =
+          await ref.read(clientesLocalDataSourceProvider).listClients(
+                limit: 300,
+              );
+      if (!mounted) {
+        return;
+      }
+      if (customers.isEmpty) {
+        _show('No hay clientes registrados.');
+        return;
+      }
+      final ClienteListItem? selected = await showDialog<ClienteListItem>(
+        context: context,
+        builder: (BuildContext context) {
+          return SaleCustomerPickerDialog(
+            customers: customers,
+            initialSelectedId: _selectedCustomer?.id,
+          );
+        },
+      );
+      if (!mounted || selected == null) {
+        return;
+      }
+      setState(() => _selectedCustomer = selected);
+    } catch (e) {
+      _show('No se pudo cargar la lista de clientes: $e');
+    }
+  }
+
+  void _clearSelectedCustomer() {
+    if (_posting || _selectedCustomer == null || !mounted) {
+      return;
+    }
+    setState(() => _selectedCustomer = null);
   }
 
   String _selectedWarehouseName() {
@@ -809,19 +856,28 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
 
   int _gridColumnsForWidth(double width) {
     if (width >= 1400) {
-      return 5;
+      return 6;
     }
     if (width >= 1100) {
-      return 4;
+      return 5;
     }
     if (width >= 860) {
+      return 4;
+    }
+    if (width >= 640) {
       return 3;
     }
     return 2;
   }
 
-  double _gridAspectRatioForWidth(double width) {
-    return 0.82;
+  double _gridMainAxisExtentForTile(double tileWidth) {
+    if (tileWidth >= 280) {
+      return 278;
+    }
+    if (tileWidth >= 220) {
+      return 258;
+    }
+    return 236;
   }
 
   Widget _warehouseHeader() {
@@ -905,6 +961,12 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
     return SliverLayoutBuilder(
       builder: (BuildContext context, constraints) {
         final double width = constraints.crossAxisExtent;
+        final int preferredColumns = _gridColumnsForWidth(width);
+        final int columns = preferredColumns > products.length
+            ? products.length
+            : preferredColumns;
+        final double tileWidth =
+            (width - 24 - (8 * (columns - 1))) / (columns < 1 ? 1 : columns);
         return SliverPadding(
           padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
           sliver: SliverGrid(
@@ -919,10 +981,10 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
               childCount: products.length,
             ),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: _gridColumnsForWidth(width),
+              crossAxisCount: columns < 1 ? 1 : columns,
               mainAxisSpacing: 8,
               crossAxisSpacing: 8,
-              childAspectRatio: _gridAspectRatioForWidth(width),
+              mainAxisExtent: _gridMainAxisExtentForTile(tileWidth),
             ),
           ),
         );
@@ -964,6 +1026,13 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
                                 child: Column(
                                   children: <Widget>[
                                     _warehouseHeader(),
+                                    const SizedBox(height: 8),
+                                    SaleCustomerSelectorTile(
+                                      selectedCustomer: _selectedCustomer,
+                                      enabled: !_posting,
+                                      onSelect: _selectCustomerForSale,
+                                      onClear: _clearSelectedCustomer,
+                                    ),
                                     const SizedBox(height: 10),
                                     _productFilterField(),
                                     const SizedBox(height: 8),
