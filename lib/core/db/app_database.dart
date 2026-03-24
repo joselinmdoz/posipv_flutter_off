@@ -219,6 +219,12 @@ class StockMovements extends Table {
   TextColumn get refType => text().nullable()();
   TextColumn get refId => text().nullable()();
   TextColumn get note => text().nullable()();
+  BoolColumn get isVoided => boolean().withDefault(const Constant(false))();
+  DateTimeColumn get voidedAt => dateTime().nullable()();
+  @ReferenceName('voidedStockMovements')
+  TextColumn get voidedBy => text().references(Users, #id).nullable()();
+  TextColumn get voidNote => text().nullable()();
+  @ReferenceName('createdStockMovements')
   TextColumn get createdBy => text().references(Users, #id)();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
 
@@ -323,6 +329,8 @@ class IpvReports extends Table {
 class IpvReportLines extends Table {
   TextColumn get reportId => text().references(IpvReports, #id)();
   TextColumn get productId => text().references(Products, #id)();
+  TextColumn get productNameSnapshot => text().nullable()();
+  TextColumn get productSkuSnapshot => text().nullable()();
   RealColumn get startQty => real().withDefault(const Constant(0))();
   RealColumn get entriesQty => real().withDefault(const Constant(0))();
   RealColumn get outputsQty => real().withDefault(const Constant(0))();
@@ -390,7 +398,7 @@ class AppDatabase extends _$AppDatabase {
   final Uuid _uuid = const Uuid();
 
   @override
-  int get schemaVersion => 20;
+  int get schemaVersion => 23;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -615,6 +623,73 @@ class AppDatabase extends _$AppDatabase {
               () => m.addColumn(payments, payments.transactionId),
             );
           }
+          if (from < 21) {
+            await _addIpvReportLineColumnIfMissing(
+              m,
+              'product_name_snapshot',
+              () => m.addColumn(
+                ipvReportLines,
+                ipvReportLines.productNameSnapshot,
+              ),
+            );
+            await _addIpvReportLineColumnIfMissing(
+              m,
+              'product_sku_snapshot',
+              () => m.addColumn(
+                ipvReportLines,
+                ipvReportLines.productSkuSnapshot,
+              ),
+            );
+            await customStatement(
+              '''
+              UPDATE ipv_report_lines AS l
+              SET
+                product_name_snapshot = CASE
+                  WHEN l.product_name_snapshot IS NOT NULL
+                       AND TRIM(l.product_name_snapshot) <> ''
+                    THEN l.product_name_snapshot
+                  ELSE COALESCE(
+                    (SELECT p.name FROM products p WHERE p.id = l.product_id),
+                    'Producto'
+                  )
+                END,
+                product_sku_snapshot = CASE
+                  WHEN l.product_sku_snapshot IS NOT NULL
+                       AND TRIM(l.product_sku_snapshot) <> ''
+                    THEN l.product_sku_snapshot
+                  ELSE COALESCE(
+                    (SELECT p.sku FROM products p WHERE p.id = l.product_id),
+                    '-'
+                  )
+                END
+              ''',
+            );
+          }
+          if (from < 22) {
+            await _addStockMovementColumnIfMissing(
+              m,
+              'is_voided',
+              () => m.addColumn(stockMovements, stockMovements.isVoided),
+            );
+            await _addStockMovementColumnIfMissing(
+              m,
+              'voided_at',
+              () => m.addColumn(stockMovements, stockMovements.voidedAt),
+            );
+            await _addStockMovementColumnIfMissing(
+              m,
+              'voided_by',
+              () => m.addColumn(stockMovements, stockMovements.voidedBy),
+            );
+            await _addStockMovementColumnIfMissing(
+              m,
+              'void_note',
+              () => m.addColumn(stockMovements, stockMovements.voidNote),
+            );
+          }
+          if (from < 23) {
+            await _rebuildProductCatalogItemsForSchema23(m);
+          }
         },
       );
 
@@ -693,6 +768,123 @@ class AppDatabase extends _$AppDatabase {
     if (!exists) {
       await addColumn();
     }
+  }
+
+  Future<void> _addIpvReportLineColumnIfMissing(
+    Migrator migrator,
+    String columnName,
+    Future<void> Function() addColumn,
+  ) async {
+    final bool exists = await _tableHasColumn('ipv_report_lines', columnName);
+    if (!exists) {
+      await addColumn();
+    }
+  }
+
+  Future<void> _rebuildProductCatalogItemsForSchema23(Migrator m) async {
+    if (!await _tableExists('product_catalog_items')) {
+      await m.createTable(productCatalogItems);
+      await _seedDefaultProductCatalogItems();
+      return;
+    }
+
+    const String legacyTable = 'product_catalog_items_legacy_v23';
+    await customStatement('DROP TABLE IF EXISTS $legacyTable');
+    await customStatement(
+      'ALTER TABLE product_catalog_items RENAME TO $legacyTable',
+    );
+    await m.createTable(productCatalogItems);
+
+    final List<QueryRow> rows = await customSelect(
+      '''
+      SELECT id, kind, value, is_active, created_at, updated_at
+      FROM $legacyTable
+      ORDER BY created_at ASC
+      ''',
+    ).get();
+
+    final Map<String, _CatalogMigrationRow> grouped =
+        <String, _CatalogMigrationRow>{};
+
+    for (final QueryRow row in rows) {
+      final String rawKind = (row.readNullable<String>('kind') ?? '').trim();
+      final String rawValue = (row.readNullable<String>('value') ?? '').trim();
+      if (rawKind.isEmpty || rawValue.isEmpty) {
+        continue;
+      }
+
+      final String normalizedKind = rawKind.toLowerCase();
+      final String normalizedValue =
+          _normalizeCatalogValueForCatalogMigration(rawValue);
+      if (normalizedValue.isEmpty) {
+        continue;
+      }
+
+      final DateTime createdAt =
+          row.readNullable<DateTime>('created_at') ?? DateTime.now();
+      final DateTime? updatedAt = row.readNullable<DateTime>('updated_at');
+      final Object? rawIsActive = row.data['is_active'];
+      final bool isActive =
+          rawIsActive is bool ? rawIsActive : ((rawIsActive as int?) ?? 0) != 0;
+      final String candidateId =
+          (row.readNullable<String>('id') ?? '').trim().isEmpty
+              ? _uuid.v4()
+              : row.read<String>('id').trim();
+
+      final String key = '$normalizedKind|${normalizedValue.toLowerCase()}';
+      final _CatalogMigrationRow? existing = grouped[key];
+      if (existing == null) {
+        grouped[key] = _CatalogMigrationRow(
+          id: candidateId,
+          kind: normalizedKind,
+          value: normalizedValue,
+          isActive: isActive,
+          createdAt: createdAt,
+          updatedAt: updatedAt,
+        );
+        continue;
+      }
+
+      if (isActive && !existing.isActive) {
+        existing.isActive = true;
+      }
+      if (createdAt.isBefore(existing.createdAt)) {
+        existing.createdAt = createdAt;
+      }
+      if (updatedAt != null &&
+          (existing.updatedAt == null ||
+              updatedAt.isAfter(existing.updatedAt!))) {
+        existing.updatedAt = updatedAt;
+      }
+    }
+
+    for (final _CatalogMigrationRow row in grouped.values) {
+      await into(productCatalogItems).insert(
+        ProductCatalogItemsCompanion.insert(
+          id: row.id,
+          kind: row.kind,
+          value: row.value,
+          isActive: Value(row.isActive),
+          createdAt: Value(row.createdAt),
+          updatedAt: Value(row.updatedAt),
+        ),
+        mode: InsertMode.insertOrIgnore,
+      );
+    }
+
+    await customStatement('DROP TABLE IF EXISTS $legacyTable');
+    await _seedDefaultProductCatalogItems();
+  }
+
+  String _normalizeCatalogValueForCatalogMigration(String value) {
+    final String trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      return '';
+    }
+    if (trimmed.length == 1) {
+      return trimmed.toUpperCase();
+    }
+    return trimmed[0].toUpperCase() + trimmed.substring(1);
   }
 
   Future<void> _seedAccessControlDefaults() async {
@@ -808,6 +1000,12 @@ class AppDatabase extends _$AppDatabase {
       '''
       CREATE INDEX IF NOT EXISTS idx_stock_movements_product_warehouse
       ON stock_movements (product_id, warehouse_id)
+      ''',
+    );
+    await customStatement(
+      '''
+      CREATE INDEX IF NOT EXISTS idx_stock_movements_voided_created_at
+      ON stock_movements (is_voided, created_at)
       ''',
     );
     await customStatement(
@@ -996,6 +1194,24 @@ class AppDatabase extends _$AppDatabase {
         .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
         .replaceAll(RegExp(r'^-+|-+$'), '');
   }
+}
+
+class _CatalogMigrationRow {
+  _CatalogMigrationRow({
+    required this.id,
+    required this.kind,
+    required this.value,
+    required this.isActive,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String kind;
+  final String value;
+  bool isActive;
+  DateTime createdAt;
+  DateTime? updatedAt;
 }
 
 QueryExecutor _openConnection() {

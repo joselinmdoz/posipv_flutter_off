@@ -7,10 +7,12 @@ class InventoryMovementCard extends StatelessWidget {
     super.key,
     required this.movement,
     required this.timeLabel,
+    this.onArchive,
   });
 
   final InventoryMovementView movement;
   final String timeLabel;
+  final VoidCallback? onArchive;
 
   @override
   Widget build(BuildContext context) {
@@ -148,6 +150,18 @@ class InventoryMovementCard extends StatelessWidget {
                           color: Color(0xFF374151),
                         ),
                       ),
+                      if (onArchive != null) ...<Widget>[
+                        const SizedBox(width: 8),
+                        IconButton(
+                          tooltip: 'Eliminar movimiento',
+                          onPressed: onArchive,
+                          icon: const Icon(
+                            Icons.delete_outline_rounded,
+                            size: 20,
+                            color: Color(0xFFB91C1C),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ],

@@ -225,6 +225,7 @@ class AppPermissionsCatalog {
     '/home': AppPermissionKeys.homeView,
     '/perfil-empleado': AppPermissionKeys.homeView,
     '/tpv': AppPermissionKeys.tpvView,
+    '/sync-manual': AppPermissionKeys.tpvManageSessions,
     '/tpv-empleados': AppPermissionKeys.tpvManageEmployees,
     '/ventas-pos': AppPermissionKeys.salesPos,
     '/ventas-directas': AppPermissionKeys.salesDirect,
@@ -238,6 +239,10 @@ class AppPermissionsCatalog {
     '/configuracion': AppPermissionKeys.settingsView,
     '/configuracion-seguridad': AppPermissionKeys.settingsSecurity,
     '/configuracion-monedas': AppPermissionKeys.settingsCurrency,
+    '/configuracion-catalogos-producto': AppPermissionKeys.productsManage,
+    '/configuracion-unidades-medida': AppPermissionKeys.productsManage,
+    '/configuracion-tipos-unidad': AppPermissionKeys.productsManage,
+    '/configuracion-archivados': AppPermissionKeys.usersManage,
     '/configuracion-usuarios': AppPermissionKeys.usersManage,
     '/configuracion-roles': AppPermissionKeys.usersManage,
     '/configuracion-dashboard-widgets':

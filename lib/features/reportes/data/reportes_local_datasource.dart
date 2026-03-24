@@ -84,6 +84,38 @@ class AnalyticsTopProductStat {
   final double deltaPercent;
 }
 
+class SalesBreakdownStat {
+  const SalesBreakdownStat({
+    required this.key,
+    required this.label,
+    required this.ordersCount,
+    required this.totalCents,
+  });
+
+  final String key;
+  final String label;
+  final int ordersCount;
+  final int totalCents;
+}
+
+class AnalyticsTopCustomerStat {
+  const AnalyticsTopCustomerStat({
+    required this.customerId,
+    required this.name,
+    required this.customerType,
+    required this.ordersCount,
+    required this.totalCents,
+    required this.lastSaleAt,
+  });
+
+  final String customerId;
+  final String name;
+  final String customerType;
+  final int ordersCount;
+  final int totalCents;
+  final DateTime? lastSaleAt;
+}
+
 class SalesAnalyticsSnapshot {
   const SalesAnalyticsSnapshot({
     required this.fromDate,
@@ -95,6 +127,18 @@ class SalesAnalyticsSnapshot {
     required this.avgOrderDeltaPercent,
     required this.trend,
     required this.topProducts,
+    required this.ordersCount,
+    required this.itemsSoldQty,
+    required this.uniqueCustomersCount,
+    required this.salesWithoutCustomerCount,
+    required this.posRevenueCents,
+    required this.posOrdersCount,
+    required this.directRevenueCents,
+    required this.directOrdersCount,
+    required this.paymentMethods,
+    required this.byCashier,
+    required this.byWarehouse,
+    required this.topCustomers,
   });
 
   final DateTime fromDate;
@@ -106,6 +150,18 @@ class SalesAnalyticsSnapshot {
   final double avgOrderDeltaPercent;
   final List<SalesTrendPointStat> trend;
   final List<AnalyticsTopProductStat> topProducts;
+  final int ordersCount;
+  final double itemsSoldQty;
+  final int uniqueCustomersCount;
+  final int salesWithoutCustomerCount;
+  final int posRevenueCents;
+  final int posOrdersCount;
+  final int directRevenueCents;
+  final int directOrdersCount;
+  final List<SalesBreakdownStat> paymentMethods;
+  final List<SalesBreakdownStat> byCashier;
+  final List<SalesBreakdownStat> byWarehouse;
+  final List<AnalyticsTopCustomerStat> topCustomers;
 }
 
 class RecentSaleStat {
@@ -333,6 +389,7 @@ class ReportesLocalDataSource {
       SELECT COUNT(*) AS value
       FROM stock_movements
       WHERE created_at >= ?
+        AND COALESCE(is_voided, 0) = 0
       ''',
       variables: <Variable<Object>>[Variable<DateTime>(startToday)],
     );
@@ -452,6 +509,33 @@ class ReportesLocalDataSource {
     final int previousAvg = previousSales.isEmpty
         ? 0
         : (previousTotal / previousSales.length).round();
+    final int ordersCount = currentSales.length;
+    final double itemsSoldQty = await _itemsSoldQtyForRange(
+      from: from,
+      toExclusive: toExclusive,
+    );
+    int posRevenueCents = 0;
+    int posOrdersCount = 0;
+    int directRevenueCents = 0;
+    int directOrdersCount = 0;
+    int salesWithoutCustomerCount = 0;
+    final Set<String> uniqueCustomers = <String>{};
+    for (final Sale sale in currentSales) {
+      final bool isPosSale = (sale.terminalId ?? '').trim().isNotEmpty;
+      if (isPosSale) {
+        posOrdersCount += 1;
+        posRevenueCents += sale.totalCents;
+      } else {
+        directOrdersCount += 1;
+        directRevenueCents += sale.totalCents;
+      }
+      final String customerId = (sale.customerId ?? '').trim();
+      if (customerId.isEmpty) {
+        salesWithoutCustomerCount += 1;
+      } else {
+        uniqueCustomers.add(customerId);
+      }
+    }
 
     final List<SalesTrendPointStat> trend =
         _buildTrend(currentSales, granularity);
@@ -462,6 +546,26 @@ class ReportesLocalDataSource {
       prevFrom: prevFrom,
       prevToExclusive: prevToExclusive,
       limit: topLimit < 1 ? 1 : topLimit,
+    );
+    final List<SalesBreakdownStat> paymentMethods =
+        await _paymentMethodBreakdownForRange(
+      from: from,
+      toExclusive: toExclusive,
+    );
+    final List<SalesBreakdownStat> byCashier = await _cashierBreakdownForRange(
+      from: from,
+      toExclusive: toExclusive,
+    );
+    final List<SalesBreakdownStat> byWarehouse =
+        await _warehouseBreakdownForRange(
+      from: from,
+      toExclusive: toExclusive,
+    );
+    final List<AnalyticsTopCustomerStat> topCustomers =
+        await _topCustomersForRange(
+      from: from,
+      toExclusive: toExclusive,
+      limit: 8,
     );
 
     return SalesAnalyticsSnapshot(
@@ -474,6 +578,18 @@ class ReportesLocalDataSource {
       avgOrderDeltaPercent: _pctChange(currentAvg, previousAvg),
       trend: trend,
       topProducts: topProducts,
+      ordersCount: ordersCount,
+      itemsSoldQty: itemsSoldQty,
+      uniqueCustomersCount: uniqueCustomers.length,
+      salesWithoutCustomerCount: salesWithoutCustomerCount,
+      posRevenueCents: posRevenueCents,
+      posOrdersCount: posOrdersCount,
+      directRevenueCents: directRevenueCents,
+      directOrdersCount: directOrdersCount,
+      paymentMethods: paymentMethods,
+      byCashier: byCashier,
+      byWarehouse: byWarehouse,
+      topCustomers: topCustomers,
     );
   }
 
@@ -705,6 +821,176 @@ class ReportesLocalDataSource {
         qty: (row.data['qty'] as num?)?.toDouble() ?? 0,
         totalCents: total,
         deltaPercent: _pctChange(total, previous),
+      );
+    }).toList(growable: false);
+  }
+
+  Future<double> _itemsSoldQtyForRange({
+    required DateTime from,
+    required DateTime toExclusive,
+  }) async {
+    final QueryRow? row = await _db.customSelect(
+      '''
+      SELECT COALESCE(SUM(si.qty), 0) AS qty
+      FROM sale_items si
+      INNER JOIN sales s ON s.id = si.sale_id
+      WHERE s.status = 'posted'
+        AND s.created_at >= ?
+        AND s.created_at < ?
+      ''',
+      variables: <Variable<Object>>[
+        Variable<DateTime>(from),
+        Variable<DateTime>(toExclusive),
+      ],
+    ).getSingleOrNull();
+    return (row?.data['qty'] as num?)?.toDouble() ?? 0;
+  }
+
+  Future<List<SalesBreakdownStat>> _paymentMethodBreakdownForRange({
+    required DateTime from,
+    required DateTime toExclusive,
+  }) async {
+    final List<QueryRow> rows = await _db.customSelect(
+      '''
+      SELECT
+        COALESCE(NULLIF(TRIM(p.method), ''), 'unknown') AS key,
+        COUNT(DISTINCT p.sale_id) AS orders_count,
+        COALESCE(SUM(p.amount_cents), 0) AS total_cents
+      FROM payments p
+      INNER JOIN sales s ON s.id = p.sale_id
+      WHERE s.status = 'posted'
+        AND s.created_at >= ?
+        AND s.created_at < ?
+      GROUP BY key
+      ORDER BY total_cents DESC, orders_count DESC
+      ''',
+      variables: <Variable<Object>>[
+        Variable<DateTime>(from),
+        Variable<DateTime>(toExclusive),
+      ],
+    ).get();
+
+    return rows.map((QueryRow row) {
+      final String key = _readTextCell(row, 'key', fallback: 'unknown');
+      return SalesBreakdownStat(
+        key: key,
+        label: _paymentMethodLabel(key),
+        ordersCount: (row.data['orders_count'] as num?)?.toInt() ?? 0,
+        totalCents: (row.data['total_cents'] as num?)?.toInt() ?? 0,
+      );
+    }).toList(growable: false);
+  }
+
+  Future<List<SalesBreakdownStat>> _cashierBreakdownForRange({
+    required DateTime from,
+    required DateTime toExclusive,
+  }) async {
+    final List<QueryRow> rows = await _db.customSelect(
+      '''
+      SELECT
+        s.cashier_id AS key,
+        COALESCE(u.username, 'Sin usuario') AS label,
+        COUNT(*) AS orders_count,
+        COALESCE(SUM(s.total_cents), 0) AS total_cents
+      FROM sales s
+      LEFT JOIN users u ON u.id = s.cashier_id
+      WHERE s.status = 'posted'
+        AND s.created_at >= ?
+        AND s.created_at < ?
+      GROUP BY s.cashier_id, u.username
+      ORDER BY total_cents DESC, orders_count DESC
+      ''',
+      variables: <Variable<Object>>[
+        Variable<DateTime>(from),
+        Variable<DateTime>(toExclusive),
+      ],
+    ).get();
+
+    return rows.map((QueryRow row) {
+      return SalesBreakdownStat(
+        key: _readTextCell(row, 'key', fallback: '-'),
+        label: _readTextCell(row, 'label', fallback: 'Sin usuario'),
+        ordersCount: (row.data['orders_count'] as num?)?.toInt() ?? 0,
+        totalCents: (row.data['total_cents'] as num?)?.toInt() ?? 0,
+      );
+    }).toList(growable: false);
+  }
+
+  Future<List<SalesBreakdownStat>> _warehouseBreakdownForRange({
+    required DateTime from,
+    required DateTime toExclusive,
+  }) async {
+    final List<QueryRow> rows = await _db.customSelect(
+      '''
+      SELECT
+        s.warehouse_id AS key,
+        COALESCE(w.name, 'Sin almacén') AS label,
+        COUNT(*) AS orders_count,
+        COALESCE(SUM(s.total_cents), 0) AS total_cents
+      FROM sales s
+      LEFT JOIN warehouses w ON w.id = s.warehouse_id
+      WHERE s.status = 'posted'
+        AND s.created_at >= ?
+        AND s.created_at < ?
+      GROUP BY s.warehouse_id, w.name
+      ORDER BY total_cents DESC, orders_count DESC
+      ''',
+      variables: <Variable<Object>>[
+        Variable<DateTime>(from),
+        Variable<DateTime>(toExclusive),
+      ],
+    ).get();
+
+    return rows.map((QueryRow row) {
+      return SalesBreakdownStat(
+        key: _readTextCell(row, 'key', fallback: '-'),
+        label: _readTextCell(row, 'label', fallback: 'Sin almacén'),
+        ordersCount: (row.data['orders_count'] as num?)?.toInt() ?? 0,
+        totalCents: (row.data['total_cents'] as num?)?.toInt() ?? 0,
+      );
+    }).toList(growable: false);
+  }
+
+  Future<List<AnalyticsTopCustomerStat>> _topCustomersForRange({
+    required DateTime from,
+    required DateTime toExclusive,
+    required int limit,
+  }) async {
+    final List<QueryRow> rows = await _db.customSelect(
+      '''
+      SELECT
+        s.customer_id AS customer_id,
+        COALESCE(c.full_name, 'Cliente') AS customer_name,
+        COALESCE(c.customer_type, 'general') AS customer_type,
+        COUNT(*) AS orders_count,
+        COALESCE(SUM(s.total_cents), 0) AS total_cents,
+        MAX(s.created_at) AS last_sale_at
+      FROM sales s
+      LEFT JOIN customers c ON c.id = s.customer_id
+      WHERE s.status = 'posted'
+        AND s.created_at >= ?
+        AND s.created_at < ?
+        AND s.customer_id IS NOT NULL
+        AND TRIM(s.customer_id) <> ''
+      GROUP BY s.customer_id, c.full_name, c.customer_type
+      ORDER BY total_cents DESC, orders_count DESC
+      LIMIT ?
+      ''',
+      variables: <Variable<Object>>[
+        Variable<DateTime>(from),
+        Variable<DateTime>(toExclusive),
+        Variable<int>(limit),
+      ],
+    ).get();
+
+    return rows.map((QueryRow row) {
+      return AnalyticsTopCustomerStat(
+        customerId: _readTextCell(row, 'customer_id', fallback: '-'),
+        name: _readTextCell(row, 'customer_name', fallback: 'Cliente'),
+        customerType: _readTextCell(row, 'customer_type', fallback: 'general'),
+        ordersCount: (row.data['orders_count'] as num?)?.toInt() ?? 0,
+        totalCents: (row.data['total_cents'] as num?)?.toInt() ?? 0,
+        lastSaleAt: _readDateCell(row.data['last_sale_at']),
       );
     }).toList(growable: false);
   }
@@ -1116,35 +1402,18 @@ class ReportesLocalDataSource {
       return null;
     }
 
-    final String terminalId = _readTextCell(
-      header,
-      'terminal_id',
-      fallback: '',
-    );
-    final String warehouseId = _readTextCell(
-      header,
-      'warehouse_id',
-      fallback: '',
-    );
     final DateTime openedAt = header.read<DateTime>('opened_at');
     final DateTime? closedAt = header.readNullable<DateTime>('closed_at');
     final String status =
         (header.readNullable<String>('status') ?? 'open').trim().toLowerCase();
-
-    final DateTime movementStart = terminalId.isEmpty
-        ? openedAt
-        : await _resolveIpvMovementStart(
-            terminalId: terminalId,
-            openedAt: openedAt,
-            currentReportId: id,
-          );
-    final DateTime movementEnd = closedAt ?? DateTime.now();
 
     final List<QueryRow> baseLineRows = await _db.customSelect(
       '''
       SELECT
         report_id,
         product_id,
+        COALESCE(product_name_snapshot, '') AS product_name_snapshot,
+        COALESCE(product_sku_snapshot, '') AS product_sku_snapshot,
         COALESCE(start_qty, 0) AS start_qty,
         COALESCE(entries_qty, 0) AS entries_qty,
         COALESCE(outputs_qty, 0) AS outputs_qty,
@@ -1157,6 +1426,38 @@ class ReportesLocalDataSource {
       ''',
       variables: <Variable<Object>>[Variable<String>(id)],
     ).get();
+
+    // Closed IPV reports are immutable snapshots.
+    // They must always reflect persisted lines, regardless of later stock changes.
+    if (status == 'closed') {
+      return _buildClosedIpvDetailFromSnapshot(
+        header: header,
+        reportId: id,
+        openedAt: openedAt,
+        closedAt: closedAt,
+        status: status,
+        baseLineRows: baseLineRows,
+      );
+    }
+
+    final String terminalId = _readTextCell(
+      header,
+      'terminal_id',
+      fallback: '',
+    );
+    final String warehouseId = _readTextCell(
+      header,
+      'warehouse_id',
+      fallback: '',
+    );
+    final DateTime movementStart = terminalId.isEmpty
+        ? openedAt
+        : await _resolveIpvMovementStart(
+            terminalId: terminalId,
+            openedAt: openedAt,
+            currentReportId: id,
+          );
+    final DateTime movementEnd = closedAt ?? DateTime.now();
     final Map<String, _IpvAgg> byProduct = <String, _IpvAgg>{
       for (final QueryRow row in baseLineRows)
         if (_readTextCell(row, 'product_id', fallback: '').isNotEmpty)
@@ -1220,6 +1521,7 @@ class ReportesLocalDataSource {
             WHERE sm.warehouse_id = ?
               AND sm.created_at ${includeStartBoundary ? '>=' : '>'} ?
               AND sm.created_at <= ?
+              AND COALESCE(sm.is_voided, 0) = 0
             GROUP BY sm.product_id
             ''',
             variables: <Variable<Object>>[
@@ -1272,6 +1574,77 @@ class ReportesLocalDataSource {
 
     final IpvReportSummaryStat summary = IpvReportSummaryStat(
       reportId: id,
+      sessionId: _readTextCell(header, 'session_id', fallback: '-'),
+      terminalName:
+          (header.readNullable<String>('terminal_name') ?? 'TPV').trim(),
+      currencySymbol:
+          (header.readNullable<String>('currency_symbol') ?? r'$').trim(),
+      openedAt: openedAt,
+      closedAt: closedAt,
+      status: status,
+      openingSource:
+          (header.readNullable<String>('opening_source') ?? '').trim(),
+      lineCount: lines.length,
+      totalAmountCents: totalAmountCents,
+    );
+    return IpvReportDetailStat(summary: summary, lines: lines);
+  }
+
+  Future<IpvReportDetailStat> _buildClosedIpvDetailFromSnapshot({
+    required QueryRow header,
+    required String reportId,
+    required DateTime openedAt,
+    required DateTime? closedAt,
+    required String status,
+    required List<QueryRow> baseLineRows,
+  }) async {
+    int totalAmountCents = 0;
+    final List<IpvReportLineStat> lines = <IpvReportLineStat>[];
+    for (final QueryRow row in baseLineRows) {
+      final String productId = _readTextCell(row, 'product_id', fallback: '');
+      if (productId.isEmpty) {
+        continue;
+      }
+      final double startQty = (row.data['start_qty'] as num?)?.toDouble() ?? 0;
+      final double entriesQty =
+          (row.data['entries_qty'] as num?)?.toDouble() ?? 0;
+      final double outputsQty =
+          (row.data['outputs_qty'] as num?)?.toDouble() ?? 0;
+      final double salesQty = (row.data['sales_qty'] as num?)?.toDouble() ?? 0;
+      final double finalQty = (row.data['final_qty'] as num?)?.toDouble() ??
+          (startQty + entriesQty - outputsQty - salesQty);
+      final int salePriceCents =
+          (row.data['sale_price_cents'] as num?)?.toInt() ?? 0;
+      final int amountCents =
+          (row.data['total_amount_cents'] as num?)?.toInt() ??
+              (salesQty * salePriceCents).round();
+      totalAmountCents += amountCents;
+
+      final String snapshotName =
+          _readTextCell(row, 'product_name_snapshot', fallback: '');
+      final String snapshotSku =
+          _readTextCell(row, 'product_sku_snapshot', fallback: '');
+      lines.add(
+        IpvReportLineStat(
+          productId: productId,
+          productName: snapshotName.isNotEmpty ? snapshotName : 'Producto',
+          sku: snapshotSku.isNotEmpty ? snapshotSku : '-',
+          startQty: startQty,
+          entriesQty: entriesQty,
+          outputsQty: outputsQty,
+          salesQty: salesQty,
+          finalQty: finalQty,
+          salePriceCents: salePriceCents,
+          totalAmountCents: amountCents,
+        ),
+      );
+    }
+    lines.sort((IpvReportLineStat a, IpvReportLineStat b) {
+      return a.productName.toLowerCase().compareTo(b.productName.toLowerCase());
+    });
+
+    final IpvReportSummaryStat summary = IpvReportSummaryStat(
+      reportId: reportId,
       sessionId: _readTextCell(header, 'session_id', fallback: '-'),
       terminalName:
           (header.readNullable<String>('terminal_name') ?? 'TPV').trim(),
@@ -1356,13 +1729,17 @@ class ReportesLocalDataSource {
     final File file = File(p.join(dir.path, fileName));
 
     final StringBuffer csv = StringBuffer()
-      ..writeln('Reporte,Panel de Analiticas')
+      ..writeln('Reporte,Analitica de Ventas')
       ..writeln('Generado,${_csvCell(_formatDateTimeHuman(now))}')
       ..writeln('Periodo,${_csvCell(_analyticsGranularityLabel(granularity))}')
       ..writeln(
         'Rango,${_csvCell('${_dayKey(snapshot.fromDate)} - ${_dayKey(snapshot.toDate)}')}',
       )
       ..writeln('Moneda,${_csvCell(currencySymbol)}')
+      ..writeln('Ventas (órdenes),${snapshot.ordersCount}')
+      ..writeln('Unidades vendidas,${snapshot.itemsSoldQty.toStringAsFixed(2)}')
+      ..writeln('Clientes únicos,${snapshot.uniqueCustomersCount}')
+      ..writeln('Ventas sin cliente,${snapshot.salesWithoutCustomerCount}')
       ..writeln(
         'Ingresos totales,${(snapshot.totalRevenueCents / 100).toStringAsFixed(2)}',
       )
@@ -1374,6 +1751,18 @@ class ReportesLocalDataSource {
       )
       ..writeln(
         'Variacion ticket promedio (%),${snapshot.avgOrderDeltaPercent.toStringAsFixed(2)}',
+      )
+      ..writeln(
+        'Canal POS (ventas),${snapshot.posOrdersCount}',
+      )
+      ..writeln(
+        'Canal POS (importe),${(snapshot.posRevenueCents / 100).toStringAsFixed(2)}',
+      )
+      ..writeln(
+        'Canal Directa (ventas),${snapshot.directOrdersCount}',
+      )
+      ..writeln(
+        'Canal Directa (importe),${(snapshot.directRevenueCents / 100).toStringAsFixed(2)}',
       )
       ..writeln('')
       ..writeln('Tendencia (${_analyticsGranularityLabel(granularity)})')
@@ -1392,6 +1781,46 @@ class ReportesLocalDataSource {
     for (final AnalyticsTopProductStat product in snapshot.topProducts) {
       csv.writeln(
         '${_csvCell(product.productName)},${_csvCell(product.sku)},${product.qty.toStringAsFixed(2)},${(product.totalCents / 100).toStringAsFixed(2)},${product.deltaPercent.toStringAsFixed(2)}',
+      );
+    }
+
+    csv
+      ..writeln('')
+      ..writeln('Metodo de pago')
+      ..writeln('Metodo,Ventas,Importe');
+    for (final SalesBreakdownStat row in snapshot.paymentMethods) {
+      csv.writeln(
+        '${_csvCell(row.label)},${row.ordersCount},${(row.totalCents / 100).toStringAsFixed(2)}',
+      );
+    }
+
+    csv
+      ..writeln('')
+      ..writeln('Ventas por Cajero')
+      ..writeln('Cajero,Ventas,Importe');
+    for (final SalesBreakdownStat row in snapshot.byCashier) {
+      csv.writeln(
+        '${_csvCell(row.label)},${row.ordersCount},${(row.totalCents / 100).toStringAsFixed(2)}',
+      );
+    }
+
+    csv
+      ..writeln('')
+      ..writeln('Ventas por Almacen')
+      ..writeln('Almacen,Ventas,Importe');
+    for (final SalesBreakdownStat row in snapshot.byWarehouse) {
+      csv.writeln(
+        '${_csvCell(row.label)},${row.ordersCount},${(row.totalCents / 100).toStringAsFixed(2)}',
+      );
+    }
+
+    csv
+      ..writeln('')
+      ..writeln('Top Clientes')
+      ..writeln('Cliente,Tipo,Ventas,Importe,Ultima compra');
+    for (final AnalyticsTopCustomerStat row in snapshot.topCustomers) {
+      csv.writeln(
+        '${_csvCell(row.name)},${_csvCell(row.customerType)},${row.ordersCount},${(row.totalCents / 100).toStringAsFixed(2)},${_csvCell(row.lastSaleAt == null ? "-" : _formatDateTimeHuman(row.lastSaleAt!))}',
       );
     }
 
@@ -1737,6 +2166,19 @@ class ReportesLocalDataSource {
   }) {
     final String value = (row.readNullable<String>(column) ?? '').trim();
     return value.isEmpty ? fallback : value;
+  }
+
+  DateTime? _readDateCell(Object? raw) {
+    if (raw is DateTime) {
+      return raw;
+    }
+    if (raw is int) {
+      return DateTime.fromMillisecondsSinceEpoch(raw);
+    }
+    if (raw is String) {
+      return DateTime.tryParse(raw);
+    }
+    return null;
   }
 
   Future<Map<String, _IpvProductSnapshot>> _loadIpvProductSnapshots(
@@ -2248,6 +2690,7 @@ class ReportesLocalDataSource {
       '''
       SELECT MAX(created_at) AS value
       FROM stock_movements
+      WHERE COALESCE(is_voided, 0) = 0
       ''',
     ).getSingleOrNull();
     final Object? value = row?.data['value'];

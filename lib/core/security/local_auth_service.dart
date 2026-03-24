@@ -132,6 +132,13 @@ class LocalAuthService {
   }
 
   Future<UserSession?> restoreActiveSession() async {
+    final bool forceRelogin =
+        await _authLocalDataSource.consumeForceReloginOnce();
+    if (forceRelogin) {
+      await clearRememberedSession();
+      return null;
+    }
+
     final UserSession? remembered = await restoreRememberedSession();
     if (remembered == null) {
       return null;

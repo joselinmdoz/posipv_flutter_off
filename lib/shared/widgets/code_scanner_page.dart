@@ -31,12 +31,16 @@ class _CodeScannerPageState extends State<CodeScannerPage> {
     }
 
     for (final Barcode barcode in capture.barcodes) {
-      final String raw = (barcode.rawValue ?? '').trim();
+      final String raw =
+          (barcode.rawValue ?? barcode.displayValue ?? '').trim();
       if (raw.isEmpty) {
         continue;
       }
 
       _handled = true;
+      if (!mounted) {
+        return;
+      }
       Navigator.of(context).pop(raw);
       return;
     }

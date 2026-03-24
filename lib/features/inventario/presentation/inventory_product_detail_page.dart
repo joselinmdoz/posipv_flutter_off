@@ -101,7 +101,7 @@ class _InventoryProductDetailPageState
     }
 
     if (result == 'deleted') {
-      _show('Producto eliminado.');
+      _show('Producto dado de baja.');
       Navigator.of(context).pop();
       return;
     }

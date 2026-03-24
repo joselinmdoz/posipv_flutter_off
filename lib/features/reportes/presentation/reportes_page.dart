@@ -10,6 +10,9 @@ import '../data/reportes_local_datasource.dart';
 import 'reportes_providers.dart';
 import 'widgets/analytics_kpi_card.dart';
 import 'widgets/analytics_period_tabs.dart';
+import 'widgets/analytics_breakdown_card.dart';
+import 'widgets/analytics_sales_channel_card.dart';
+import 'widgets/analytics_top_customer_tile.dart';
 import 'widgets/analytics_top_product_tile.dart';
 import 'widgets/sales_trend_card.dart';
 
@@ -259,6 +262,40 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
     return '${qty.toStringAsFixed(2)} unidades vendidas';
   }
 
+  String _number(num value) {
+    if (value is int) {
+      return value.toString();
+    }
+    if ((value - value.roundToDouble()).abs() < 0.000001) {
+      return value.toStringAsFixed(0);
+    }
+    return value.toStringAsFixed(2);
+  }
+
+  String _customerTypeLabel(String raw) {
+    switch (raw.trim().toLowerCase()) {
+      case 'frecuente':
+        return 'Frecuente';
+      case 'mayorista':
+        return 'Mayorista';
+      case 'vip':
+        return 'VIP';
+      default:
+        return 'General';
+    }
+  }
+
+  String _formatShortDate(DateTime? value) {
+    if (value == null) {
+      return '-';
+    }
+    final DateTime d = value.toLocal();
+    final String day = d.day.toString().padLeft(2, '0');
+    final String month = d.month.toString().padLeft(2, '0');
+    final String year = d.year.toString();
+    return '$day/$month/$year';
+  }
+
   @override
   Widget build(BuildContext context) {
     final license = ref.watch(currentLicenseStatusProvider);
@@ -266,7 +303,7 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
 
     if (!license.canAccessGeneralReports) {
       return AppScaffold(
-        title: 'Panel de Analíticas',
+        title: 'Analítica de Ventas',
         currentRoute: '/reportes',
         onRefresh: _loadAnalytics,
         useDefaultActions: false,
@@ -344,7 +381,7 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
             : topProducts.take(3).toList(growable: false);
 
     return AppScaffold(
-      title: 'Panel de Analíticas',
+      title: 'Analítica de Ventas',
       currentRoute: '/reportes',
       onRefresh: _loadAnalytics,
       useDefaultActions: false,
@@ -398,35 +435,123 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
                       ),
                     )
                   else ...<Widget>[
-                    Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: AnalyticsKpiCard(
+                    LayoutBuilder(
+                      builder: (BuildContext context, BoxConstraints c) {
+                        final bool compact = c.maxWidth < 560;
+                        final double cardWidth =
+                            compact ? c.maxWidth : (c.maxWidth - 12) / 2;
+                        final List<Widget> cards = <Widget>[
+                          AnalyticsKpiCard(
                             title: 'INGRESOS TOTALES',
                             value: _money(analytics.totalRevenueCents),
                             deltaPercent: analytics.totalRevenueDeltaPercent,
                             deltaText: _formatDelta(
                                 analytics.totalRevenueDeltaPercent),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: AnalyticsKpiCard(
+                          AnalyticsKpiCard(
                             title: 'PEDIDO PROMEDIO',
                             value: _money(analytics.avgOrderCents),
                             deltaPercent: analytics.avgOrderDeltaPercent,
                             deltaText:
                                 _formatDelta(analytics.avgOrderDeltaPercent),
                           ),
-                        ),
-                      ],
+                          AnalyticsKpiCard(
+                            title: 'VENTAS',
+                            value: _number(analytics.ordersCount),
+                          ),
+                          AnalyticsKpiCard(
+                            title: 'UNIDADES VENDIDAS',
+                            value: _number(analytics.itemsSoldQty),
+                          ),
+                          AnalyticsKpiCard(
+                            title: 'CLIENTES ÚNICOS',
+                            value: _number(analytics.uniqueCustomersCount),
+                          ),
+                          AnalyticsKpiCard(
+                            title: 'VENTAS SIN CLIENTE',
+                            value: _number(analytics.salesWithoutCustomerCount),
+                          ),
+                        ];
+                        return Wrap(
+                          spacing: 12,
+                          runSpacing: 12,
+                          children: cards
+                              .map(
+                                (Widget card) => SizedBox(
+                                  width: cardWidth,
+                                  child: card,
+                                ),
+                              )
+                              .toList(growable: false),
+                        );
+                      },
                     ),
                     const SizedBox(height: 14),
+                    AnalyticsSalesChannelCard(
+                      currencySymbol: _currencySymbol,
+                      posOrdersCount: analytics.posOrdersCount,
+                      posRevenueCents: analytics.posRevenueCents,
+                      directOrdersCount: analytics.directOrdersCount,
+                      directRevenueCents: analytics.directRevenueCents,
+                    ),
+                    const SizedBox(height: 12),
                     SalesTrendCard(
                       points: analytics.trend,
                       currencySymbol: _currencySymbol,
                     ),
+                    const SizedBox(height: 12),
+                    AnalyticsBreakdownCard(
+                      title: 'Métodos de Pago',
+                      currencySymbol: _currencySymbol,
+                      totalBaseCents: analytics.totalRevenueCents,
+                      items: analytics.paymentMethods,
+                      emptyLabel: 'No hay pagos registrados en el rango.',
+                    ),
+                    const SizedBox(height: 12),
+                    AnalyticsBreakdownCard(
+                      title: 'Ventas por Cajero',
+                      currencySymbol: _currencySymbol,
+                      totalBaseCents: analytics.totalRevenueCents,
+                      items: analytics.byCashier,
+                    ),
+                    const SizedBox(height: 12),
+                    AnalyticsBreakdownCard(
+                      title: 'Ventas por Almacén',
+                      currencySymbol: _currencySymbol,
+                      totalBaseCents: analytics.totalRevenueCents,
+                      items: analytics.byWarehouse,
+                    ),
                     const SizedBox(height: 16),
+                    const Text(
+                      'Clientes Destacados',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    if (analytics.topCustomers.isEmpty)
+                      const Card(
+                        child: Padding(
+                          padding: EdgeInsets.all(14),
+                          child: Text('Sin clientes asociados en este rango.'),
+                        ),
+                      )
+                    else
+                      ...analytics.topCustomers.map(
+                        (AnalyticsTopCustomerStat customer) => Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: AnalyticsTopCustomerTile(
+                            customer: customer,
+                            currencySymbol: _currencySymbol,
+                            typeLabel:
+                                _customerTypeLabel(customer.customerType),
+                            lastSaleLabel:
+                                _formatShortDate(customer.lastSaleAt),
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 8),
                     Row(
                       children: <Widget>[
                         const Expanded(

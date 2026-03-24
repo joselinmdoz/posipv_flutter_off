@@ -33,8 +33,20 @@ class PosProductCard extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final double imageHeight =
+        final double naturalImageHeight =
             (constraints.maxWidth * 0.36).clamp(78.0, 132.0);
+        double imageHeight = naturalImageHeight;
+        if (constraints.maxHeight.isFinite) {
+          // Reserve enough space for text + price + qty controls to avoid
+          // vertical overflow in compact screens/tablets.
+          const double minBodyHeight = 92.0;
+          final double maxImageByHeight = constraints.maxHeight - minBodyHeight;
+          if (maxImageByHeight > 52) {
+            imageHeight = naturalImageHeight.clamp(52.0, maxImageByHeight);
+          } else {
+            imageHeight = 52.0;
+          }
+        }
 
         return Container(
           decoration: BoxDecoration(
@@ -167,60 +179,103 @@ class PosProductCard extends StatelessWidget {
                 ),
               ),
               Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        product.name,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13.5,
-                          letterSpacing: -0.2,
-                        ),
+                child: LayoutBuilder(
+                  builder:
+                      (BuildContext context, BoxConstraints bodyConstraints) {
+                    final bool compact = bodyConstraints.maxHeight <= 106;
+                    final bool ultraCompact = bodyConstraints.maxHeight <= 92;
+                    return Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        10,
+                        ultraCompact
+                            ? 4
+                            : compact
+                                ? 5
+                                : 8,
+                        10,
+                        ultraCompact
+                            ? 4
+                            : compact
+                                ? 5
+                                : 8,
                       ),
-                      const SizedBox(height: 4),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.baseline,
-                        textBaseline: TextBaseline.alphabetic,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
                           Text(
-                            currencySymbol,
-                            style: const TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF64748B),
+                            product.name,
+                            maxLines: compact ? 1 : 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: ultraCompact
+                                  ? 12
+                                  : compact
+                                      ? 12.5
+                                      : 13.5,
+                              letterSpacing: -0.2,
                             ),
                           ),
-                          const SizedBox(width: 2),
-                          Flexible(
-                            child: Text(
-                              (product.priceCents / 100).toStringAsFixed(2),
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w900,
-                                fontSize: 17,
-                                color: Color(0xFF0F172A),
+                          SizedBox(
+                              height: ultraCompact
+                                  ? 1
+                                  : compact
+                                      ? 2
+                                      : 4),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.baseline,
+                            textBaseline: TextBaseline.alphabetic,
+                            children: <Widget>[
+                              Text(
+                                currencySymbol,
+                                style: TextStyle(
+                                  fontSize: ultraCompact
+                                      ? 8.5
+                                      : compact
+                                          ? 9
+                                          : 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF64748B),
+                                ),
                               ),
-                            ),
+                              const SizedBox(width: 2),
+                              Flexible(
+                                child: Text(
+                                  (product.priceCents / 100).toStringAsFixed(2),
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: ultraCompact
+                                        ? 14.5
+                                        : compact
+                                            ? 15.5
+                                            : 17,
+                                    color: const Color(0xFF0F172A),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Spacer(),
+                          QtyStepperInput(
+                            value: qty,
+                            enabled: !isPosting,
+                            canDecrement: qty > 0,
+                            onDecrement:
+                                qty > 0 ? () => onQtyChanged(-1) : null,
+                            onIncrement: () => onQtyChanged(1),
+                            onSubmittedValue: onQtySet,
+                            height: ultraCompact
+                                ? 30
+                                : compact
+                                    ? 32
+                                    : 38,
                           ),
                         ],
                       ),
-                      const Spacer(),
-                      QtyStepperInput(
-                        value: qty,
-                        enabled: !isPosting,
-                        canDecrement: qty > 0,
-                        onDecrement: qty > 0 ? () => onQtyChanged(-1) : null,
-                        onIncrement: () => onQtyChanged(1),
-                        onSubmittedValue: onQtySet,
-                      ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
               ),
             ],

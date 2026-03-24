@@ -496,6 +496,13 @@ class _TpvPageState extends ConsumerState<TpvPage> {
     );
   }
 
+  Future<void> _openManualSync() async {
+    await context.push('/sync-manual');
+    if (mounted) {
+      await _load();
+    }
+  }
+
   Future<void> _openCurrentSessionIpv(TpvTerminalView terminal) async {
     if (_showingIpvSheet) {
       return;
@@ -689,6 +696,11 @@ class _TpvPageState extends ConsumerState<TpvPage> {
         icon: const Icon(Icons.arrow_back_rounded),
       ),
       appBarActions: <Widget>[
+        IconButton(
+          onPressed: _openManualSync,
+          icon: const Icon(Icons.sync_alt_rounded),
+          tooltip: 'Sincronización manual',
+        ),
         IconButton(
           onPressed: () {},
           icon: const Icon(Icons.more_vert_rounded),

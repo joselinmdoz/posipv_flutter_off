@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import '../../../../shared/widgets/app_searchable_select_field.dart';
 import '../../../inventario/data/inventario_local_datasource.dart';
 
 class InventoryMovementWarehouseOption {
@@ -167,107 +168,49 @@ class _PosInventoryMovementDialogState
                   children: [
                     // Select Product
                     if (widget.warehouseOptions.isNotEmpty) ...[
-                      const Text(
-                        'Seleccionar Almacén',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.grey,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        decoration: BoxDecoration(
-                          color: isDark
-                              ? const Color(0xFF1E293B)
-                              : const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: isDark
-                                ? const Color(0xFF334155)
-                                : const Color(0xFFE2E8F0),
-                          ),
-                        ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: _selectedWarehouseId,
-                            isExpanded: true,
-                            icon: _loadingRows
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.keyboard_arrow_down_rounded),
-                            items: widget.warehouseOptions
-                                .map((InventoryMovementWarehouseOption row) {
-                              return DropdownMenuItem<String>(
-                                value: row.id,
-                                child: Text(
-                                  row.name,
-                                  style: const TextStyle(fontSize: 14),
-                                ),
-                              );
-                            }).toList(),
-                            onChanged: _loadingRows
-                                ? null
-                                : (String? val) => _onWarehouseChanged(val),
-                          ),
-                        ),
+                      AppSearchableSelectField<String>(
+                        label: 'Seleccionar Almacén',
+                        value: _selectedWarehouseId,
+                        enabled: !_loadingRows,
+                        hintText: _loadingRows
+                            ? 'Cargando almacenes...'
+                            : 'Selecciona un almacén',
+                        searchHintText: 'Buscar almacén',
+                        options: widget.warehouseOptions
+                            .map((InventoryMovementWarehouseOption row) =>
+                                AppSearchableSelectOption<String>(
+                                  value: row.id,
+                                  label: row.name,
+                                ))
+                            .toList(growable: false),
+                        onChanged: (String value) => _onWarehouseChanged(value),
                       ),
                       const SizedBox(height: 24),
                     ],
 
-                    const Text(
-                      'Seleccionar Producto',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.grey,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? const Color(0xFF1E293B)
-                            : const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: isDark
-                              ? const Color(0xFF334155)
-                              : const Color(0xFFE2E8F0),
-                        ),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: _rowByProductId.containsKey(_selectedProductId)
-                              ? _selectedProductId
-                              : null,
-                          isExpanded: true,
-                          icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                          items: _adjustRows.map((row) {
-                            return DropdownMenuItem<String>(
-                              value: row.productId,
-                              child: Text(
-                                '${row.sku} - ${row.productName}',
-                                style: const TextStyle(fontSize: 14),
-                              ),
-                            );
-                          }).toList(),
-                          onChanged: _loadingRows
-                              ? null
-                              : (val) {
-                                  if (val != null) {
-                                    setState(() => _selectedProductId = val);
-                                  }
-                                },
-                        ),
-                      ),
+                    AppSearchableSelectField<String>(
+                      label: 'Seleccionar Producto',
+                      value: _rowByProductId.containsKey(_selectedProductId)
+                          ? _selectedProductId
+                          : null,
+                      enabled: !_loadingRows && _adjustRows.isNotEmpty,
+                      hintText: 'Selecciona un producto',
+                      searchHintText: 'Buscar por nombre o SKU',
+                      emptyStateText:
+                          'No hay productos disponibles para este almacén.',
+                      options: _adjustRows
+                          .map((InventoryView row) =>
+                              AppSearchableSelectOption<String>(
+                                value: row.productId,
+                                label: row.productName,
+                                subtitle: 'SKU: ${row.sku}',
+                                searchText: '${row.sku} ${row.productName}',
+                                leadingIcon: Icons.inventory_2_outlined,
+                              ))
+                          .toList(growable: false),
+                      onChanged: (String value) {
+                        setState(() => _selectedProductId = value);
+                      },
                     ),
                     const SizedBox(height: 24),
 
@@ -523,52 +466,22 @@ class _PosInventoryMovementDialogState
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                'Motivo',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Container(
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 16),
-                                decoration: BoxDecoration(
-                                  color: isDark
-                                      ? const Color(0xFF1E293B)
-                                      : const Color(0xFFF8FAFC),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: isDark
-                                        ? const Color(0xFF334155)
-                                        : const Color(0xFFE2E8F0),
-                                  ),
-                                ),
-                                child: DropdownButtonHideUnderline(
-                                  child: DropdownButton<String>(
-                                    value: _selectedReasonCode,
-                                    isExpanded: true,
-                                    icon: const Icon(
-                                        Icons.keyboard_arrow_down_rounded),
-                                    items: selectableReasons.map((reason) {
-                                      return DropdownMenuItem<String>(
-                                        value: reason.code,
-                                        child: Text(
-                                          reason.label,
-                                          style: const TextStyle(fontSize: 14),
-                                        ),
-                                      );
-                                    }).toList(),
-                                    onChanged: (val) {
-                                      if (val != null) {
-                                        setState(
-                                            () => _selectedReasonCode = val);
-                                      }
-                                    },
-                                  ),
-                                ),
+                              AppSearchableSelectField<String>(
+                                label: 'Motivo',
+                                value: _selectedReasonCode,
+                                enableSearch: selectableReasons.length >= 8,
+                                searchHintText: 'Buscar motivo',
+                                hintText: 'Selecciona un motivo',
+                                options: selectableReasons
+                                    .map((InventoryMovementReason reason) =>
+                                        AppSearchableSelectOption<String>(
+                                          value: reason.code,
+                                          label: reason.label,
+                                        ))
+                                    .toList(growable: false),
+                                onChanged: (String value) {
+                                  setState(() => _selectedReasonCode = value);
+                                },
                               ),
                             ],
                           ),

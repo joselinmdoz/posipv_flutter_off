@@ -82,6 +82,31 @@ class AuthLocalDataSource {
   final AppDatabase _db;
   final Uuid _uuid;
   final Random _random = Random.secure();
+  static const String _forceReloginOnceKey = 'auth_force_relogin_once_v1';
+
+  Future<void> markForceReloginOnce() async {
+    await _db.into(_db.appSettings).insertOnConflictUpdate(
+          AppSettingsCompanion.insert(
+            key: _forceReloginOnceKey,
+            value: '1',
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
+  }
+
+  Future<bool> consumeForceReloginOnce() async {
+    final AppSetting? row = await (_db.select(_db.appSettings)
+          ..where((AppSettings tbl) => tbl.key.equals(_forceReloginOnceKey)))
+        .getSingleOrNull();
+    if (row == null) {
+      return false;
+    }
+    await (_db.delete(_db.appSettings)
+          ..where((AppSettings tbl) => tbl.key.equals(_forceReloginOnceKey)))
+        .go();
+    final String value = row.value.trim();
+    return value.isNotEmpty && value != '0';
+  }
 
   Future<void> ensureDefaultAdmin({
     String username = 'admin',

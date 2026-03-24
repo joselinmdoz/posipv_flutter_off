@@ -1,8 +1,10 @@
 package com.example.posipv
 
+import android.app.Activity
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Debug
 import android.provider.Settings
@@ -21,6 +23,7 @@ import java.security.spec.X509EncodedKeySpec
 class MainActivity : FlutterActivity() {
     companion object {
         private const val DEVICE_CHANNEL = "com.example.posipv/device_identity"
+        private const val PICK_BACKUP_FILE_REQUEST = 7194
         private const val LICENSE_PUBLIC_KEY = """
 -----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzdlxu8PUy6QwhHhqtR2Z
@@ -33,6 +36,7 @@ RQIDAQAB
 -----END PUBLIC KEY-----
 """
     }
+    private var pendingBackupPickerResult: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -67,8 +71,107 @@ RQIDAQAB
                     result.success(shareText(text, subject))
                 }
 
+                "pickBackupFile" -> {
+                    if (pendingBackupPickerResult != null) {
+                        result.error(
+                            "picker_busy",
+                            "Ya hay un selector de archivo abierto.",
+                            null
+                        )
+                        return@setMethodCallHandler
+                    }
+                    pendingBackupPickerResult = result
+                    try {
+                        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "*/*"
+                            putExtra(
+                                Intent.EXTRA_MIME_TYPES,
+                                arrayOf(
+                                    "application/octet-stream",
+                                    "application/x-sqlite3",
+                                    "application/vnd.sqlite3"
+                                )
+                            )
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                        }
+                        startActivityForResult(intent, PICK_BACKUP_FILE_REQUEST)
+                    } catch (e: Exception) {
+                        pendingBackupPickerResult = null
+                        result.error(
+                            "picker_launch_failed",
+                            e.message ?: "No se pudo abrir el explorador de archivos.",
+                            null
+                        )
+                    }
+                }
+
+                "restartApp" -> {
+                    try {
+                        restartApplication()
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error(
+                            "restart_failed",
+                            e.message ?: "No se pudo reiniciar la aplicación.",
+                            null
+                        )
+                    }
+                }
+
                 else -> result.notImplemented()
             }
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != PICK_BACKUP_FILE_REQUEST) {
+            return
+        }
+
+        val result = pendingBackupPickerResult
+        pendingBackupPickerResult = null
+        if (result == null) {
+            return
+        }
+
+        if (resultCode != Activity.RESULT_OK) {
+            result.success(null)
+            return
+        }
+
+        val uri: Uri = data?.data ?: run {
+            result.success(null)
+            return
+        }
+
+        try {
+            try {
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: Exception) {
+            }
+
+            val target = File(cacheDir, "picked-backup-${System.currentTimeMillis()}.db")
+            contentResolver.openInputStream(uri).use { input ->
+                if (input == null) {
+                    throw IllegalStateException("No se pudo abrir el archivo seleccionado.")
+                }
+                target.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            result.success(target.absolutePath)
+        } catch (e: Exception) {
+            result.error(
+                "pick_backup_failed",
+                e.message ?: "No se pudo leer la copia seleccionada.",
+                null
+            )
         }
     }
 
@@ -77,6 +180,14 @@ RQIDAQAB
             contentResolver,
             Settings.Secure.ANDROID_ID
         )?.trim().orEmpty()
+    }
+
+    private fun restartApplication() {
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+        if (launchIntent == null) return
+        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        startActivity(launchIntent)
+        finishAffinity()
     }
 
     private fun verifyLicenseSignature(

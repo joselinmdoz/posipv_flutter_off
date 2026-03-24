@@ -149,7 +149,7 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
     if (result == 'saved') {
       _show(isEditing ? 'Producto actualizado.' : 'Producto creado.');
     } else if (result == 'deleted') {
-      _show('Producto eliminado.');
+      _show('Producto dado de baja.');
     }
   }
 
@@ -625,7 +625,7 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('Eliminar producto'),
+          title: const Text('Dar de baja producto'),
           content: Text(
             'Se dara de baja el producto "${widget.product!.name}".',
           ),
@@ -636,7 +636,7 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
             ),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Eliminar'),
+              child: const Text('Dar de baja'),
             ),
           ],
         );
@@ -660,7 +660,7 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
       }
       Navigator.of(context).pop('deleted');
     } catch (e) {
-      _show('No se pudo eliminar el producto: $e');
+      _show('No se pudo dar de baja el producto: $e');
       if (mounted) {
         setState(() => _saving = false);
       }
@@ -930,6 +930,46 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
     );
   }
 
+  Widget _buildFieldHeader(
+    String text, {
+    VoidCallback? onAddPressed,
+    String addTooltip = 'Añadir',
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: <Widget>[
+          Expanded(child: _buildFieldLabel(text)),
+          if (onAddPressed != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Tooltip(
+                message: addTooltip,
+                child: InkWell(
+                  onTap: onAddPressed,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Ink(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: _accentColor(Theme.of(context))
+                          .withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.add_rounded,
+                      color: _accentColor(Theme.of(context)),
+                      size: 20,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   InputDecoration _fieldDecoration({
     required String hintText,
     String? prefixText,
@@ -1009,6 +1049,8 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
     required List<String> options,
     required String selected,
     required ValueChanged<String> onChanged,
+    VoidCallback? onAddPressed,
+    String addTooltip = 'Añadir',
   }) {
     final ThemeData theme = Theme.of(context);
     final bool isDark = theme.brightness == Brightness.dark;
@@ -1017,7 +1059,11 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        _buildFieldLabel(label),
+        _buildFieldHeader(
+          label,
+          onAddPressed: onAddPressed,
+          addTooltip: addTooltip,
+        ),
         DropdownButtonFormField<String>(
           initialValue: selectedValue,
           isExpanded: true,
@@ -1047,88 +1093,165 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
     );
   }
 
-  Widget _buildTypeSelector() {
+  Widget _buildTypeSelector({VoidCallback? onAddPressed}) {
     final ThemeData theme = Theme.of(context);
     final bool isDark = theme.brightness == Brightness.dark;
     final Color accent = _accentColor(theme);
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final double width = (constraints.maxWidth - 12) / 2;
-        final String physical = _typeOptions.firstWhere(
-          (String item) => item.toLowerCase().contains('fis'),
-          orElse: () => _typeOptions.isNotEmpty ? _typeOptions.first : 'Fisico',
-        );
-        final String digital = _typeOptions.firstWhere(
-          (String item) => item.toLowerCase().contains('dig'),
-          orElse: () => 'Digital',
-        );
-        final List<String> options = <String>[
-          physical,
-          if (digital != physical) digital,
-        ];
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            _buildFieldLabel('Tipo de Producto'),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: options.map((String option) {
-                final bool selected = _selectedType == option;
-                return InkWell(
+    final List<String> options = _typeOptions.isEmpty
+        ? <String>['Fisico']
+        : _typeOptions.toSet().toList(growable: false);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        _buildFieldHeader(
+          'Tipo de Producto',
+          onAddPressed: onAddPressed,
+          addTooltip: 'Añadir tipo de producto',
+        ),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: options.map((String option) {
+            final bool selected = _selectedType == option;
+            return InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap:
+                  _saving ? null : () => setState(() => _selectedType = option),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 140),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: selected
+                      ? accent.withValues(
+                          alpha: isDark ? 0.25 : 0.12,
+                        )
+                      : (isDark ? const Color(0xFF1A2333) : Colors.white),
                   borderRadius: BorderRadius.circular(12),
-                  onTap: _saving
-                      ? null
-                      : () => setState(() => _selectedType = option),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 140),
-                    width: width,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    decoration: BoxDecoration(
+                  border: Border.all(
+                    color: selected
+                        ? accent
+                        : (isDark
+                            ? const Color(0xFF3C4A60)
+                            : const Color(0xFFCAD4E2)),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Icon(
+                      _typeIcon(option),
+                      size: 18,
                       color: selected
-                          ? accent.withValues(
-                              alpha: isDark ? 0.25 : 0.12,
-                            )
-                          : (isDark ? const Color(0xFF1A2333) : Colors.white),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
+                          ? accent
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 7),
+                    Text(
+                      option,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
                         color: selected
                             ? accent
-                            : (isDark
-                                ? const Color(0xFF3C4A60)
-                                : const Color(0xFFCAD4E2)),
+                            : theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: <Widget>[
-                        Icon(
-                          _typeIcon(option),
-                          size: 20,
-                          color: selected
-                              ? accent
-                              : theme.colorScheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          option,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: selected
-                                ? accent
-                                : theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }).toList(),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _quickAddCatalogValue({
+    required ProductCatalogKind kind,
+    required String title,
+    required String hint,
+  }) async {
+    final TextEditingController ctrl = TextEditingController();
+    final String? rawValue = await showDialog<String>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Añadir $title'),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: InputDecoration(
+              hintText: hint,
+            ),
+            onSubmitted: (String value) =>
+                Navigator.of(context).pop(value.trim()),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(ctrl.text.trim()),
+              child: const Text('Guardar'),
             ),
           ],
         );
       },
     );
+    final String value = (rawValue ?? '').trim();
+    if (value.isEmpty) {
+      return;
+    }
+
+    final ProductosLocalDataSource ds =
+        ref.read(productosLocalDataSourceProvider);
+    try {
+      await ds.addCatalogValue(kind: kind, value: value);
+      final List<String> options = await ds.listCatalogValues(kind);
+      if (!mounted) {
+        return;
+      }
+      String selectedValue = value;
+      for (final String row in options) {
+        if (row.trim().toLowerCase() == value.toLowerCase()) {
+          selectedValue = row;
+          break;
+        }
+      }
+      setState(() {
+        switch (kind) {
+          case ProductCatalogKind.type:
+            _typeOptions = options;
+            _selectedType = _resolveSelected(
+              current: selectedValue,
+              options: _typeOptions,
+              fallback: 'Fisico',
+            );
+            break;
+          case ProductCatalogKind.category:
+            _categoryOptions = options;
+            _selectedCategory = _resolveSelected(
+              current: selectedValue,
+              options: _categoryOptions,
+              fallback: 'General',
+            );
+            break;
+          case ProductCatalogKind.unit:
+            _unitOptions = options;
+            _selectedUnit = _resolveSelected(
+              current: selectedValue,
+              options: _unitOptions,
+              fallback: 'Unidad',
+            );
+            break;
+        }
+      });
+      _show('$title añadido y seleccionado.');
+    } catch (e) {
+      _show('No se pudo añadir $title: $e');
+    }
   }
 
   Widget _buildPricingFields() {
@@ -1248,6 +1371,14 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
               label: 'Categoría',
               options: _categoryOptions,
               selected: _selectedCategory,
+              onAddPressed: _saving
+                  ? null
+                  : () => _quickAddCatalogValue(
+                        kind: ProductCatalogKind.category,
+                        title: 'categoría',
+                        hint: 'Ej. Abarrotes',
+                      ),
+              addTooltip: 'Añadir categoría',
               onChanged: (String value) {
                 setState(() => _selectedCategory = value);
               },
@@ -1257,12 +1388,28 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
               label: 'Unidad de Medida',
               options: _unitOptions,
               selected: _selectedUnit,
+              onAddPressed: _saving
+                  ? null
+                  : () => _quickAddCatalogValue(
+                        kind: ProductCatalogKind.unit,
+                        title: 'unidad de medida',
+                        hint: 'Ej. Docena',
+                      ),
+              addTooltip: 'Añadir unidad de medida',
               onChanged: (String value) {
                 setState(() => _selectedUnit = value);
               },
             ),
             const SizedBox(height: 12),
-            _buildTypeSelector(),
+            _buildTypeSelector(
+              onAddPressed: _saving
+                  ? null
+                  : () => _quickAddCatalogValue(
+                        kind: ProductCatalogKind.type,
+                        title: 'tipo de producto',
+                        hint: 'Ej. Materia prima',
+                      ),
+            ),
             const SizedBox(height: 20),
             _buildSectionTitle('PRECIOS Y MÁRGENES'),
             const SizedBox(height: 12),
@@ -1314,7 +1461,7 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
                 child: OutlinedButton.icon(
                   onPressed: _saving ? null : _deleteCurrentProduct,
                   icon: const Icon(Icons.delete_outline_rounded),
-                  label: const Text('Eliminar'),
+                  label: const Text('Dar de baja'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: const Color(0xFFC73D6A),
                     side: const BorderSide(color: Color(0xFFC73D6A)),

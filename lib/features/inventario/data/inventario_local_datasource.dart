@@ -132,6 +132,40 @@ class InventoryMovementView {
   final DateTime createdAt;
 }
 
+class InventoryArchivedMovementView {
+  const InventoryArchivedMovementView({
+    required this.id,
+    required this.productId,
+    required this.productName,
+    required this.sku,
+    required this.warehouseName,
+    required this.movementType,
+    required this.qty,
+    required this.reasonCode,
+    required this.reasonLabel,
+    required this.createdByUsername,
+    required this.createdAt,
+    required this.voidedByUsername,
+    required this.voidedAt,
+    this.voidNote,
+  });
+
+  final String id;
+  final String productId;
+  final String productName;
+  final String sku;
+  final String warehouseName;
+  final String movementType;
+  final double qty;
+  final String reasonCode;
+  final String reasonLabel;
+  final String createdByUsername;
+  final DateTime createdAt;
+  final String voidedByUsername;
+  final DateTime? voidedAt;
+  final String? voidNote;
+}
+
 class InventarioLocalDataSource {
   InventarioLocalDataSource(
     this._db, {
@@ -712,6 +746,7 @@ class InventarioLocalDataSource {
       LEFT JOIN warehouses w ON w.id = sm.warehouse_id
       LEFT JOIN users u ON u.id = sm.created_by
       WHERE 1 = 1
+        AND COALESCE(sm.is_voided, 0) = 0
       ''',
     );
     final List<Variable<Object>> variables = <Variable<Object>>[];
@@ -800,6 +835,152 @@ class InventarioLocalDataSource {
     }).toList();
   }
 
+  Future<List<InventoryArchivedMovementView>> listArchivedMovements({
+    String? warehouseId,
+    String? movementType,
+    String? search,
+    int limit = 250,
+  }) async {
+    final bool wantsAdjust = movementType == 'adjust';
+    final String? safeType = movementType == null ||
+            movementType == 'all' ||
+            movementType == 'adjust'
+        ? null
+        : _sanitizeMovementType(movementType);
+    final String cleanedSearch = (search ?? '').trim().toLowerCase();
+
+    final StringBuffer sql = StringBuffer(
+      '''
+      SELECT
+        sm.id AS id,
+        sm.product_id AS product_id,
+        p.name AS product_name,
+        p.sku AS sku,
+        w.name AS warehouse_name,
+        sm.type AS type,
+        sm.qty AS qty,
+        sm.reason_code AS reason_code,
+        sm.ref_type AS ref_type,
+        sm.created_by AS created_by,
+        uc.username AS created_username,
+        sm.created_at AS created_at,
+        sm.voided_by AS voided_by,
+        uv.username AS voided_username,
+        sm.voided_at AS voided_at,
+        sm.void_note AS void_note
+      FROM stock_movements sm
+      LEFT JOIN products p ON p.id = sm.product_id
+      LEFT JOIN warehouses w ON w.id = sm.warehouse_id
+      LEFT JOIN users uc ON uc.id = sm.created_by
+      LEFT JOIN users uv ON uv.id = sm.voided_by
+      WHERE COALESCE(sm.is_voided, 0) = 1
+      ''',
+    );
+    final List<Variable<Object>> variables = <Variable<Object>>[];
+
+    if (warehouseId != null && warehouseId.trim().isNotEmpty) {
+      sql.write(' AND sm.warehouse_id = ?');
+      variables.add(Variable<String>(warehouseId.trim()));
+    }
+    if (cleanedSearch.isNotEmpty) {
+      sql.write(
+        '''
+        AND (
+          LOWER(COALESCE(p.name, '')) LIKE ?
+          OR LOWER(COALESCE(p.sku, '')) LIKE ?
+        )
+        ''',
+      );
+      final String pattern = '%$cleanedSearch%';
+      variables.add(Variable<String>(pattern));
+      variables.add(Variable<String>(pattern));
+    }
+    if (safeType != null) {
+      sql.write(
+        '''
+        AND (
+          sm.type = ?
+          OR (
+            sm.type = 'adjust'
+            AND (
+              (? = 'in' AND sm.qty >= 0)
+              OR (? = 'out' AND sm.qty < 0)
+            )
+          )
+        )
+        ''',
+      );
+      variables.add(Variable<String>(safeType));
+      variables.add(Variable<String>(safeType));
+      variables.add(Variable<String>(safeType));
+    }
+    sql.write(' ORDER BY COALESCE(sm.voided_at, sm.created_at) DESC LIMIT ?');
+    variables.add(Variable<int>(limit < 1 ? 1 : limit));
+
+    final List<QueryRow> rows = await _db
+        .customSelect(
+          sql.toString(),
+          variables: variables,
+        )
+        .get();
+
+    final List<InventoryMovementReason> reasons = await listMovementReasons();
+    final Map<String, String> reasonLabelByCode = <String, String>{
+      for (final InventoryMovementReason reason in reasons)
+        reason.code: reason.label,
+    };
+
+    final List<InventoryArchivedMovementView> mapped = rows.map((QueryRow row) {
+      final String rawType =
+          (row.readNullable<String>('type') ?? '').trim().toLowerCase();
+      final double rawQty = row.readNullable<double>('qty') ?? 0;
+      final String movementType = _normalizeMovementType(rawType, rawQty);
+      final String reasonCode = _resolveReasonCode(
+        explicitReasonCode: row.readNullable<String>('reason_code'),
+        refType: row.readNullable<String>('ref_type'),
+      );
+      final String createdBy =
+          (row.readNullable<String>('created_by') ?? '').trim();
+      final String voidedBy =
+          (row.readNullable<String>('voided_by') ?? '').trim();
+      final String createdUsername =
+          (row.readNullable<String>('created_username') ?? '').trim();
+      final String voidedUsername =
+          (row.readNullable<String>('voided_username') ?? '').trim();
+      return InventoryArchivedMovementView(
+        id: row.read<String>('id'),
+        productId: row.read<String>('product_id'),
+        productName: (row.readNullable<String>('product_name') ?? '-').trim(),
+        sku: (row.readNullable<String>('sku') ?? '-').trim(),
+        warehouseName:
+            (row.readNullable<String>('warehouse_name') ?? '-').trim(),
+        movementType: movementType,
+        qty: rawQty.abs(),
+        reasonCode: reasonCode,
+        reasonLabel: reasonLabelByCode[reasonCode] ??
+            _fallbackReasonLabel(
+              reasonCode,
+            ),
+        createdByUsername:
+            createdUsername.isEmpty ? createdBy : createdUsername,
+        createdAt: row.read<DateTime>('created_at'),
+        voidedByUsername: voidedUsername.isEmpty
+            ? (voidedBy.isEmpty ? '-' : voidedBy)
+            : voidedUsername,
+        voidedAt: row.readNullable<DateTime>('voided_at'),
+        voidNote: row.readNullable<String>('void_note'),
+      );
+    }).toList(growable: false);
+
+    if (!wantsAdjust) {
+      return mapped;
+    }
+    return mapped
+        .where(
+            (InventoryArchivedMovementView row) => row.reasonCode == 'adjust')
+        .toList(growable: false);
+  }
+
   Future<void> createManualMovement({
     required String productId,
     required String warehouseId,
@@ -859,6 +1040,149 @@ class InventarioLocalDataSource {
               createdBy: userId,
             ),
           );
+    });
+  }
+
+  Future<void> archiveManualMovement({
+    required String movementId,
+    required String userId,
+    String? note,
+    bool allowAnyMovement = false,
+    bool allowNegativeResult = false,
+  }) async {
+    await _licenseService.requireWriteAccess();
+    final String safeMovementId = movementId.trim();
+    if (safeMovementId.isEmpty) {
+      throw Exception('Movimiento inválido.');
+    }
+    final String safeUserId = userId.trim();
+    if (safeUserId.isEmpty) {
+      throw Exception('Usuario inválido.');
+    }
+
+    await _db.transaction(() async {
+      final StockMovement? movement = await (_db.select(_db.stockMovements)
+            ..where((StockMovements tbl) => tbl.id.equals(safeMovementId)))
+          .getSingleOrNull();
+      if (movement == null) {
+        throw Exception('El movimiento no existe.');
+      }
+      if (movement.isVoided) {
+        return;
+      }
+
+      final String source = movement.movementSource.trim().toLowerCase();
+      final String refType = (movement.refType ?? '').trim().toLowerCase();
+      if (!allowAnyMovement &&
+          (source != 'manual' || _isSaleRefType(refType))) {
+        throw Exception('Solo se pueden anular movimientos manuales.');
+      }
+
+      final StockBalance? current = await (_db.select(_db.stockBalances)
+            ..where(
+              (StockBalances tbl) =>
+                  tbl.productId.equals(movement.productId) &
+                  tbl.warehouseId.equals(movement.warehouseId),
+            ))
+          .getSingleOrNull();
+      final double oldQty = current?.qty ?? 0;
+      final double signedDelta = _signedMovementDelta(movement);
+      final double nextQty = oldQty - signedDelta;
+      if (!allowNegativeResult && nextQty < 0) {
+        throw Exception(
+          'No hay stock suficiente para anular este movimiento.',
+        );
+      }
+
+      await _upsertStockBalance(
+        productId: movement.productId,
+        warehouseId: movement.warehouseId,
+        qty: nextQty,
+      );
+
+      await (_db.update(_db.stockMovements)
+            ..where((StockMovements tbl) => tbl.id.equals(movement.id)))
+          .write(
+        StockMovementsCompanion(
+          isVoided: const Value(true),
+          voidedAt: Value(DateTime.now()),
+          voidedBy: Value(safeUserId),
+          voidNote: Value(_normalizeOptional(note)),
+        ),
+      );
+    });
+  }
+
+  Future<void> restoreArchivedMovement({
+    required String movementId,
+    required String userId,
+    bool allowNegativeResult = false,
+  }) async {
+    await _licenseService.requireWriteAccess();
+    final String safeMovementId = movementId.trim();
+    if (safeMovementId.isEmpty) {
+      throw Exception('Movimiento inválido.');
+    }
+    final String safeUserId = userId.trim();
+    if (safeUserId.isEmpty) {
+      throw Exception('Usuario inválido.');
+    }
+
+    await _db.transaction(() async {
+      final StockMovement? movement = await (_db.select(_db.stockMovements)
+            ..where((StockMovements tbl) => tbl.id.equals(safeMovementId)))
+          .getSingleOrNull();
+      if (movement == null) {
+        throw Exception('El movimiento no existe.');
+      }
+      if (!movement.isVoided) {
+        return;
+      }
+
+      final StockBalance? current = await (_db.select(_db.stockBalances)
+            ..where(
+              (StockBalances tbl) =>
+                  tbl.productId.equals(movement.productId) &
+                  tbl.warehouseId.equals(movement.warehouseId),
+            ))
+          .getSingleOrNull();
+      final double oldQty = current?.qty ?? 0;
+      final double signedDelta = _signedMovementDelta(movement);
+      final double nextQty = oldQty + signedDelta;
+      if (!allowNegativeResult && nextQty < 0) {
+        throw Exception(
+          'No hay stock suficiente para restaurar este movimiento.',
+        );
+      }
+
+      await _upsertStockBalance(
+        productId: movement.productId,
+        warehouseId: movement.warehouseId,
+        qty: nextQty,
+      );
+
+      await (_db.update(_db.stockMovements)
+            ..where((StockMovements tbl) => tbl.id.equals(movement.id)))
+          .write(
+        const StockMovementsCompanion(
+          isVoided: Value(false),
+          voidedAt: Value(null),
+          voidedBy: Value(null),
+          voidNote: Value(null),
+        ),
+      );
+
+      final String auditNote = _appendAuditNote(
+        movement.note,
+        'Restaurado por $safeUserId',
+      );
+      await (_db.update(_db.stockMovements)
+            ..where((StockMovements tbl) => tbl.id.equals(movement.id)))
+          .write(
+        StockMovementsCompanion(
+          note: Value(auditNote),
+        ),
+      );
     });
   }
 
@@ -1120,6 +1444,26 @@ class InventarioLocalDataSource {
     return 'manual';
   }
 
+  bool _isSaleRefType(String refType) {
+    return refType == 'sale' ||
+        refType == 'sale_pos' ||
+        refType == 'sale_direct';
+  }
+
+  double _signedMovementDelta(StockMovement movement) {
+    final String safeType = movement.type.trim().toLowerCase();
+    if (safeType == 'in') {
+      return movement.qty.abs();
+    }
+    if (safeType == 'out') {
+      return -movement.qty.abs();
+    }
+    if (safeType == 'adjust') {
+      return movement.qty;
+    }
+    return movement.qty;
+  }
+
   String _fallbackReasonLabel(String reasonCode) {
     switch (reasonCode) {
       case 'sale':
@@ -1143,6 +1487,18 @@ class InventarioLocalDataSource {
       return null;
     }
     return clean;
+  }
+
+  String _appendAuditNote(String? current, String audit) {
+    final String cleanCurrent = (current ?? '').trim();
+    final String cleanAudit = audit.trim();
+    if (cleanAudit.isEmpty) {
+      return cleanCurrent;
+    }
+    if (cleanCurrent.isEmpty) {
+      return cleanAudit;
+    }
+    return '$cleanCurrent\n$cleanAudit';
   }
 
   String _slug(String value) {

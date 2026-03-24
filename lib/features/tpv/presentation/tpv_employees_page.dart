@@ -119,6 +119,15 @@ class _TpvEmployeesPageState extends ConsumerState<TpvEmployeesPage> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  void _goBack() {
+    final NavigatorState navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
+    context.go('/home');
+  }
+
   List<TpvEmployee> _getFilteredEmployees() {
     final String query = _searchCtrl.text.trim().toLowerCase();
     return _employees.where((TpvEmployee emp) {
@@ -176,7 +185,7 @@ class _TpvEmployeesPageState extends ConsumerState<TpvEmployeesPage> {
       useDefaultActions: false,
       showDrawer: false,
       appBarLeading: IconButton(
-        onPressed: () => context.go('/tpv'),
+        onPressed: _goBack,
         icon: const Icon(Icons.arrow_back_rounded),
       ),
       appBarActions: <Widget>[

@@ -1106,23 +1106,25 @@ class TpvLocalDataSource {
       final Set<String> productIds = openingSnapshot.startQtyByProduct.keys
           .where((String id) => id.trim().isNotEmpty)
           .toSet();
-      final Map<String, int> priceByProductId = await _loadSalePriceByProduct(
-        productIds,
-      );
+      final Map<String, _IpvProductFrozenInfo> productSnapshotById =
+          await _loadProductSnapshotByProduct(productIds);
       for (final String productId in productIds) {
         final double startQty =
             openingSnapshot.startQtyByProduct[productId] ?? 0;
-        final int priceCents = priceByProductId[productId] ?? 0;
+        final _IpvProductFrozenInfo productSnapshot =
+            productSnapshotById[productId] ?? _IpvProductFrozenInfo.empty;
         await _db.into(_db.ipvReportLines).insert(
               IpvReportLinesCompanion.insert(
                 reportId: reportId,
                 productId: productId,
+                productNameSnapshot: Value(productSnapshot.name),
+                productSkuSnapshot: Value(productSnapshot.sku),
                 startQty: Value(startQty),
                 entriesQty: const Value(0),
                 outputsQty: const Value(0),
                 salesQty: const Value(0),
                 finalQty: Value(startQty),
-                salePriceCents: Value(priceCents),
+                salePriceCents: Value(productSnapshot.priceCents),
                 totalAmountCents: const Value(0),
               ),
             );
@@ -1810,6 +1812,7 @@ class TpvLocalDataSource {
       WHERE sm.warehouse_id = ?
         AND sm.created_at > ?
         AND sm.created_at <= ?
+        AND COALESCE(sm.is_voided, 0) = 0
       GROUP BY sm.product_id
       ''',
       variables: <Variable<Object>>[
@@ -1831,9 +1834,8 @@ class TpvLocalDataSource {
     }
 
     final Set<String> productIds = byProduct.keys.toSet();
-    final Map<String, int> priceByProduct = await _loadSalePriceByProduct(
-      productIds,
-    );
+    final Map<String, _IpvProductFrozenInfo> productSnapshotById =
+        await _loadProductSnapshotByProduct(productIds);
     final Set<String> existingProductIds =
         existingLines.map((IpvReportLine row) => row.productId).toSet();
 
@@ -1841,13 +1843,17 @@ class TpvLocalDataSource {
         in byProduct.entries) {
       final String productId = entry.key;
       final _IpvLineAccumulator acc = entry.value;
-      final int priceCents = priceByProduct[productId] ?? 0;
+      final _IpvProductFrozenInfo productSnapshot =
+          productSnapshotById[productId] ?? _IpvProductFrozenInfo.empty;
+      final int priceCents = productSnapshot.priceCents;
       final double finalQty =
           acc.startQty + acc.entriesQty - acc.outputsQty - acc.salesQty;
       final int amountCents = (acc.salesQty * priceCents).round();
       final IpvReportLinesCompanion payload = IpvReportLinesCompanion(
         reportId: Value(activeReport.id),
         productId: Value(productId),
+        productNameSnapshot: Value(productSnapshot.name),
+        productSkuSnapshot: Value(productSnapshot.sku),
         startQty: Value(acc.startQty),
         entriesQty: Value(acc.entriesQty),
         outputsQty: Value(acc.outputsQty),
@@ -1867,6 +1873,8 @@ class TpvLocalDataSource {
               IpvReportLinesCompanion.insert(
                 reportId: activeReport.id,
                 productId: productId,
+                productNameSnapshot: Value(productSnapshot.name),
+                productSkuSnapshot: Value(productSnapshot.sku),
                 startQty: Value(acc.startQty),
                 entriesQty: Value(acc.entriesQty),
                 outputsQty: Value(acc.outputsQty),
@@ -1891,16 +1899,22 @@ class TpvLocalDataSource {
     );
   }
 
-  Future<Map<String, int>> _loadSalePriceByProduct(
-      Set<String> productIds) async {
+  Future<Map<String, _IpvProductFrozenInfo>> _loadProductSnapshotByProduct(
+    Set<String> productIds,
+  ) async {
     if (productIds.isEmpty) {
-      return <String, int>{};
+      return <String, _IpvProductFrozenInfo>{};
     }
     final List<Product> rows = await (_db.select(_db.products)
           ..where((Products tbl) => tbl.id.isIn(productIds)))
         .get();
-    return <String, int>{
-      for (final Product product in rows) product.id: product.priceCents,
+    return <String, _IpvProductFrozenInfo>{
+      for (final Product product in rows)
+        product.id: _IpvProductFrozenInfo(
+          name: product.name.trim().isEmpty ? 'Producto' : product.name.trim(),
+          sku: product.sku.trim().isEmpty ? '-' : product.sku.trim(),
+          priceCents: product.priceCents,
+        ),
     };
   }
 
@@ -2087,4 +2101,22 @@ class _IpvLineAccumulator {
   double entriesQty = 0;
   double outputsQty = 0;
   double salesQty = 0;
+}
+
+class _IpvProductFrozenInfo {
+  const _IpvProductFrozenInfo({
+    required this.name,
+    required this.sku,
+    required this.priceCents,
+  });
+
+  static const _IpvProductFrozenInfo empty = _IpvProductFrozenInfo(
+    name: 'Producto',
+    sku: '-',
+    priceCents: 0,
+  );
+
+  final String name;
+  final String sku;
+  final int priceCents;
 }

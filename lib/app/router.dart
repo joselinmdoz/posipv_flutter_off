@@ -4,8 +4,12 @@ import '../features/almacenes/presentation/almacenes_page.dart';
 import '../features/auth/presentation/login_page.dart';
 import '../features/auth/presentation/splash_page.dart';
 import '../features/configuracion/presentation/configuracion_page.dart';
+import '../features/configuracion/presentation/archived_data_page.dart';
 import '../features/configuracion/presentation/dashboard_widgets_settings_page.dart';
 import '../features/configuracion/presentation/currency_settings_page.dart';
+import '../features/configuracion/presentation/measurement_units_settings_page.dart';
+import '../features/configuracion/presentation/measurement_unit_types_settings_page.dart';
+import '../features/configuracion/presentation/product_catalog_settings_page.dart';
 import '../features/configuracion/presentation/security_page.dart';
 import '../features/auth/presentation/user_access_management_page.dart';
 import '../features/auth/presentation/role_permissions_management_page.dart';
@@ -17,6 +21,7 @@ import '../features/licencia/presentation/licencia_page.dart';
 import '../features/productos/presentation/productos_page.dart';
 import '../features/reportes/presentation/reportes_page.dart';
 import '../features/reportes/presentation/ipv_reportes_page.dart';
+import '../features/sync_manual/presentation/manual_sync_page.dart';
 import '../features/tpv/presentation/tpv_page.dart';
 import '../features/tpv/presentation/tpv_employees_page.dart';
 import '../features/tpv/presentation/employee_profile_page.dart';
@@ -120,6 +125,26 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/configuracion-monedas',
       builder: (context, state) => const CurrencySettingsPage(),
+    ),
+    GoRoute(
+      path: '/configuracion-catalogos-producto',
+      builder: (context, state) => const ProductCatalogSettingsPage(),
+    ),
+    GoRoute(
+      path: '/configuracion-unidades-medida',
+      builder: (context, state) => const MeasurementUnitsSettingsPage(),
+    ),
+    GoRoute(
+      path: '/configuracion-tipos-unidad',
+      builder: (context, state) => const MeasurementUnitTypesSettingsPage(),
+    ),
+    GoRoute(
+      path: '/configuracion-archivados',
+      builder: (context, state) => const ArchivedDataPage(),
+    ),
+    GoRoute(
+      path: '/sync-manual',
+      builder: (context, state) => const ManualSyncPage(),
     ),
   ],
 );

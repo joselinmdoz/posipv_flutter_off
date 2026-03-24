@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 
+import '../../auth/presentation/auth_providers.dart';
 import '../../../core/licensing/license_providers.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../data/data_management_local_datasource.dart';
@@ -14,6 +18,7 @@ class GestionDatosPage extends ConsumerStatefulWidget {
 }
 
 class _GestionDatosPageState extends ConsumerState<GestionDatosPage> {
+  static const String _pickBackupSentinelPath = '__pick_backup_file__';
   bool _loadingFiles = true;
   bool _working = false;
   String? _rootPath;
@@ -80,6 +85,186 @@ class _GestionDatosPageState extends ConsumerState<GestionDatosPage> {
         return;
       }
       _show('No se pudo crear la copia: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _working = false);
+      }
+    }
+  }
+
+  Future<void> _openBackupRestoreSheet() async {
+    final DataManagementLocalDataSource ds =
+        ref.read(dataManagementLocalDataSourceProvider);
+    final List<DataFileEntry> backupFiles = _backupFiles;
+    final TextEditingController manualPathCtrl = TextEditingController();
+
+    DataFileEntry? selected = await showModalBottomSheet<DataFileEntry>(
+      context: context,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: <Widget>[
+              const ListTile(
+                title: Text(
+                  'Selecciona copia para restaurar',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Text(
+                  'Selecciona una copia detectada automáticamente o pega la ruta manual del archivo .db',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: TextField(
+                  controller: manualPathCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Ruta manual del respaldo',
+                    hintText:
+                        '/storage/emulated/0/Download/POSIPV/Backups/mi-copia.db',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      final String path = manualPathCtrl.text.trim();
+                      if (path.isEmpty) {
+                        return;
+                      }
+                      Navigator.of(context).pop(
+                        DataFileEntry(
+                          path: path,
+                          name: p.basename(path),
+                          modifiedAt: DateTime.now(),
+                          sizeBytes: 0,
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.link_rounded),
+                    label: const Text('Usar esta ruta'),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).pop(
+                        DataFileEntry(
+                          path: _pickBackupSentinelPath,
+                          name: 'Explorar archivo',
+                          modifiedAt: DateTime.fromMillisecondsSinceEpoch(0),
+                          sizeBytes: 0,
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.folder_open_rounded),
+                    label: const Text('Explorar archivo (.db)'),
+                  ),
+                ),
+              ),
+              if (backupFiles.isEmpty)
+                ListTile(
+                  leading: const Icon(Icons.info_outline_rounded),
+                  title: const Text('No se encontraron copias automáticamente'),
+                  subtitle: Text(
+                    'Coloca un respaldo en ${_rootPath ?? "Download/POSIPV/Backups"} o usa ruta manual.',
+                  ),
+                ),
+              for (final DataFileEntry file in backupFiles)
+                ListTile(
+                  leading: const Icon(Icons.folder_copy_outlined),
+                  title: Text(
+                    file.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    '${_dateTime(file.modifiedAt)} • ${_bytes(file.sizeBytes)}',
+                  ),
+                  onTap: () => Navigator.of(context).pop(file),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+    manualPathCtrl.dispose();
+    if (selected == null || !mounted) {
+      return;
+    }
+
+    if (selected.path == _pickBackupSentinelPath) {
+      try {
+        final String? pickedPath = await ds.pickBackupFileWithSystemExplorer();
+        if (!mounted || pickedPath == null || pickedPath.trim().isEmpty) {
+          return;
+        }
+        selected = DataFileEntry(
+          path: pickedPath,
+          name: p.basename(pickedPath),
+          modifiedAt: DateTime.now(),
+          sizeBytes: 0,
+        );
+      } catch (e) {
+        if (mounted) {
+          _show('No se pudo abrir el explorador: $e');
+        }
+        return;
+      }
+    }
+
+    final bool confirm = await _confirm(
+      title: 'Restaurar copia de seguridad',
+      message:
+          'Se reemplazarán todos los datos actuales por:\n${selected.path}\n\n¿Deseas continuar?',
+    );
+    if (!confirm || !mounted) {
+      return;
+    }
+    await _restoreBackup(selected.path);
+  }
+
+  Future<void> _restoreBackup(String filePath) async {
+    setState(() => _working = true);
+    try {
+      final BackupRestoreResult result = await ref
+          .read(dataManagementLocalDataSourceProvider)
+          .restoreDatabaseBackup(filePath);
+      if (!mounted) {
+        return;
+      }
+
+      await _showRestoreSuccessDialog(result.tablesRestored);
+      if (!mounted) {
+        return;
+      }
+
+      await ref.read(authLocalDataSourceProvider).markForceReloginOnce();
+      ref.read(currentSessionProvider.notifier).state = null;
+      try {
+        await ref
+            .read(localAuthServiceProvider)
+            .clearRememberedSession()
+            .timeout(const Duration(seconds: 2));
+      } catch (_) {}
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      _show('No se pudo restaurar la copia: $e');
     } finally {
       if (mounted) {
         setState(() => _working = false);
@@ -225,6 +410,44 @@ class _GestionDatosPageState extends ConsumerState<GestionDatosPage> {
     }
   }
 
+  Future<void> _resetData() async {
+    final bool confirm = await _confirm(
+      title: 'Reiniciar datos',
+      message:
+          'Esta acción eliminará datos operativos del negocio: productos, almacenes, TPV, empleados, inventario, ventas, clientes, IPV y auditoría.\n\n'
+          'No eliminará usuarios ni permisos.\n\n'
+          '¿Deseas continuar?',
+    );
+    if (!confirm || !mounted) {
+      return;
+    }
+
+    setState(() => _working = true);
+    try {
+      final DataResetResult result = await ref
+          .read(dataManagementLocalDataSourceProvider)
+          .resetOperationalData();
+      await _loadFiles();
+      if (!mounted) {
+        return;
+      }
+      _show(
+        'Datos reiniciados correctamente.\n'
+        'Tablas limpiadas: ${result.tablesCleared}\n'
+        'Fecha: ${_dateTime(result.resetAt)}',
+      );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      _show('No se pudo reiniciar datos: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _working = false);
+      }
+    }
+  }
+
   Future<bool> _confirm({
     required String title,
     required String message,
@@ -265,6 +488,31 @@ class _GestionDatosPageState extends ConsumerState<GestionDatosPage> {
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _showRestoreSuccessDialog(int tablesRestored) async {
+    if (!mounted) {
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Copia restaurada'),
+          content: Text(
+            'Se restauraron $tablesRestored tablas correctamente.\n'
+            'Debes iniciar sesión nuevamente.',
+          ),
+          actions: <Widget>[
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Continuar'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -321,9 +569,13 @@ class _GestionDatosPageState extends ConsumerState<GestionDatosPage> {
                   icon: Icons.restore_rounded,
                   title: 'Restaurar copia',
                   subtitle: isFullLicense
-                      ? 'Próximamente'
+                      ? 'Restaurar base de datos desde respaldo (.db)'
                       : 'Disponible con licencia activa',
-                  onTap: _working ? null : _showSoon,
+                  onTap: _working || isLicenseLoading
+                      ? null
+                      : (isFullLicense
+                          ? _openBackupRestoreSheet
+                          : _showFullLicenseRequired),
                 ),
                 const SizedBox(height: 16),
                 _section('Importar Datos'),
@@ -376,8 +628,12 @@ class _GestionDatosPageState extends ConsumerState<GestionDatosPage> {
                 _option(
                   icon: Icons.restart_alt_rounded,
                   title: 'Reiniciar datos',
-                  subtitle: 'Próximamente',
-                  onTap: _working ? null : _showSoon,
+                  subtitle: isFullLicense
+                      ? 'Eliminar datos operativos y restaurar estado base'
+                      : 'Disponible con licencia activa',
+                  onTap: _working || isLicenseLoading
+                      ? null
+                      : (isFullLicense ? _resetData : _showFullLicenseRequired),
                 ),
                 const SizedBox(height: 20),
                 if (_rootPath != null)

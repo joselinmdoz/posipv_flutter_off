@@ -19,7 +19,7 @@ class LoginPage extends ConsumerStatefulWidget {
 class _LoginPageState extends ConsumerState<LoginPage> {
   final TextEditingController _usernameCtrl = TextEditingController();
   final TextEditingController _passwordCtrl = TextEditingController();
-  bool _initializing = true;
+  final bool _initializing = false;
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _switchingTheme = false;
@@ -39,9 +39,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await _prepareScreen();
-    });
   }
 
   @override
@@ -49,18 +46,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     _usernameCtrl.dispose();
     _passwordCtrl.dispose();
     super.dispose();
-  }
-
-  Future<void> _prepareScreen() async {
-    try {
-      await ref.read(localAuthServiceProvider).ensureDefaultAdmin();
-    } catch (error) {
-      _showError('No se pudo preparar la autenticacion: $error');
-    } finally {
-      if (mounted) {
-        setState(() => _initializing = false);
-      }
-    }
   }
 
   Future<void> _login() async {

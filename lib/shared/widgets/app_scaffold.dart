@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/auth/data/auth_local_datasource.dart';
+import '../../features/auth/presentation/login_page.dart';
 import '../../core/licensing/license_models.dart';
 import '../../core/licensing/license_providers.dart';
 import '../../core/security/app_permissions.dart';
@@ -172,14 +173,7 @@ class AppScaffold extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final UserSession? session = ref.watch(currentSessionProvider);
     if (session == null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted && _currentLocation(context) != '/login') {
-          context.go('/login');
-        }
-      });
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const LoginPage();
     }
 
     final String activeRoute = currentRoute ?? _currentLocation(context);
@@ -224,56 +218,72 @@ class AppScaffold extends ConsumerWidget {
         bottomItems.isNotEmpty &&
         (showBottomNavigationBar ?? showTopTabs);
 
-    return Scaffold(
-      drawer: showDrawer
-          ? _buildDrawer(
-              context,
-              ref,
-              activeRoute,
-              licenseStatus,
-              session,
-              userSummaryAsync.valueOrNull,
-            )
-          : null,
-      floatingActionButton: floatingActionButton,
-      appBar: AppBar(
-        leading: appBarLeading,
-        title: Text(
-          title,
-          style: const TextStyle(fontWeight: FontWeight.w700),
-        ),
-        actions: _buildAppBarActions(context, ref, session),
-      ),
-      bottomNavigationBar: bottomNavigationBar ??
-          (showBottomNav
-              ? AppBottomNavigation(
-                  items: bottomItems
-                      .map(
-                        (_NavItem item) => AppBottomNavigationItem(
-                          label: item.label,
-                          route: item.route,
-                          icon: item.icon,
-                        ),
-                      )
-                      .toList(),
-                  activeRoute: activeRoute,
-                  onRouteTap: (String route) =>
-                      _go(context, route, activeRoute, licenseStatus, session),
-                )
-              : null),
-      body: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: bodyGradient,
+    final bool allowNativeBackPop = Navigator.of(context).canPop();
+
+    return PopScope(
+      canPop: allowNativeBackPop,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) {
+          return;
+        }
+        _handleSystemBack(context, activeRoute, session);
+      },
+      child: Scaffold(
+        drawer: showDrawer
+            ? _buildDrawer(
+                context,
+                ref,
+                activeRoute,
+                licenseStatus,
+                session,
+                userSummaryAsync.valueOrNull,
+              )
+            : null,
+        floatingActionButton: floatingActionButton,
+        appBar: AppBar(
+          leading: appBarLeading,
+          title: Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.w700),
           ),
+          actions: _buildAppBarActions(context, ref, session),
         ),
-        child: Column(
-          children: <Widget>[
-            if (licenseBanner != null) licenseBanner,
-            Expanded(child: body),
-          ],
+        bottomNavigationBar: bottomNavigationBar ??
+            (showBottomNav
+                ? AppBottomNavigation(
+                    items: bottomItems
+                        .map(
+                          (_NavItem item) => AppBottomNavigationItem(
+                            label: item.label,
+                            route: item.route,
+                            icon: item.icon,
+                          ),
+                        )
+                        .toList(),
+                    activeRoute: activeRoute,
+                    onRouteTap: (String route) => _go(
+                      context,
+                      route,
+                      activeRoute,
+                      licenseStatus,
+                      session,
+                    ),
+                  )
+                : null),
+        body: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: bodyGradient,
+            ),
+          ),
+          child: Column(
+            children: <Widget>[
+              if (licenseBanner != null) licenseBanner,
+              Expanded(child: body),
+            ],
+          ),
         ),
       ),
     );
@@ -711,6 +721,63 @@ class AppScaffold extends ConsumerWidget {
 
   bool _isGeneralReportsRoute(String route) {
     return route == '/reportes';
+  }
+
+  Future<void> _handleSystemBack(
+    BuildContext context,
+    String activeRoute,
+    UserSession session,
+  ) async {
+    final NavigatorState navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
+
+    final String fallback = _fallbackBackRoute(activeRoute, session);
+    if (fallback.trim().isEmpty || fallback == activeRoute) {
+      return;
+    }
+    if (_currentLocation(context) != fallback) {
+      context.go(fallback);
+    }
+  }
+
+  String _fallbackBackRoute(String activeRoute, UserSession session) {
+    String candidate;
+    switch (activeRoute) {
+      case '/inventario-movimientos':
+        candidate = '/inventario';
+        break;
+      case '/configuracion-seguridad':
+      case '/configuracion-monedas':
+      case '/configuracion-catalogos-producto':
+      case '/configuracion-unidades-medida':
+      case '/configuracion-tipos-unidad':
+      case '/configuracion-dashboard-widgets':
+      case '/configuracion-usuarios':
+      case '/configuracion-roles':
+      case '/configuracion-archivados':
+      case '/sync-manual':
+      case '/licencia':
+        candidate = '/configuracion';
+        break;
+      case '/tpv-empleados':
+      case '/perfil-empleado':
+      case '/ventas-directas':
+        candidate = '/home';
+        break;
+      case '/ventas-pos':
+        candidate = '/tpv';
+        break;
+      default:
+        candidate = '/home';
+        break;
+    }
+    if (!SessionAccess.canAccessRoute(session, candidate)) {
+      return SessionAccess.firstAllowedRoute(session);
+    }
+    return candidate;
   }
 }
 

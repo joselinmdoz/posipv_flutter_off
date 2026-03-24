@@ -19,7 +19,7 @@ import '../../configuracion/data/configuracion_local_datasource.dart';
 import '../../configuracion/presentation/configuracion_providers.dart';
 import '../../inventario/data/inventario_local_datasource.dart';
 import '../../inventario/presentation/inventario_providers.dart';
-import '../../productos/domain/product_qr_codec.dart';
+import '../../productos/domain/product_scan_resolver.dart';
 import '../../productos/presentation/productos_providers.dart';
 import '../../ventas_pos/domain/sale_models.dart';
 import '../../ventas_pos/domain/sale_receipt.dart';
@@ -417,15 +417,10 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
     }
 
     final ds = ref.read(productosLocalDataSourceProvider);
-    Product? product;
-    final ProductQrPayload? payload = ProductQrPayload.tryParse(scanned);
-    if (payload != null) {
-      product = await ds.findActiveProductById(payload.id);
-      product ??= await ds.findActiveProductByCode(payload.code);
-    } else {
-      product = await ds.findActiveProductByBarcode(scanned);
-      product ??= await ds.findActiveProductByCode(scanned);
-    }
+    final Product? product = await ProductScanResolver.resolve(
+      dataSource: ds,
+      scannedValue: scanned,
+    );
     if (!mounted) {
       return;
     }

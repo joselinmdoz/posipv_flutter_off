@@ -289,11 +289,14 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
         session?.hasPermission(AppPermissionKeys.settingsData) ?? false;
     final bool canManageUsers =
         session?.hasPermission(AppPermissionKeys.usersManage) ?? false;
+    final bool canManageProducts =
+        session?.hasPermission(AppPermissionKeys.productsManage) ?? false;
     final bool canManageDashboardWidgets =
         session?.hasPermission(AppPermissionKeys.settingsDashboardWidgets) ??
             false;
     final bool canSeeLicense =
         session?.hasPermission(AppPermissionKeys.settingsLicense) ?? false;
+    final bool isAdmin = session?.isAdmin ?? false;
 
     return AppScaffold(
       title: 'Ajustes',
@@ -336,6 +339,24 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
                   onTap: _showSoon,
                 ),
                 const SizedBox(height: 14),
+                const ConfigSectionLabel(text: 'Catálogos de producto'),
+                ConfigOptionTile(
+                  icon: Icons.tune_rounded,
+                  title: 'Tipos y categorías',
+                  subtitle: 'Administra clasificación de productos',
+                  onTap: canManageProducts
+                      ? () => context.push('/configuracion-catalogos-producto')
+                      : null,
+                ),
+                ConfigOptionTile(
+                  icon: Icons.straighten_rounded,
+                  title: 'Unidades de medida',
+                  subtitle: 'Gestiona tipos de unidad y símbolos',
+                  onTap: canManageProducts
+                      ? () => context.push('/configuracion-unidades-medida')
+                      : null,
+                ),
+                const SizedBox(height: 14),
                 const ConfigSectionLabel(text: 'General'),
                 ConfigOptionTile(
                   icon: Icons.palette_outlined,
@@ -370,6 +391,13 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
                   subtitle: 'Define cuales son pagos online',
                   onTap: canManageData ? _openPaymentMethodsDialog : null,
                 ),
+                if (isAdmin)
+                  ConfigOptionTile(
+                    icon: Icons.archive_outlined,
+                    title: 'Archivados',
+                    subtitle: 'Productos y movimientos dados de baja',
+                    onTap: () => context.push('/configuracion-archivados'),
+                  ),
                 ConfigOptionTile(
                   icon: Icons.calendar_month_outlined,
                   title: 'Calendario',

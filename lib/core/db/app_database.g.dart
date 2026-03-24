@@ -5791,6 +5791,37 @@ class $StockMovementsTable extends StockMovements
   late final GeneratedColumn<String> note = GeneratedColumn<String>(
       'note', aliasedName, true,
       type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _isVoidedMeta =
+      const VerificationMeta('isVoided');
+  @override
+  late final GeneratedColumn<bool> isVoided = GeneratedColumn<bool>(
+      'is_voided', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("is_voided" IN (0, 1))'),
+      defaultValue: const Constant(false));
+  static const VerificationMeta _voidedAtMeta =
+      const VerificationMeta('voidedAt');
+  @override
+  late final GeneratedColumn<DateTime> voidedAt = GeneratedColumn<DateTime>(
+      'voided_at', aliasedName, true,
+      type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  static const VerificationMeta _voidedByMeta =
+      const VerificationMeta('voidedBy');
+  @override
+  late final GeneratedColumn<String> voidedBy = GeneratedColumn<String>(
+      'voided_by', aliasedName, true,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('REFERENCES users (id)'));
+  static const VerificationMeta _voidNoteMeta =
+      const VerificationMeta('voidNote');
+  @override
+  late final GeneratedColumn<String> voidNote = GeneratedColumn<String>(
+      'void_note', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   static const VerificationMeta _createdByMeta =
       const VerificationMeta('createdBy');
   @override
@@ -5820,6 +5851,10 @@ class $StockMovementsTable extends StockMovements
         refType,
         refId,
         note,
+        isVoided,
+        voidedAt,
+        voidedBy,
+        voidNote,
         createdBy,
         createdAt
       ];
@@ -5888,6 +5923,22 @@ class $StockMovementsTable extends StockMovements
       context.handle(
           _noteMeta, note.isAcceptableOrUnknown(data['note']!, _noteMeta));
     }
+    if (data.containsKey('is_voided')) {
+      context.handle(_isVoidedMeta,
+          isVoided.isAcceptableOrUnknown(data['is_voided']!, _isVoidedMeta));
+    }
+    if (data.containsKey('voided_at')) {
+      context.handle(_voidedAtMeta,
+          voidedAt.isAcceptableOrUnknown(data['voided_at']!, _voidedAtMeta));
+    }
+    if (data.containsKey('voided_by')) {
+      context.handle(_voidedByMeta,
+          voidedBy.isAcceptableOrUnknown(data['voided_by']!, _voidedByMeta));
+    }
+    if (data.containsKey('void_note')) {
+      context.handle(_voidNoteMeta,
+          voidNote.isAcceptableOrUnknown(data['void_note']!, _voidNoteMeta));
+    }
     if (data.containsKey('created_by')) {
       context.handle(_createdByMeta,
           createdBy.isAcceptableOrUnknown(data['created_by']!, _createdByMeta));
@@ -5927,6 +5978,14 @@ class $StockMovementsTable extends StockMovements
           .read(DriftSqlType.string, data['${effectivePrefix}ref_id']),
       note: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}note']),
+      isVoided: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}is_voided'])!,
+      voidedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}voided_at']),
+      voidedBy: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}voided_by']),
+      voidNote: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}void_note']),
       createdBy: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}created_by'])!,
       createdAt: attachedDatabase.typeMapping
@@ -5951,6 +6010,10 @@ class StockMovement extends DataClass implements Insertable<StockMovement> {
   final String? refType;
   final String? refId;
   final String? note;
+  final bool isVoided;
+  final DateTime? voidedAt;
+  final String? voidedBy;
+  final String? voidNote;
   final String createdBy;
   final DateTime createdAt;
   const StockMovement(
@@ -5964,6 +6027,10 @@ class StockMovement extends DataClass implements Insertable<StockMovement> {
       this.refType,
       this.refId,
       this.note,
+      required this.isVoided,
+      this.voidedAt,
+      this.voidedBy,
+      this.voidNote,
       required this.createdBy,
       required this.createdAt});
   @override
@@ -5987,6 +6054,16 @@ class StockMovement extends DataClass implements Insertable<StockMovement> {
     if (!nullToAbsent || note != null) {
       map['note'] = Variable<String>(note);
     }
+    map['is_voided'] = Variable<bool>(isVoided);
+    if (!nullToAbsent || voidedAt != null) {
+      map['voided_at'] = Variable<DateTime>(voidedAt);
+    }
+    if (!nullToAbsent || voidedBy != null) {
+      map['voided_by'] = Variable<String>(voidedBy);
+    }
+    if (!nullToAbsent || voidNote != null) {
+      map['void_note'] = Variable<String>(voidNote);
+    }
     map['created_by'] = Variable<String>(createdBy);
     map['created_at'] = Variable<DateTime>(createdAt);
     return map;
@@ -6009,6 +6086,16 @@ class StockMovement extends DataClass implements Insertable<StockMovement> {
       refId:
           refId == null && nullToAbsent ? const Value.absent() : Value(refId),
       note: note == null && nullToAbsent ? const Value.absent() : Value(note),
+      isVoided: Value(isVoided),
+      voidedAt: voidedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(voidedAt),
+      voidedBy: voidedBy == null && nullToAbsent
+          ? const Value.absent()
+          : Value(voidedBy),
+      voidNote: voidNote == null && nullToAbsent
+          ? const Value.absent()
+          : Value(voidNote),
       createdBy: Value(createdBy),
       createdAt: Value(createdAt),
     );
@@ -6028,6 +6115,10 @@ class StockMovement extends DataClass implements Insertable<StockMovement> {
       refType: serializer.fromJson<String?>(json['refType']),
       refId: serializer.fromJson<String?>(json['refId']),
       note: serializer.fromJson<String?>(json['note']),
+      isVoided: serializer.fromJson<bool>(json['isVoided']),
+      voidedAt: serializer.fromJson<DateTime?>(json['voidedAt']),
+      voidedBy: serializer.fromJson<String?>(json['voidedBy']),
+      voidNote: serializer.fromJson<String?>(json['voidNote']),
       createdBy: serializer.fromJson<String>(json['createdBy']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
     );
@@ -6046,6 +6137,10 @@ class StockMovement extends DataClass implements Insertable<StockMovement> {
       'refType': serializer.toJson<String?>(refType),
       'refId': serializer.toJson<String?>(refId),
       'note': serializer.toJson<String?>(note),
+      'isVoided': serializer.toJson<bool>(isVoided),
+      'voidedAt': serializer.toJson<DateTime?>(voidedAt),
+      'voidedBy': serializer.toJson<String?>(voidedBy),
+      'voidNote': serializer.toJson<String?>(voidNote),
       'createdBy': serializer.toJson<String>(createdBy),
       'createdAt': serializer.toJson<DateTime>(createdAt),
     };
@@ -6062,6 +6157,10 @@ class StockMovement extends DataClass implements Insertable<StockMovement> {
           Value<String?> refType = const Value.absent(),
           Value<String?> refId = const Value.absent(),
           Value<String?> note = const Value.absent(),
+          bool? isVoided,
+          Value<DateTime?> voidedAt = const Value.absent(),
+          Value<String?> voidedBy = const Value.absent(),
+          Value<String?> voidNote = const Value.absent(),
           String? createdBy,
           DateTime? createdAt}) =>
       StockMovement(
@@ -6075,6 +6174,10 @@ class StockMovement extends DataClass implements Insertable<StockMovement> {
         refType: refType.present ? refType.value : this.refType,
         refId: refId.present ? refId.value : this.refId,
         note: note.present ? note.value : this.note,
+        isVoided: isVoided ?? this.isVoided,
+        voidedAt: voidedAt.present ? voidedAt.value : this.voidedAt,
+        voidedBy: voidedBy.present ? voidedBy.value : this.voidedBy,
+        voidNote: voidNote.present ? voidNote.value : this.voidNote,
         createdBy: createdBy ?? this.createdBy,
         createdAt: createdAt ?? this.createdAt,
       );
@@ -6094,6 +6197,10 @@ class StockMovement extends DataClass implements Insertable<StockMovement> {
       refType: data.refType.present ? data.refType.value : this.refType,
       refId: data.refId.present ? data.refId.value : this.refId,
       note: data.note.present ? data.note.value : this.note,
+      isVoided: data.isVoided.present ? data.isVoided.value : this.isVoided,
+      voidedAt: data.voidedAt.present ? data.voidedAt.value : this.voidedAt,
+      voidedBy: data.voidedBy.present ? data.voidedBy.value : this.voidedBy,
+      voidNote: data.voidNote.present ? data.voidNote.value : this.voidNote,
       createdBy: data.createdBy.present ? data.createdBy.value : this.createdBy,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
@@ -6112,6 +6219,10 @@ class StockMovement extends DataClass implements Insertable<StockMovement> {
           ..write('refType: $refType, ')
           ..write('refId: $refId, ')
           ..write('note: $note, ')
+          ..write('isVoided: $isVoided, ')
+          ..write('voidedAt: $voidedAt, ')
+          ..write('voidedBy: $voidedBy, ')
+          ..write('voidNote: $voidNote, ')
           ..write('createdBy: $createdBy, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
@@ -6119,8 +6230,23 @@ class StockMovement extends DataClass implements Insertable<StockMovement> {
   }
 
   @override
-  int get hashCode => Object.hash(id, productId, warehouseId, type, qty,
-      reasonCode, movementSource, refType, refId, note, createdBy, createdAt);
+  int get hashCode => Object.hash(
+      id,
+      productId,
+      warehouseId,
+      type,
+      qty,
+      reasonCode,
+      movementSource,
+      refType,
+      refId,
+      note,
+      isVoided,
+      voidedAt,
+      voidedBy,
+      voidNote,
+      createdBy,
+      createdAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -6135,6 +6261,10 @@ class StockMovement extends DataClass implements Insertable<StockMovement> {
           other.refType == this.refType &&
           other.refId == this.refId &&
           other.note == this.note &&
+          other.isVoided == this.isVoided &&
+          other.voidedAt == this.voidedAt &&
+          other.voidedBy == this.voidedBy &&
+          other.voidNote == this.voidNote &&
           other.createdBy == this.createdBy &&
           other.createdAt == this.createdAt);
 }
@@ -6150,6 +6280,10 @@ class StockMovementsCompanion extends UpdateCompanion<StockMovement> {
   final Value<String?> refType;
   final Value<String?> refId;
   final Value<String?> note;
+  final Value<bool> isVoided;
+  final Value<DateTime?> voidedAt;
+  final Value<String?> voidedBy;
+  final Value<String?> voidNote;
   final Value<String> createdBy;
   final Value<DateTime> createdAt;
   final Value<int> rowid;
@@ -6164,6 +6298,10 @@ class StockMovementsCompanion extends UpdateCompanion<StockMovement> {
     this.refType = const Value.absent(),
     this.refId = const Value.absent(),
     this.note = const Value.absent(),
+    this.isVoided = const Value.absent(),
+    this.voidedAt = const Value.absent(),
+    this.voidedBy = const Value.absent(),
+    this.voidNote = const Value.absent(),
     this.createdBy = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -6179,6 +6317,10 @@ class StockMovementsCompanion extends UpdateCompanion<StockMovement> {
     this.refType = const Value.absent(),
     this.refId = const Value.absent(),
     this.note = const Value.absent(),
+    this.isVoided = const Value.absent(),
+    this.voidedAt = const Value.absent(),
+    this.voidedBy = const Value.absent(),
+    this.voidNote = const Value.absent(),
     required String createdBy,
     this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -6199,6 +6341,10 @@ class StockMovementsCompanion extends UpdateCompanion<StockMovement> {
     Expression<String>? refType,
     Expression<String>? refId,
     Expression<String>? note,
+    Expression<bool>? isVoided,
+    Expression<DateTime>? voidedAt,
+    Expression<String>? voidedBy,
+    Expression<String>? voidNote,
     Expression<String>? createdBy,
     Expression<DateTime>? createdAt,
     Expression<int>? rowid,
@@ -6214,6 +6360,10 @@ class StockMovementsCompanion extends UpdateCompanion<StockMovement> {
       if (refType != null) 'ref_type': refType,
       if (refId != null) 'ref_id': refId,
       if (note != null) 'note': note,
+      if (isVoided != null) 'is_voided': isVoided,
+      if (voidedAt != null) 'voided_at': voidedAt,
+      if (voidedBy != null) 'voided_by': voidedBy,
+      if (voidNote != null) 'void_note': voidNote,
       if (createdBy != null) 'created_by': createdBy,
       if (createdAt != null) 'created_at': createdAt,
       if (rowid != null) 'rowid': rowid,
@@ -6231,6 +6381,10 @@ class StockMovementsCompanion extends UpdateCompanion<StockMovement> {
       Value<String?>? refType,
       Value<String?>? refId,
       Value<String?>? note,
+      Value<bool>? isVoided,
+      Value<DateTime?>? voidedAt,
+      Value<String?>? voidedBy,
+      Value<String?>? voidNote,
       Value<String>? createdBy,
       Value<DateTime>? createdAt,
       Value<int>? rowid}) {
@@ -6245,6 +6399,10 @@ class StockMovementsCompanion extends UpdateCompanion<StockMovement> {
       refType: refType ?? this.refType,
       refId: refId ?? this.refId,
       note: note ?? this.note,
+      isVoided: isVoided ?? this.isVoided,
+      voidedAt: voidedAt ?? this.voidedAt,
+      voidedBy: voidedBy ?? this.voidedBy,
+      voidNote: voidNote ?? this.voidNote,
       createdBy: createdBy ?? this.createdBy,
       createdAt: createdAt ?? this.createdAt,
       rowid: rowid ?? this.rowid,
@@ -6284,6 +6442,18 @@ class StockMovementsCompanion extends UpdateCompanion<StockMovement> {
     if (note.present) {
       map['note'] = Variable<String>(note.value);
     }
+    if (isVoided.present) {
+      map['is_voided'] = Variable<bool>(isVoided.value);
+    }
+    if (voidedAt.present) {
+      map['voided_at'] = Variable<DateTime>(voidedAt.value);
+    }
+    if (voidedBy.present) {
+      map['voided_by'] = Variable<String>(voidedBy.value);
+    }
+    if (voidNote.present) {
+      map['void_note'] = Variable<String>(voidNote.value);
+    }
     if (createdBy.present) {
       map['created_by'] = Variable<String>(createdBy.value);
     }
@@ -6309,6 +6479,10 @@ class StockMovementsCompanion extends UpdateCompanion<StockMovement> {
           ..write('refType: $refType, ')
           ..write('refId: $refId, ')
           ..write('note: $note, ')
+          ..write('isVoided: $isVoided, ')
+          ..write('voidedAt: $voidedAt, ')
+          ..write('voidedBy: $voidedBy, ')
+          ..write('voidNote: $voidNote, ')
           ..write('createdBy: $createdBy, ')
           ..write('createdAt: $createdAt, ')
           ..write('rowid: $rowid')
@@ -9288,6 +9462,18 @@ class $IpvReportLinesTable extends IpvReportLines
       requiredDuringInsert: true,
       defaultConstraints:
           GeneratedColumn.constraintIsAlways('REFERENCES products (id)'));
+  static const VerificationMeta _productNameSnapshotMeta =
+      const VerificationMeta('productNameSnapshot');
+  @override
+  late final GeneratedColumn<String> productNameSnapshot =
+      GeneratedColumn<String>('product_name_snapshot', aliasedName, true,
+          type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _productSkuSnapshotMeta =
+      const VerificationMeta('productSkuSnapshot');
+  @override
+  late final GeneratedColumn<String> productSkuSnapshot =
+      GeneratedColumn<String>('product_sku_snapshot', aliasedName, true,
+          type: DriftSqlType.string, requiredDuringInsert: false);
   static const VerificationMeta _startQtyMeta =
       const VerificationMeta('startQty');
   @override
@@ -9348,6 +9534,8 @@ class $IpvReportLinesTable extends IpvReportLines
   List<GeneratedColumn> get $columns => [
         reportId,
         productId,
+        productNameSnapshot,
+        productSkuSnapshot,
         startQty,
         entriesQty,
         outputsQty,
@@ -9377,6 +9565,18 @@ class $IpvReportLinesTable extends IpvReportLines
           productId.isAcceptableOrUnknown(data['product_id']!, _productIdMeta));
     } else if (isInserting) {
       context.missing(_productIdMeta);
+    }
+    if (data.containsKey('product_name_snapshot')) {
+      context.handle(
+          _productNameSnapshotMeta,
+          productNameSnapshot.isAcceptableOrUnknown(
+              data['product_name_snapshot']!, _productNameSnapshotMeta));
+    }
+    if (data.containsKey('product_sku_snapshot')) {
+      context.handle(
+          _productSkuSnapshotMeta,
+          productSkuSnapshot.isAcceptableOrUnknown(
+              data['product_sku_snapshot']!, _productSkuSnapshotMeta));
     }
     if (data.containsKey('start_qty')) {
       context.handle(_startQtyMeta,
@@ -9427,6 +9627,10 @@ class $IpvReportLinesTable extends IpvReportLines
           .read(DriftSqlType.string, data['${effectivePrefix}report_id'])!,
       productId: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}product_id'])!,
+      productNameSnapshot: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}product_name_snapshot']),
+      productSkuSnapshot: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}product_sku_snapshot']),
       startQty: attachedDatabase.typeMapping
           .read(DriftSqlType.double, data['${effectivePrefix}start_qty'])!,
       entriesQty: attachedDatabase.typeMapping
@@ -9453,6 +9657,8 @@ class $IpvReportLinesTable extends IpvReportLines
 class IpvReportLine extends DataClass implements Insertable<IpvReportLine> {
   final String reportId;
   final String productId;
+  final String? productNameSnapshot;
+  final String? productSkuSnapshot;
   final double startQty;
   final double entriesQty;
   final double outputsQty;
@@ -9463,6 +9669,8 @@ class IpvReportLine extends DataClass implements Insertable<IpvReportLine> {
   const IpvReportLine(
       {required this.reportId,
       required this.productId,
+      this.productNameSnapshot,
+      this.productSkuSnapshot,
       required this.startQty,
       required this.entriesQty,
       required this.outputsQty,
@@ -9475,6 +9683,12 @@ class IpvReportLine extends DataClass implements Insertable<IpvReportLine> {
     final map = <String, Expression>{};
     map['report_id'] = Variable<String>(reportId);
     map['product_id'] = Variable<String>(productId);
+    if (!nullToAbsent || productNameSnapshot != null) {
+      map['product_name_snapshot'] = Variable<String>(productNameSnapshot);
+    }
+    if (!nullToAbsent || productSkuSnapshot != null) {
+      map['product_sku_snapshot'] = Variable<String>(productSkuSnapshot);
+    }
     map['start_qty'] = Variable<double>(startQty);
     map['entries_qty'] = Variable<double>(entriesQty);
     map['outputs_qty'] = Variable<double>(outputsQty);
@@ -9489,6 +9703,12 @@ class IpvReportLine extends DataClass implements Insertable<IpvReportLine> {
     return IpvReportLinesCompanion(
       reportId: Value(reportId),
       productId: Value(productId),
+      productNameSnapshot: productNameSnapshot == null && nullToAbsent
+          ? const Value.absent()
+          : Value(productNameSnapshot),
+      productSkuSnapshot: productSkuSnapshot == null && nullToAbsent
+          ? const Value.absent()
+          : Value(productSkuSnapshot),
       startQty: Value(startQty),
       entriesQty: Value(entriesQty),
       outputsQty: Value(outputsQty),
@@ -9505,6 +9725,10 @@ class IpvReportLine extends DataClass implements Insertable<IpvReportLine> {
     return IpvReportLine(
       reportId: serializer.fromJson<String>(json['reportId']),
       productId: serializer.fromJson<String>(json['productId']),
+      productNameSnapshot:
+          serializer.fromJson<String?>(json['productNameSnapshot']),
+      productSkuSnapshot:
+          serializer.fromJson<String?>(json['productSkuSnapshot']),
       startQty: serializer.fromJson<double>(json['startQty']),
       entriesQty: serializer.fromJson<double>(json['entriesQty']),
       outputsQty: serializer.fromJson<double>(json['outputsQty']),
@@ -9520,6 +9744,8 @@ class IpvReportLine extends DataClass implements Insertable<IpvReportLine> {
     return <String, dynamic>{
       'reportId': serializer.toJson<String>(reportId),
       'productId': serializer.toJson<String>(productId),
+      'productNameSnapshot': serializer.toJson<String?>(productNameSnapshot),
+      'productSkuSnapshot': serializer.toJson<String?>(productSkuSnapshot),
       'startQty': serializer.toJson<double>(startQty),
       'entriesQty': serializer.toJson<double>(entriesQty),
       'outputsQty': serializer.toJson<double>(outputsQty),
@@ -9533,6 +9759,8 @@ class IpvReportLine extends DataClass implements Insertable<IpvReportLine> {
   IpvReportLine copyWith(
           {String? reportId,
           String? productId,
+          Value<String?> productNameSnapshot = const Value.absent(),
+          Value<String?> productSkuSnapshot = const Value.absent(),
           double? startQty,
           double? entriesQty,
           double? outputsQty,
@@ -9543,6 +9771,12 @@ class IpvReportLine extends DataClass implements Insertable<IpvReportLine> {
       IpvReportLine(
         reportId: reportId ?? this.reportId,
         productId: productId ?? this.productId,
+        productNameSnapshot: productNameSnapshot.present
+            ? productNameSnapshot.value
+            : this.productNameSnapshot,
+        productSkuSnapshot: productSkuSnapshot.present
+            ? productSkuSnapshot.value
+            : this.productSkuSnapshot,
         startQty: startQty ?? this.startQty,
         entriesQty: entriesQty ?? this.entriesQty,
         outputsQty: outputsQty ?? this.outputsQty,
@@ -9555,6 +9789,12 @@ class IpvReportLine extends DataClass implements Insertable<IpvReportLine> {
     return IpvReportLine(
       reportId: data.reportId.present ? data.reportId.value : this.reportId,
       productId: data.productId.present ? data.productId.value : this.productId,
+      productNameSnapshot: data.productNameSnapshot.present
+          ? data.productNameSnapshot.value
+          : this.productNameSnapshot,
+      productSkuSnapshot: data.productSkuSnapshot.present
+          ? data.productSkuSnapshot.value
+          : this.productSkuSnapshot,
       startQty: data.startQty.present ? data.startQty.value : this.startQty,
       entriesQty:
           data.entriesQty.present ? data.entriesQty.value : this.entriesQty,
@@ -9576,6 +9816,8 @@ class IpvReportLine extends DataClass implements Insertable<IpvReportLine> {
     return (StringBuffer('IpvReportLine(')
           ..write('reportId: $reportId, ')
           ..write('productId: $productId, ')
+          ..write('productNameSnapshot: $productNameSnapshot, ')
+          ..write('productSkuSnapshot: $productSkuSnapshot, ')
           ..write('startQty: $startQty, ')
           ..write('entriesQty: $entriesQty, ')
           ..write('outputsQty: $outputsQty, ')
@@ -9588,14 +9830,26 @@ class IpvReportLine extends DataClass implements Insertable<IpvReportLine> {
   }
 
   @override
-  int get hashCode => Object.hash(reportId, productId, startQty, entriesQty,
-      outputsQty, salesQty, finalQty, salePriceCents, totalAmountCents);
+  int get hashCode => Object.hash(
+      reportId,
+      productId,
+      productNameSnapshot,
+      productSkuSnapshot,
+      startQty,
+      entriesQty,
+      outputsQty,
+      salesQty,
+      finalQty,
+      salePriceCents,
+      totalAmountCents);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is IpvReportLine &&
           other.reportId == this.reportId &&
           other.productId == this.productId &&
+          other.productNameSnapshot == this.productNameSnapshot &&
+          other.productSkuSnapshot == this.productSkuSnapshot &&
           other.startQty == this.startQty &&
           other.entriesQty == this.entriesQty &&
           other.outputsQty == this.outputsQty &&
@@ -9608,6 +9862,8 @@ class IpvReportLine extends DataClass implements Insertable<IpvReportLine> {
 class IpvReportLinesCompanion extends UpdateCompanion<IpvReportLine> {
   final Value<String> reportId;
   final Value<String> productId;
+  final Value<String?> productNameSnapshot;
+  final Value<String?> productSkuSnapshot;
   final Value<double> startQty;
   final Value<double> entriesQty;
   final Value<double> outputsQty;
@@ -9619,6 +9875,8 @@ class IpvReportLinesCompanion extends UpdateCompanion<IpvReportLine> {
   const IpvReportLinesCompanion({
     this.reportId = const Value.absent(),
     this.productId = const Value.absent(),
+    this.productNameSnapshot = const Value.absent(),
+    this.productSkuSnapshot = const Value.absent(),
     this.startQty = const Value.absent(),
     this.entriesQty = const Value.absent(),
     this.outputsQty = const Value.absent(),
@@ -9631,6 +9889,8 @@ class IpvReportLinesCompanion extends UpdateCompanion<IpvReportLine> {
   IpvReportLinesCompanion.insert({
     required String reportId,
     required String productId,
+    this.productNameSnapshot = const Value.absent(),
+    this.productSkuSnapshot = const Value.absent(),
     this.startQty = const Value.absent(),
     this.entriesQty = const Value.absent(),
     this.outputsQty = const Value.absent(),
@@ -9644,6 +9904,8 @@ class IpvReportLinesCompanion extends UpdateCompanion<IpvReportLine> {
   static Insertable<IpvReportLine> custom({
     Expression<String>? reportId,
     Expression<String>? productId,
+    Expression<String>? productNameSnapshot,
+    Expression<String>? productSkuSnapshot,
     Expression<double>? startQty,
     Expression<double>? entriesQty,
     Expression<double>? outputsQty,
@@ -9656,6 +9918,10 @@ class IpvReportLinesCompanion extends UpdateCompanion<IpvReportLine> {
     return RawValuesInsertable({
       if (reportId != null) 'report_id': reportId,
       if (productId != null) 'product_id': productId,
+      if (productNameSnapshot != null)
+        'product_name_snapshot': productNameSnapshot,
+      if (productSkuSnapshot != null)
+        'product_sku_snapshot': productSkuSnapshot,
       if (startQty != null) 'start_qty': startQty,
       if (entriesQty != null) 'entries_qty': entriesQty,
       if (outputsQty != null) 'outputs_qty': outputsQty,
@@ -9670,6 +9936,8 @@ class IpvReportLinesCompanion extends UpdateCompanion<IpvReportLine> {
   IpvReportLinesCompanion copyWith(
       {Value<String>? reportId,
       Value<String>? productId,
+      Value<String?>? productNameSnapshot,
+      Value<String?>? productSkuSnapshot,
       Value<double>? startQty,
       Value<double>? entriesQty,
       Value<double>? outputsQty,
@@ -9681,6 +9949,8 @@ class IpvReportLinesCompanion extends UpdateCompanion<IpvReportLine> {
     return IpvReportLinesCompanion(
       reportId: reportId ?? this.reportId,
       productId: productId ?? this.productId,
+      productNameSnapshot: productNameSnapshot ?? this.productNameSnapshot,
+      productSkuSnapshot: productSkuSnapshot ?? this.productSkuSnapshot,
       startQty: startQty ?? this.startQty,
       entriesQty: entriesQty ?? this.entriesQty,
       outputsQty: outputsQty ?? this.outputsQty,
@@ -9700,6 +9970,13 @@ class IpvReportLinesCompanion extends UpdateCompanion<IpvReportLine> {
     }
     if (productId.present) {
       map['product_id'] = Variable<String>(productId.value);
+    }
+    if (productNameSnapshot.present) {
+      map['product_name_snapshot'] =
+          Variable<String>(productNameSnapshot.value);
+    }
+    if (productSkuSnapshot.present) {
+      map['product_sku_snapshot'] = Variable<String>(productSkuSnapshot.value);
     }
     if (startQty.present) {
       map['start_qty'] = Variable<double>(startQty.value);
@@ -9733,6 +10010,8 @@ class IpvReportLinesCompanion extends UpdateCompanion<IpvReportLine> {
     return (StringBuffer('IpvReportLinesCompanion(')
           ..write('reportId: $reportId, ')
           ..write('productId: $productId, ')
+          ..write('productNameSnapshot: $productNameSnapshot, ')
+          ..write('productSkuSnapshot: $productSkuSnapshot, ')
           ..write('startQty: $startQty, ')
           ..write('entriesQty: $entriesQty, ')
           ..write('outputsQty: $outputsQty, ')
@@ -10495,16 +10774,33 @@ final class $$UsersTableReferences
   }
 
   static MultiTypedResultKey<$StockMovementsTable, List<StockMovement>>
-      _stockMovementsRefsTable(_$AppDatabase db) =>
+      _voidedStockMovementsTable(_$AppDatabase db) =>
+          MultiTypedResultKey.fromTable(db.stockMovements,
+              aliasName: $_aliasNameGenerator(
+                  db.users.id, db.stockMovements.voidedBy));
+
+  $$StockMovementsTableProcessedTableManager get voidedStockMovements {
+    final manager = $$StockMovementsTableTableManager($_db, $_db.stockMovements)
+        .filter((f) => f.voidedBy.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache =
+        $_typedResult.readTableOrNull(_voidedStockMovementsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
+
+  static MultiTypedResultKey<$StockMovementsTable, List<StockMovement>>
+      _createdStockMovementsTable(_$AppDatabase db) =>
           MultiTypedResultKey.fromTable(db.stockMovements,
               aliasName: $_aliasNameGenerator(
                   db.users.id, db.stockMovements.createdBy));
 
-  $$StockMovementsTableProcessedTableManager get stockMovementsRefs {
+  $$StockMovementsTableProcessedTableManager get createdStockMovements {
     final manager = $$StockMovementsTableTableManager($_db, $_db.stockMovements)
         .filter((f) => f.createdBy.id.sqlEquals($_itemColumn<String>('id')!));
 
-    final cache = $_typedResult.readTableOrNull(_stockMovementsRefsTable($_db));
+    final cache =
+        $_typedResult.readTableOrNull(_createdStockMovementsTable($_db));
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
@@ -10661,7 +10957,28 @@ class $$UsersTableFilterComposer extends Composer<_$AppDatabase, $UsersTable> {
     return f(composer);
   }
 
-  Expression<bool> stockMovementsRefs(
+  Expression<bool> voidedStockMovements(
+      Expression<bool> Function($$StockMovementsTableFilterComposer f) f) {
+    final $$StockMovementsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.stockMovements,
+        getReferencedColumn: (t) => t.voidedBy,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$StockMovementsTableFilterComposer(
+              $db: $db,
+              $table: $db.stockMovements,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<bool> createdStockMovements(
       Expression<bool> Function($$StockMovementsTableFilterComposer f) f) {
     final $$StockMovementsTableFilterComposer composer = $composerBuilder(
         composer: this,
@@ -10898,7 +11215,28 @@ class $$UsersTableAnnotationComposer
     return f(composer);
   }
 
-  Expression<T> stockMovementsRefs<T extends Object>(
+  Expression<T> voidedStockMovements<T extends Object>(
+      Expression<T> Function($$StockMovementsTableAnnotationComposer a) f) {
+    final $$StockMovementsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.stockMovements,
+        getReferencedColumn: (t) => t.voidedBy,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$StockMovementsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.stockMovements,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<T> createdStockMovements<T extends Object>(
       Expression<T> Function($$StockMovementsTableAnnotationComposer a) f) {
     final $$StockMovementsTableAnnotationComposer composer = $composerBuilder(
         composer: this,
@@ -11019,7 +11357,8 @@ class $$UsersTableTableManager extends RootTableManager<
         {bool userRolesRefs,
         bool posSessionsRefs,
         bool employeesRefs,
-        bool stockMovementsRefs,
+        bool voidedStockMovements,
+        bool createdStockMovements,
         bool salesRefs,
         bool openedIpvReports,
         bool closedIpvReports,
@@ -11086,7 +11425,8 @@ class $$UsersTableTableManager extends RootTableManager<
               {userRolesRefs = false,
               posSessionsRefs = false,
               employeesRefs = false,
-              stockMovementsRefs = false,
+              voidedStockMovements = false,
+              createdStockMovements = false,
               salesRefs = false,
               openedIpvReports = false,
               closedIpvReports = false,
@@ -11097,7 +11437,8 @@ class $$UsersTableTableManager extends RootTableManager<
                 if (userRolesRefs) db.userRoles,
                 if (posSessionsRefs) db.posSessions,
                 if (employeesRefs) db.employees,
-                if (stockMovementsRefs) db.stockMovements,
+                if (voidedStockMovements) db.stockMovements,
+                if (createdStockMovements) db.stockMovements,
                 if (salesRefs) db.sales,
                 if (openedIpvReports) db.ipvReports,
                 if (closedIpvReports) db.ipvReports,
@@ -11140,14 +11481,26 @@ class $$UsersTableTableManager extends RootTableManager<
                             (item, referencedItems) => referencedItems
                                 .where((e) => e.associatedUserId == item.id),
                         typedResults: items),
-                  if (stockMovementsRefs)
+                  if (voidedStockMovements)
                     await $_getPrefetchedData<User, $UsersTable, StockMovement>(
                         currentTable: table,
-                        referencedTable:
-                            $$UsersTableReferences._stockMovementsRefsTable(db),
+                        referencedTable: $$UsersTableReferences
+                            ._voidedStockMovementsTable(db),
                         managerFromTypedResult: (p0) =>
                             $$UsersTableReferences(db, table, p0)
-                                .stockMovementsRefs,
+                                .voidedStockMovements,
+                        referencedItemsForCurrentItem: (item,
+                                referencedItems) =>
+                            referencedItems.where((e) => e.voidedBy == item.id),
+                        typedResults: items),
+                  if (createdStockMovements)
+                    await $_getPrefetchedData<User, $UsersTable, StockMovement>(
+                        currentTable: table,
+                        referencedTable: $$UsersTableReferences
+                            ._createdStockMovementsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$UsersTableReferences(db, table, p0)
+                                .createdStockMovements,
                         referencedItemsForCurrentItem:
                             (item, referencedItems) => referencedItems
                                 .where((e) => e.createdBy == item.id),
@@ -11220,7 +11573,8 @@ typedef $$UsersTableProcessedTableManager = ProcessedTableManager<
         {bool userRolesRefs,
         bool posSessionsRefs,
         bool employeesRefs,
-        bool stockMovementsRefs,
+        bool voidedStockMovements,
+        bool createdStockMovements,
         bool salesRefs,
         bool openedIpvReports,
         bool closedIpvReports,
@@ -17087,6 +17441,10 @@ typedef $$StockMovementsTableCreateCompanionBuilder = StockMovementsCompanion
   Value<String?> refType,
   Value<String?> refId,
   Value<String?> note,
+  Value<bool> isVoided,
+  Value<DateTime?> voidedAt,
+  Value<String?> voidedBy,
+  Value<String?> voidNote,
   required String createdBy,
   Value<DateTime> createdAt,
   Value<int> rowid,
@@ -17103,6 +17461,10 @@ typedef $$StockMovementsTableUpdateCompanionBuilder = StockMovementsCompanion
   Value<String?> refType,
   Value<String?> refId,
   Value<String?> note,
+  Value<bool> isVoided,
+  Value<DateTime?> voidedAt,
+  Value<String?> voidedBy,
+  Value<String?> voidNote,
   Value<String> createdBy,
   Value<DateTime> createdAt,
   Value<int> rowid,
@@ -17138,6 +17500,20 @@ final class $$StockMovementsTableReferences
     final manager = $$WarehousesTableTableManager($_db, $_db.warehouses)
         .filter((f) => f.id.sqlEquals($_column));
     final item = $_typedResult.readTableOrNull(_warehouseIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static $UsersTable _voidedByTable(_$AppDatabase db) => db.users.createAlias(
+      $_aliasNameGenerator(db.stockMovements.voidedBy, db.users.id));
+
+  $$UsersTableProcessedTableManager? get voidedBy {
+    final $_column = $_itemColumn<String>('voided_by');
+    if ($_column == null) return null;
+    final manager = $$UsersTableTableManager($_db, $_db.users)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_voidedByTable($_db));
     if (item == null) return manager;
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: [item]));
@@ -17192,6 +17568,15 @@ class $$StockMovementsTableFilterComposer
   ColumnFilters<String> get note => $composableBuilder(
       column: $table.note, builder: (column) => ColumnFilters(column));
 
+  ColumnFilters<bool> get isVoided => $composableBuilder(
+      column: $table.isVoided, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get voidedAt => $composableBuilder(
+      column: $table.voidedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get voidNote => $composableBuilder(
+      column: $table.voidNote, builder: (column) => ColumnFilters(column));
+
   ColumnFilters<DateTime> get createdAt => $composableBuilder(
       column: $table.createdAt, builder: (column) => ColumnFilters(column));
 
@@ -17227,6 +17612,26 @@ class $$StockMovementsTableFilterComposer
             $$WarehousesTableFilterComposer(
               $db: $db,
               $table: $db.warehouses,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$UsersTableFilterComposer get voidedBy {
+    final $$UsersTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.voidedBy,
+        referencedTable: $db.users,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$UsersTableFilterComposer(
+              $db: $db,
+              $table: $db.users,
               $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
               joinBuilder: joinBuilder,
               $removeJoinBuilderFromRootComposer:
@@ -17290,6 +17695,15 @@ class $$StockMovementsTableOrderingComposer
   ColumnOrderings<String> get note => $composableBuilder(
       column: $table.note, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<bool> get isVoided => $composableBuilder(
+      column: $table.isVoided, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get voidedAt => $composableBuilder(
+      column: $table.voidedAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get voidNote => $composableBuilder(
+      column: $table.voidNote, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
       column: $table.createdAt, builder: (column) => ColumnOrderings(column));
 
@@ -17325,6 +17739,26 @@ class $$StockMovementsTableOrderingComposer
             $$WarehousesTableOrderingComposer(
               $db: $db,
               $table: $db.warehouses,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$UsersTableOrderingComposer get voidedBy {
+    final $$UsersTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.voidedBy,
+        referencedTable: $db.users,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$UsersTableOrderingComposer(
+              $db: $db,
+              $table: $db.users,
               $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
               joinBuilder: joinBuilder,
               $removeJoinBuilderFromRootComposer:
@@ -17387,6 +17821,15 @@ class $$StockMovementsTableAnnotationComposer
   GeneratedColumn<String> get note =>
       $composableBuilder(column: $table.note, builder: (column) => column);
 
+  GeneratedColumn<bool> get isVoided =>
+      $composableBuilder(column: $table.isVoided, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get voidedAt =>
+      $composableBuilder(column: $table.voidedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get voidNote =>
+      $composableBuilder(column: $table.voidNote, builder: (column) => column);
+
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
@@ -17430,6 +17873,26 @@ class $$StockMovementsTableAnnotationComposer
     return composer;
   }
 
+  $$UsersTableAnnotationComposer get voidedBy {
+    final $$UsersTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.voidedBy,
+        referencedTable: $db.users,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$UsersTableAnnotationComposer(
+              $db: $db,
+              $table: $db.users,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
   $$UsersTableAnnotationComposer get createdBy {
     final $$UsersTableAnnotationComposer composer = $composerBuilder(
         composer: this,
@@ -17463,7 +17926,7 @@ class $$StockMovementsTableTableManager extends RootTableManager<
     (StockMovement, $$StockMovementsTableReferences),
     StockMovement,
     PrefetchHooks Function(
-        {bool productId, bool warehouseId, bool createdBy})> {
+        {bool productId, bool warehouseId, bool voidedBy, bool createdBy})> {
   $$StockMovementsTableTableManager(
       _$AppDatabase db, $StockMovementsTable table)
       : super(TableManagerState(
@@ -17486,6 +17949,10 @@ class $$StockMovementsTableTableManager extends RootTableManager<
             Value<String?> refType = const Value.absent(),
             Value<String?> refId = const Value.absent(),
             Value<String?> note = const Value.absent(),
+            Value<bool> isVoided = const Value.absent(),
+            Value<DateTime?> voidedAt = const Value.absent(),
+            Value<String?> voidedBy = const Value.absent(),
+            Value<String?> voidNote = const Value.absent(),
             Value<String> createdBy = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<int> rowid = const Value.absent(),
@@ -17501,6 +17968,10 @@ class $$StockMovementsTableTableManager extends RootTableManager<
             refType: refType,
             refId: refId,
             note: note,
+            isVoided: isVoided,
+            voidedAt: voidedAt,
+            voidedBy: voidedBy,
+            voidNote: voidNote,
             createdBy: createdBy,
             createdAt: createdAt,
             rowid: rowid,
@@ -17516,6 +17987,10 @@ class $$StockMovementsTableTableManager extends RootTableManager<
             Value<String?> refType = const Value.absent(),
             Value<String?> refId = const Value.absent(),
             Value<String?> note = const Value.absent(),
+            Value<bool> isVoided = const Value.absent(),
+            Value<DateTime?> voidedAt = const Value.absent(),
+            Value<String?> voidedBy = const Value.absent(),
+            Value<String?> voidNote = const Value.absent(),
             required String createdBy,
             Value<DateTime> createdAt = const Value.absent(),
             Value<int> rowid = const Value.absent(),
@@ -17531,6 +18006,10 @@ class $$StockMovementsTableTableManager extends RootTableManager<
             refType: refType,
             refId: refId,
             note: note,
+            isVoided: isVoided,
+            voidedAt: voidedAt,
+            voidedBy: voidedBy,
+            voidNote: voidNote,
             createdBy: createdBy,
             createdAt: createdAt,
             rowid: rowid,
@@ -17542,7 +18021,10 @@ class $$StockMovementsTableTableManager extends RootTableManager<
                   ))
               .toList(),
           prefetchHooksCallback: (
-              {productId = false, warehouseId = false, createdBy = false}) {
+              {productId = false,
+              warehouseId = false,
+              voidedBy = false,
+              createdBy = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [],
@@ -17580,6 +18062,16 @@ class $$StockMovementsTableTableManager extends RootTableManager<
                         .id,
                   ) as T;
                 }
+                if (voidedBy) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.voidedBy,
+                    referencedTable:
+                        $$StockMovementsTableReferences._voidedByTable(db),
+                    referencedColumn:
+                        $$StockMovementsTableReferences._voidedByTable(db).id,
+                  ) as T;
+                }
                 if (createdBy) {
                   state = state.withJoin(
                     currentTable: table,
@@ -17612,7 +18104,8 @@ typedef $$StockMovementsTableProcessedTableManager = ProcessedTableManager<
     $$StockMovementsTableUpdateCompanionBuilder,
     (StockMovement, $$StockMovementsTableReferences),
     StockMovement,
-    PrefetchHooks Function({bool productId, bool warehouseId, bool createdBy})>;
+    PrefetchHooks Function(
+        {bool productId, bool warehouseId, bool voidedBy, bool createdBy})>;
 typedef $$CustomersTableCreateCompanionBuilder = CustomersCompanion Function({
   required String id,
   required String code,
@@ -20380,6 +20873,8 @@ typedef $$IpvReportLinesTableCreateCompanionBuilder = IpvReportLinesCompanion
     Function({
   required String reportId,
   required String productId,
+  Value<String?> productNameSnapshot,
+  Value<String?> productSkuSnapshot,
   Value<double> startQty,
   Value<double> entriesQty,
   Value<double> outputsQty,
@@ -20393,6 +20888,8 @@ typedef $$IpvReportLinesTableUpdateCompanionBuilder = IpvReportLinesCompanion
     Function({
   Value<String> reportId,
   Value<String> productId,
+  Value<String?> productNameSnapshot,
+  Value<String?> productSkuSnapshot,
   Value<double> startQty,
   Value<double> entriesQty,
   Value<double> outputsQty,
@@ -20448,6 +20945,14 @@ class $$IpvReportLinesTableFilterComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  ColumnFilters<String> get productNameSnapshot => $composableBuilder(
+      column: $table.productNameSnapshot,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get productSkuSnapshot => $composableBuilder(
+      column: $table.productSkuSnapshot,
+      builder: (column) => ColumnFilters(column));
+
   ColumnFilters<double> get startQty => $composableBuilder(
       column: $table.startQty, builder: (column) => ColumnFilters(column));
 
@@ -20521,6 +21026,14 @@ class $$IpvReportLinesTableOrderingComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  ColumnOrderings<String> get productNameSnapshot => $composableBuilder(
+      column: $table.productNameSnapshot,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get productSkuSnapshot => $composableBuilder(
+      column: $table.productSkuSnapshot,
+      builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<double> get startQty => $composableBuilder(
       column: $table.startQty, builder: (column) => ColumnOrderings(column));
 
@@ -20594,6 +21107,12 @@ class $$IpvReportLinesTableAnnotationComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  GeneratedColumn<String> get productNameSnapshot => $composableBuilder(
+      column: $table.productNameSnapshot, builder: (column) => column);
+
+  GeneratedColumn<String> get productSkuSnapshot => $composableBuilder(
+      column: $table.productSkuSnapshot, builder: (column) => column);
+
   GeneratedColumn<double> get startQty =>
       $composableBuilder(column: $table.startQty, builder: (column) => column);
 
@@ -20682,6 +21201,8 @@ class $$IpvReportLinesTableTableManager extends RootTableManager<
           updateCompanionCallback: ({
             Value<String> reportId = const Value.absent(),
             Value<String> productId = const Value.absent(),
+            Value<String?> productNameSnapshot = const Value.absent(),
+            Value<String?> productSkuSnapshot = const Value.absent(),
             Value<double> startQty = const Value.absent(),
             Value<double> entriesQty = const Value.absent(),
             Value<double> outputsQty = const Value.absent(),
@@ -20694,6 +21215,8 @@ class $$IpvReportLinesTableTableManager extends RootTableManager<
               IpvReportLinesCompanion(
             reportId: reportId,
             productId: productId,
+            productNameSnapshot: productNameSnapshot,
+            productSkuSnapshot: productSkuSnapshot,
             startQty: startQty,
             entriesQty: entriesQty,
             outputsQty: outputsQty,
@@ -20706,6 +21229,8 @@ class $$IpvReportLinesTableTableManager extends RootTableManager<
           createCompanionCallback: ({
             required String reportId,
             required String productId,
+            Value<String?> productNameSnapshot = const Value.absent(),
+            Value<String?> productSkuSnapshot = const Value.absent(),
             Value<double> startQty = const Value.absent(),
             Value<double> entriesQty = const Value.absent(),
             Value<double> outputsQty = const Value.absent(),
@@ -20718,6 +21243,8 @@ class $$IpvReportLinesTableTableManager extends RootTableManager<
               IpvReportLinesCompanion.insert(
             reportId: reportId,
             productId: productId,
+            productNameSnapshot: productNameSnapshot,
+            productSkuSnapshot: productSkuSnapshot,
             startQty: startQty,
             entriesQty: entriesQty,
             outputsQty: outputsQty,

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
@@ -59,6 +61,293 @@ class ProductFormInput {
   final int taxRateBps;
 }
 
+class ArchivedProductView {
+  const ArchivedProductView({
+    required this.id,
+    required this.sku,
+    required this.name,
+    required this.priceCents,
+    required this.currencyCode,
+    required this.archivedAt,
+    this.barcode,
+    this.imagePath,
+  });
+
+  final String id;
+  final String sku;
+  final String name;
+  final int priceCents;
+  final String currencyCode;
+  final DateTime archivedAt;
+  final String? barcode;
+  final String? imagePath;
+}
+
+class ProductCatalogEntry {
+  const ProductCatalogEntry({
+    required this.id,
+    required this.kind,
+    required this.value,
+    required this.isActive,
+    required this.isSystem,
+    required this.usageCount,
+  });
+
+  final String id;
+  final ProductCatalogKind kind;
+  final String value;
+  final bool isActive;
+  final bool isSystem;
+  final int usageCount;
+}
+
+class MeasurementUnitTypeModel {
+  const MeasurementUnitTypeModel({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.isSystem,
+    required this.isActive,
+    required this.sortOrder,
+  });
+
+  final String id;
+  final String name;
+  final String description;
+  final bool isSystem;
+  final bool isActive;
+  final int sortOrder;
+
+  factory MeasurementUnitTypeModel.fromJson(Map<String, Object?> json) {
+    return MeasurementUnitTypeModel(
+      id: (json['id'] as String? ?? '').trim(),
+      name: (json['name'] as String? ?? '').trim(),
+      description: (json['description'] as String? ?? '').trim(),
+      isSystem: json['isSystem'] == true,
+      isActive: json['isActive'] != false,
+      sortOrder: (json['sortOrder'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'id': id,
+      'name': name,
+      'description': description,
+      'isSystem': isSystem,
+      'isActive': isActive,
+      'sortOrder': sortOrder,
+    };
+  }
+
+  MeasurementUnitTypeModel copyWith({
+    String? id,
+    String? name,
+    String? description,
+    bool? isSystem,
+    bool? isActive,
+    int? sortOrder,
+  }) {
+    return MeasurementUnitTypeModel(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      description: description ?? this.description,
+      isSystem: isSystem ?? this.isSystem,
+      isActive: isActive ?? this.isActive,
+      sortOrder: sortOrder ?? this.sortOrder,
+    );
+  }
+}
+
+class MeasurementUnitModel {
+  const MeasurementUnitModel({
+    required this.id,
+    required this.typeId,
+    required this.symbol,
+    required this.name,
+    required this.isSystem,
+    required this.isActive,
+    required this.sortOrder,
+  });
+
+  final String id;
+  final String typeId;
+  final String symbol;
+  final String name;
+  final bool isSystem;
+  final bool isActive;
+  final int sortOrder;
+
+  factory MeasurementUnitModel.fromJson(Map<String, Object?> json) {
+    return MeasurementUnitModel(
+      id: (json['id'] as String? ?? '').trim(),
+      typeId: (json['typeId'] as String? ?? '').trim(),
+      symbol: (json['symbol'] as String? ?? '').trim(),
+      name: (json['name'] as String? ?? '').trim(),
+      isSystem: json['isSystem'] == true,
+      isActive: json['isActive'] != false,
+      sortOrder: (json['sortOrder'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'id': id,
+      'typeId': typeId,
+      'symbol': symbol,
+      'name': name,
+      'isSystem': isSystem,
+      'isActive': isActive,
+      'sortOrder': sortOrder,
+    };
+  }
+
+  MeasurementUnitModel copyWith({
+    String? id,
+    String? typeId,
+    String? symbol,
+    String? name,
+    bool? isSystem,
+    bool? isActive,
+    int? sortOrder,
+  }) {
+    return MeasurementUnitModel(
+      id: id ?? this.id,
+      typeId: typeId ?? this.typeId,
+      symbol: symbol ?? this.symbol,
+      name: name ?? this.name,
+      isSystem: isSystem ?? this.isSystem,
+      isActive: isActive ?? this.isActive,
+      sortOrder: sortOrder ?? this.sortOrder,
+    );
+  }
+}
+
+class MeasurementUnitCatalog {
+  const MeasurementUnitCatalog({
+    required this.types,
+    required this.units,
+  });
+
+  final List<MeasurementUnitTypeModel> types;
+  final List<MeasurementUnitModel> units;
+
+  factory MeasurementUnitCatalog.fromJson(Map<String, Object?> json) {
+    final List<MeasurementUnitTypeModel> parsedTypes =
+        <MeasurementUnitTypeModel>[];
+    final Object? rawTypes = json['types'];
+    if (rawTypes is List) {
+      for (final Object? raw in rawTypes) {
+        if (raw is Map) {
+          parsedTypes.add(
+            MeasurementUnitTypeModel.fromJson(raw.cast<String, Object?>()),
+          );
+        }
+      }
+    }
+
+    final List<MeasurementUnitModel> parsedUnits = <MeasurementUnitModel>[];
+    final Object? rawUnits = json['units'];
+    if (rawUnits is List) {
+      for (final Object? raw in rawUnits) {
+        if (raw is Map) {
+          parsedUnits.add(
+            MeasurementUnitModel.fromJson(raw.cast<String, Object?>()),
+          );
+        }
+      }
+    }
+
+    return MeasurementUnitCatalog(
+      types: parsedTypes,
+      units: parsedUnits,
+    ).normalized();
+  }
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'types': types.map((MeasurementUnitTypeModel row) => row.toJson()).toList(
+            growable: false,
+          ),
+      'units': units.map((MeasurementUnitModel row) => row.toJson()).toList(
+            growable: false,
+          ),
+    };
+  }
+
+  MeasurementUnitCatalog normalized() {
+    final List<MeasurementUnitTypeModel> normalizedTypes =
+        <MeasurementUnitTypeModel>[];
+    final Set<String> seenTypeIds = <String>{};
+    for (final MeasurementUnitTypeModel row in types) {
+      final String cleanId = row.id.trim();
+      final String cleanName = row.name.trim();
+      if (cleanId.isEmpty || cleanName.isEmpty || !seenTypeIds.add(cleanId)) {
+        continue;
+      }
+      normalizedTypes.add(
+        row.copyWith(
+          id: cleanId,
+          name: cleanName,
+          description: row.description.trim(),
+        ),
+      );
+    }
+    normalizedTypes
+        .sort((MeasurementUnitTypeModel a, MeasurementUnitTypeModel b) {
+      final int byOrder = a.sortOrder.compareTo(b.sortOrder);
+      if (byOrder != 0) {
+        return byOrder;
+      }
+      return a.name.compareTo(b.name);
+    });
+    final Set<String> validTypeIds =
+        normalizedTypes.map((MeasurementUnitTypeModel row) => row.id).toSet();
+
+    final List<MeasurementUnitModel> normalizedUnits = <MeasurementUnitModel>[];
+    final Set<String> seenUnitIds = <String>{};
+    final Set<String> seenSymbols = <String>{};
+    for (final MeasurementUnitModel row in units) {
+      final String cleanId = row.id.trim();
+      final String cleanTypeId = row.typeId.trim();
+      final String cleanSymbol = row.symbol.trim();
+      final String cleanName = row.name.trim();
+      if (cleanId.isEmpty ||
+          cleanTypeId.isEmpty ||
+          cleanSymbol.isEmpty ||
+          cleanName.isEmpty ||
+          !validTypeIds.contains(cleanTypeId) ||
+          !seenUnitIds.add(cleanId)) {
+        continue;
+      }
+      final String key = cleanSymbol.toLowerCase();
+      if (!seenSymbols.add(key)) {
+        continue;
+      }
+      normalizedUnits.add(
+        row.copyWith(
+          id: cleanId,
+          typeId: cleanTypeId,
+          symbol: cleanSymbol,
+          name: cleanName,
+        ),
+      );
+    }
+    normalizedUnits.sort((MeasurementUnitModel a, MeasurementUnitModel b) {
+      final int byOrder = a.sortOrder.compareTo(b.sortOrder);
+      if (byOrder != 0) {
+        return byOrder;
+      }
+      return a.symbol.compareTo(b.symbol);
+    });
+
+    return MeasurementUnitCatalog(
+      types: normalizedTypes,
+      units: normalizedUnits,
+    );
+  }
+}
+
 class ProductosLocalDataSource {
   ProductosLocalDataSource(
     this._db, {
@@ -70,6 +359,7 @@ class ProductosLocalDataSource {
   final AppDatabase _db;
   final OfflineLicenseService _licenseService;
   final Uuid _uuid;
+  static const String _measurementCatalogKey = 'measurement_units_catalog_v1';
 
   Future<List<Product>> listActiveProducts() {
     return (_db.select(_db.products)
@@ -79,6 +369,80 @@ class ProductosLocalDataSource {
             (Products tbl) => OrderingTerm.asc(tbl.name),
           ]))
         .get();
+  }
+
+  Future<List<ArchivedProductView>> listArchivedProducts({
+    String? search,
+    int limit = 250,
+  }) async {
+    final int safeLimit = limit < 1 ? 1 : limit;
+    final String cleanedSearch = (search ?? '').trim().toLowerCase();
+    final StringBuffer sql = StringBuffer(
+      '''
+      SELECT
+        id,
+        sku,
+        name,
+        barcode,
+        image_path,
+        price_cents,
+        currency_code,
+        updated_at,
+        created_at
+      FROM products
+      WHERE is_active = 0
+      ''',
+    );
+    final List<Variable<Object>> variables = <Variable<Object>>[];
+
+    if (cleanedSearch.isNotEmpty) {
+      sql.write(
+        '''
+        AND (
+          LOWER(name) LIKE ?
+          OR LOWER(sku) LIKE ?
+          OR LOWER(COALESCE(barcode, '')) LIKE ?
+        )
+        ''',
+      );
+      final String pattern = '%$cleanedSearch%';
+      variables.addAll(<Variable<Object>>[
+        Variable<String>(pattern),
+        Variable<String>(pattern),
+        Variable<String>(pattern),
+      ]);
+    }
+
+    sql.write(
+      '''
+      ORDER BY COALESCE(updated_at, created_at) DESC, name ASC
+      LIMIT ?
+      ''',
+    );
+    variables.add(Variable<int>(safeLimit));
+
+    final List<QueryRow> rows = await _db
+        .customSelect(
+          sql.toString(),
+          variables: variables,
+        )
+        .get();
+
+    return rows.map((QueryRow row) {
+      final DateTime archivedAt = row.readNullable<DateTime>('updated_at') ??
+          row.read<DateTime>('created_at');
+      return ArchivedProductView(
+        id: row.read<String>('id'),
+        sku: (row.readNullable<String>('sku') ?? '-').trim(),
+        name: (row.readNullable<String>('name') ?? '-').trim(),
+        barcode: row.readNullable<String>('barcode'),
+        imagePath: row.readNullable<String>('image_path'),
+        priceCents: row.readNullable<int>('price_cents') ?? 0,
+        currencyCode:
+            (row.readNullable<String>('currency_code') ?? 'USD').trim(),
+        archivedAt: archivedAt,
+      );
+    }).toList(growable: false);
   }
 
   Future<List<Product>> listActiveProductsPage({
@@ -215,6 +579,7 @@ class ProductosLocalDataSource {
   }
 
   Future<List<String>> listCatalogValues(ProductCatalogKind kind) async {
+    await _ensureCatalogDefaultsForKind(kind);
     final List<ProductCatalogItem> items =
         await (_db.select(_db.productCatalogItems)
               ..where(
@@ -231,6 +596,41 @@ class ProductosLocalDataSource {
     }
 
     return items.map((ProductCatalogItem item) => item.value).toList();
+  }
+
+  Future<List<ProductCatalogEntry>> listCatalogEntries(
+    ProductCatalogKind kind, {
+    bool includeInactive = true,
+  }) async {
+    await _ensureCatalogDefaultsForKind(kind);
+    final List<ProductCatalogItem> items =
+        await (_db.select(_db.productCatalogItems)
+              ..where((ProductCatalogItems tbl) {
+                final Expression<bool> base = tbl.kind.equals(kind.key);
+                if (includeInactive) {
+                  return base;
+                }
+                return base & tbl.isActive.equals(true);
+              })
+              ..orderBy(<OrderingTerm Function(ProductCatalogItems)>[
+                (ProductCatalogItems tbl) => OrderingTerm.asc(tbl.value),
+              ]))
+            .get();
+    final Map<String, int> usageByValue =
+        await _usageCountByCatalogValue(kind: kind);
+    final Set<String> defaults =
+        kind.defaults.map((String row) => row.trim().toLowerCase()).toSet();
+    return items.map((ProductCatalogItem row) {
+      final String normalized = row.value.trim().toLowerCase();
+      return ProductCatalogEntry(
+        id: row.id,
+        kind: kind,
+        value: row.value,
+        isActive: row.isActive,
+        isSystem: defaults.contains(normalized),
+        usageCount: usageByValue[normalized] ?? 0,
+      );
+    }).toList(growable: false);
   }
 
   Future<void> addCatalogValue({
@@ -277,6 +677,390 @@ class ProductosLocalDataSource {
             value: cleaned,
           ),
         );
+  }
+
+  Future<void> renameCatalogValue({
+    required ProductCatalogKind kind,
+    required String itemId,
+    required String nextValue,
+  }) async {
+    await _licenseService.requireWriteAccess();
+    final String cleaned = _normalizeCatalogValue(nextValue);
+    if (cleaned.isEmpty) {
+      throw Exception('El valor no puede estar vacio.');
+    }
+
+    final ProductCatalogItem? existing =
+        await (_db.select(_db.productCatalogItems)
+              ..where((ProductCatalogItems tbl) => tbl.id.equals(itemId)))
+            .getSingleOrNull();
+    if (existing == null || existing.kind != kind.key) {
+      throw Exception('El elemento seleccionado no existe.');
+    }
+    final String oldValue = existing.value.trim();
+    if (oldValue.toLowerCase() == cleaned.toLowerCase()) {
+      return;
+    }
+
+    final List<ProductCatalogItem> sameKind =
+        await (_db.select(_db.productCatalogItems)
+              ..where((ProductCatalogItems tbl) =>
+                  tbl.kind.equals(kind.key) & tbl.id.isNotValue(itemId)))
+            .get();
+    for (final ProductCatalogItem row in sameKind) {
+      if (row.value.trim().toLowerCase() == cleaned.toLowerCase()) {
+        throw Exception('Ya existe un valor igual en este catálogo.');
+      }
+    }
+
+    await _db.transaction(() async {
+      await (_db.update(_db.productCatalogItems)
+            ..where((ProductCatalogItems tbl) => tbl.id.equals(itemId)))
+          .write(
+        ProductCatalogItemsCompanion(
+          value: Value(cleaned),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
+
+      switch (kind) {
+        case ProductCatalogKind.type:
+          await (_db.update(_db.products)
+                ..where((Products tbl) => tbl.productType.equals(oldValue)))
+              .write(
+            ProductsCompanion(
+              productType: Value(cleaned),
+              updatedAt: Value(DateTime.now()),
+            ),
+          );
+        case ProductCatalogKind.category:
+          await (_db.update(_db.products)
+                ..where((Products tbl) => tbl.category.equals(oldValue)))
+              .write(
+            ProductsCompanion(
+              category: Value(cleaned),
+              updatedAt: Value(DateTime.now()),
+            ),
+          );
+        case ProductCatalogKind.unit:
+          await (_db.update(_db.products)
+                ..where((Products tbl) => tbl.unitMeasure.equals(oldValue)))
+              .write(
+            ProductsCompanion(
+              unitMeasure: Value(cleaned),
+              updatedAt: Value(DateTime.now()),
+            ),
+          );
+      }
+    });
+  }
+
+  Future<void> setCatalogValueActive({
+    required ProductCatalogKind kind,
+    required String itemId,
+    required bool isActive,
+  }) async {
+    await _licenseService.requireWriteAccess();
+    final ProductCatalogItem? existing =
+        await (_db.select(_db.productCatalogItems)
+              ..where((ProductCatalogItems tbl) => tbl.id.equals(itemId)))
+            .getSingleOrNull();
+    if (existing == null || existing.kind != kind.key) {
+      throw Exception('El elemento seleccionado no existe.');
+    }
+    if (existing.isActive == isActive) {
+      return;
+    }
+
+    if (!isActive) {
+      final int usage = await _countProductsByCatalogValue(
+        kind: kind,
+        value: existing.value,
+      );
+      if (usage > 0) {
+        throw Exception(
+          'No se puede desactivar porque está en uso por $usage producto(s).',
+        );
+      }
+    } else {
+      final List<ProductCatalogItem> sameKind =
+          await (_db.select(_db.productCatalogItems)
+                ..where((ProductCatalogItems tbl) =>
+                    tbl.kind.equals(kind.key) & tbl.id.isNotValue(itemId)))
+              .get();
+      for (final ProductCatalogItem row in sameKind) {
+        if (row.isActive &&
+            row.value.trim().toLowerCase() ==
+                existing.value.trim().toLowerCase()) {
+          throw Exception('Ya existe un valor activo igual en el catálogo.');
+        }
+      }
+    }
+
+    if (isActive) {
+      final int activeCount = await _countActiveCatalogItems(kind);
+      if (activeCount == 0) {
+        // allowed
+      }
+    } else {
+      final int activeCount = await _countActiveCatalogItems(kind);
+      if (activeCount <= 1) {
+        throw Exception(
+          'Debe existir al menos un valor activo en el catálogo.',
+        );
+      }
+    }
+
+    await (_db.update(_db.productCatalogItems)
+          ..where((ProductCatalogItems tbl) => tbl.id.equals(itemId)))
+        .write(
+      ProductCatalogItemsCompanion(
+        isActive: Value(isActive),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  Future<MeasurementUnitCatalog> loadMeasurementUnitCatalog() async {
+    final AppSetting? setting = await (_db.select(_db.appSettings)
+          ..where((AppSettings tbl) => tbl.key.equals(_measurementCatalogKey)))
+        .getSingleOrNull();
+
+    MeasurementUnitCatalog catalog;
+    if (setting == null) {
+      catalog = _defaultMeasurementCatalog();
+      await _saveMeasurementUnitCatalog(catalog);
+    } else {
+      try {
+        final Object? decoded = jsonDecode(setting.value);
+        if (decoded is Map<String, Object?>) {
+          catalog = MeasurementUnitCatalog.fromJson(decoded);
+        } else if (decoded is Map) {
+          catalog = MeasurementUnitCatalog.fromJson(
+            decoded.cast<String, Object?>(),
+          );
+        } else {
+          catalog = _defaultMeasurementCatalog();
+        }
+      } catch (_) {
+        catalog = _defaultMeasurementCatalog();
+      }
+      catalog = catalog.normalized();
+      await _saveMeasurementUnitCatalog(catalog);
+    }
+    await _syncMeasurementUnitsWithProductCatalog(catalog.units);
+    return catalog;
+  }
+
+  Future<void> upsertMeasurementUnitType({
+    String? typeId,
+    required String name,
+    String? description,
+    bool? isActive,
+  }) async {
+    await _licenseService.requireWriteAccess();
+    final MeasurementUnitCatalog catalog = await loadMeasurementUnitCatalog();
+    final List<MeasurementUnitTypeModel> types =
+        catalog.types.toList(growable: true);
+    List<MeasurementUnitModel> units = catalog.units.toList(growable: true);
+
+    final String cleanName = _normalizeCatalogValue(name);
+    final String cleanDescription = (description ?? '').trim();
+    if (cleanName.isEmpty) {
+      throw Exception('El nombre del tipo de unidad es obligatorio.');
+    }
+
+    final String? editingId = typeId?.trim().isEmpty ?? true ? null : typeId;
+    for (final MeasurementUnitTypeModel row in types) {
+      if (editingId != null && row.id == editingId) {
+        continue;
+      }
+      if (row.name.trim().toLowerCase() == cleanName.toLowerCase()) {
+        throw Exception('Ya existe un tipo de unidad con ese nombre.');
+      }
+    }
+
+    if (editingId == null) {
+      final int nextSort = types.isEmpty
+          ? 0
+          : types
+                  .map((MeasurementUnitTypeModel row) => row.sortOrder)
+                  .reduce((int a, int b) => a > b ? a : b) +
+              1;
+      types.add(
+        MeasurementUnitTypeModel(
+          id: _uuid.v4(),
+          name: cleanName,
+          description: cleanDescription,
+          isSystem: false,
+          isActive: isActive ?? true,
+          sortOrder: nextSort,
+        ),
+      );
+    } else {
+      final int index = types.indexWhere((MeasurementUnitTypeModel row) {
+        return row.id == editingId;
+      });
+      if (index < 0) {
+        throw Exception('El tipo de unidad seleccionado no existe.');
+      }
+      final MeasurementUnitTypeModel current = types[index];
+      types[index] = current.copyWith(
+        name: cleanName,
+        description: cleanDescription,
+        isActive: isActive ?? current.isActive,
+      );
+      if ((isActive ?? current.isActive) == false) {
+        final Set<String> unitIdsToDeactivate = catalog.units
+            .where((MeasurementUnitModel row) => row.typeId == editingId)
+            .map((MeasurementUnitModel row) => row.id)
+            .toSet();
+        final MeasurementUnitCatalog patched = await _setMeasurementUnitsActive(
+          catalog: catalog,
+          unitIds: unitIdsToDeactivate,
+          isActive: false,
+        );
+        units = patched.units.toList(growable: true);
+      }
+    }
+
+    final MeasurementUnitCatalog next = MeasurementUnitCatalog(
+      types: types,
+      units: units,
+    ).normalized();
+    await _saveMeasurementUnitCatalog(next);
+  }
+
+  Future<void> setMeasurementUnitTypeActive({
+    required String typeId,
+    required bool isActive,
+  }) async {
+    await _licenseService.requireWriteAccess();
+    final MeasurementUnitCatalog catalog = await loadMeasurementUnitCatalog();
+    final List<MeasurementUnitTypeModel> types =
+        catalog.types.toList(growable: true);
+    final int index = types.indexWhere((MeasurementUnitTypeModel row) {
+      return row.id == typeId;
+    });
+    if (index < 0) {
+      throw Exception('El tipo de unidad no existe.');
+    }
+    if (types[index].isActive == isActive) {
+      return;
+    }
+    if (!isActive) {
+      final int activeCount =
+          types.where((MeasurementUnitTypeModel row) => row.isActive).length;
+      if (activeCount <= 1) {
+        throw Exception('Debe existir al menos un tipo de unidad activo.');
+      }
+    }
+    types[index] = types[index].copyWith(isActive: isActive);
+    MeasurementUnitCatalog next = MeasurementUnitCatalog(
+      types: types,
+      units: catalog.units,
+    ).normalized();
+    if (!isActive) {
+      final Set<String> unitIdsToDeactivate = next.units
+          .where((MeasurementUnitModel row) => row.typeId == typeId)
+          .map((MeasurementUnitModel row) => row.id)
+          .toSet();
+      next = await _setMeasurementUnitsActive(
+        catalog: next,
+        unitIds: unitIdsToDeactivate,
+        isActive: false,
+      );
+    }
+    await _saveMeasurementUnitCatalog(next);
+  }
+
+  Future<void> upsertMeasurementUnit({
+    String? unitId,
+    required String typeId,
+    required String symbol,
+    required String name,
+    bool? isActive,
+  }) async {
+    await _licenseService.requireWriteAccess();
+    final MeasurementUnitCatalog catalog = await loadMeasurementUnitCatalog();
+    final List<MeasurementUnitTypeModel> types = catalog.types;
+    final List<MeasurementUnitModel> units =
+        catalog.units.toList(growable: true);
+
+    if (!types.any((MeasurementUnitTypeModel row) => row.id == typeId)) {
+      throw Exception('Selecciona un tipo de unidad válido.');
+    }
+    final String cleanSymbol = _normalizeUnitSymbol(symbol);
+    final String cleanName = _normalizeCatalogValue(name);
+    if (cleanSymbol.isEmpty || cleanName.isEmpty) {
+      throw Exception('Símbolo y nombre de unidad son obligatorios.');
+    }
+
+    final String? editingId = unitId?.trim().isEmpty ?? true ? null : unitId;
+    for (final MeasurementUnitModel row in units) {
+      if (editingId != null && row.id == editingId) {
+        continue;
+      }
+      if (row.symbol.trim().toLowerCase() == cleanSymbol.toLowerCase()) {
+        throw Exception('Ya existe una unidad con ese símbolo.');
+      }
+    }
+
+    if (editingId == null) {
+      final int nextSort = units.isEmpty
+          ? 0
+          : units
+                  .map((MeasurementUnitModel row) => row.sortOrder)
+                  .reduce((int a, int b) => a > b ? a : b) +
+              1;
+      units.add(
+        MeasurementUnitModel(
+          id: _uuid.v4(),
+          typeId: typeId,
+          symbol: cleanSymbol,
+          name: cleanName,
+          isSystem: false,
+          isActive: isActive ?? true,
+          sortOrder: nextSort,
+        ),
+      );
+    } else {
+      final int index = units.indexWhere((MeasurementUnitModel row) {
+        return row.id == editingId;
+      });
+      if (index < 0) {
+        throw Exception('La unidad seleccionada no existe.');
+      }
+      final MeasurementUnitModel current = units[index];
+      units[index] = current.copyWith(
+        typeId: typeId,
+        symbol: cleanSymbol,
+        name: cleanName,
+        isActive: isActive ?? current.isActive,
+      );
+    }
+
+    final MeasurementUnitCatalog next = MeasurementUnitCatalog(
+      types: types,
+      units: units,
+    ).normalized();
+    await _saveMeasurementUnitCatalog(next);
+    await _syncMeasurementUnitsWithProductCatalog(next.units);
+  }
+
+  Future<void> setMeasurementUnitActive({
+    required String unitId,
+    required bool isActive,
+  }) async {
+    await _licenseService.requireWriteAccess();
+    final MeasurementUnitCatalog catalog = await loadMeasurementUnitCatalog();
+    final MeasurementUnitCatalog next = await _setMeasurementUnitsActive(
+      catalog: catalog,
+      unitIds: <String>{unitId},
+      isActive: isActive,
+    );
+    await _saveMeasurementUnitCatalog(next);
+    await _syncMeasurementUnitsWithProductCatalog(next.units);
   }
 
   Future<void> createProduct(ProductFormInput input) async {
@@ -352,6 +1136,22 @@ class ProductosLocalDataSource {
     );
   }
 
+  Future<void> reactivateProduct(String productId) async {
+    await _licenseService.requireWriteAccess();
+    final String safeProductId = productId.trim();
+    if (safeProductId.isEmpty) {
+      throw Exception('Producto inválido.');
+    }
+    await (_db.update(_db.products)
+          ..where((Products tbl) => tbl.id.equals(safeProductId)))
+        .write(
+      ProductsCompanion(
+        isActive: const Value(true),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
   Future<void> updatePrice({
     required String productId,
     required int priceCents,
@@ -395,5 +1195,346 @@ class ProductosLocalDataSource {
     }
 
     return trimmed[0].toUpperCase() + trimmed.substring(1);
+  }
+
+  String _normalizeUnitSymbol(String value) {
+    final String trimmed = value.trim().replaceAll(RegExp(r'\s+'), '');
+    if (trimmed.isEmpty) {
+      return '';
+    }
+    if (trimmed.length <= 4) {
+      return trimmed.toLowerCase();
+    }
+    return _normalizeCatalogValue(trimmed);
+  }
+
+  Future<void> _ensureCatalogDefaultsForKind(ProductCatalogKind kind) async {
+    for (final String value in kind.defaults) {
+      final String cleaned = _normalizeCatalogValue(value);
+      if (cleaned.isEmpty) {
+        continue;
+      }
+      final ProductCatalogItem? existing =
+          await (_db.select(_db.productCatalogItems)
+                ..where((ProductCatalogItems tbl) =>
+                    tbl.kind.equals(kind.key) & tbl.value.equals(cleaned)))
+              .getSingleOrNull();
+      if (existing == null) {
+        await _db.into(_db.productCatalogItems).insert(
+              ProductCatalogItemsCompanion.insert(
+                id: _uuid.v4(),
+                kind: kind.key,
+                value: cleaned,
+              ),
+              mode: InsertMode.insertOrIgnore,
+            );
+      } else if (!existing.isActive) {
+        await (_db.update(_db.productCatalogItems)
+              ..where((ProductCatalogItems tbl) => tbl.id.equals(existing.id)))
+            .write(
+          ProductCatalogItemsCompanion(
+            isActive: const Value(true),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<Map<String, int>> _usageCountByCatalogValue({
+    required ProductCatalogKind kind,
+  }) async {
+    final String column = switch (kind) {
+      ProductCatalogKind.type => 'product_type',
+      ProductCatalogKind.category => 'category',
+      ProductCatalogKind.unit => 'unit_measure',
+    };
+    final List<QueryRow> rows = await _db.customSelect(
+      '''
+      SELECT LOWER(TRIM($column)) AS value_key, COUNT(*) AS usage_count
+      FROM products
+      WHERE is_active = 1
+      GROUP BY LOWER(TRIM($column))
+      ''',
+    ).get();
+    return <String, int>{
+      for (final QueryRow row in rows)
+        (row.readNullable<String>('value_key') ?? '').trim():
+            (row.data['usage_count'] as num?)?.toInt() ?? 0,
+    };
+  }
+
+  Future<int> _countProductsByCatalogValue({
+    required ProductCatalogKind kind,
+    required String value,
+  }) async {
+    final String column = switch (kind) {
+      ProductCatalogKind.type => 'product_type',
+      ProductCatalogKind.category => 'category',
+      ProductCatalogKind.unit => 'unit_measure',
+    };
+    final QueryRow? row = await _db.customSelect(
+      '''
+      SELECT COUNT(*) AS total
+      FROM products
+      WHERE is_active = 1
+        AND LOWER(TRIM($column)) = LOWER(TRIM(?))
+      ''',
+      variables: <Variable<Object>>[Variable<String>(value)],
+    ).getSingleOrNull();
+    return (row?.data['total'] as num?)?.toInt() ?? 0;
+  }
+
+  Future<int> _countActiveCatalogItems(ProductCatalogKind kind) async {
+    final QueryRow? row = await _db.customSelect(
+      '''
+      SELECT COUNT(*) AS total
+      FROM product_catalog_items
+      WHERE kind = ?
+        AND is_active = 1
+      ''',
+      variables: <Variable<Object>>[Variable<String>(kind.key)],
+    ).getSingleOrNull();
+    return (row?.data['total'] as num?)?.toInt() ?? 0;
+  }
+
+  MeasurementUnitCatalog _defaultMeasurementCatalog() {
+    final List<MeasurementUnitTypeModel> types = <MeasurementUnitTypeModel>[
+      MeasurementUnitTypeModel(
+        id: 'unit-type-length',
+        name: 'Longitud',
+        description: 'Unidades para distancia y tamaño.',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 0,
+      ),
+      MeasurementUnitTypeModel(
+        id: 'unit-type-mass',
+        name: 'Masa',
+        description: 'Unidades para peso y masa.',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 1,
+      ),
+      MeasurementUnitTypeModel(
+        id: 'unit-type-volume',
+        name: 'Volumen',
+        description: 'Unidades para capacidad y líquidos.',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 2,
+      ),
+      MeasurementUnitTypeModel(
+        id: 'unit-type-count',
+        name: 'Unidades',
+        description: 'Unidades de conteo para productos.',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 3,
+      ),
+    ];
+
+    final List<MeasurementUnitModel> units = <MeasurementUnitModel>[
+      MeasurementUnitModel(
+        id: 'unit-m',
+        typeId: 'unit-type-length',
+        symbol: 'm',
+        name: 'Metro',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 0,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-km',
+        typeId: 'unit-type-length',
+        symbol: 'km',
+        name: 'Kilometro',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 1,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-cm',
+        typeId: 'unit-type-length',
+        symbol: 'cm',
+        name: 'Centimetro',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 2,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-mm',
+        typeId: 'unit-type-length',
+        symbol: 'mm',
+        name: 'Milimetro',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 3,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-g',
+        typeId: 'unit-type-mass',
+        symbol: 'g',
+        name: 'Gramo',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 10,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-kg',
+        typeId: 'unit-type-mass',
+        symbol: 'kg',
+        name: 'Kilogramo',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 11,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-lb',
+        typeId: 'unit-type-mass',
+        symbol: 'lb',
+        name: 'Libra',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 12,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-ml',
+        typeId: 'unit-type-volume',
+        symbol: 'ml',
+        name: 'Mililitro',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 20,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-l',
+        typeId: 'unit-type-volume',
+        symbol: 'l',
+        name: 'Litro',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 21,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-ud',
+        typeId: 'unit-type-count',
+        symbol: 'ud',
+        name: 'Unidad',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 30,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-caja',
+        typeId: 'unit-type-count',
+        symbol: 'caja',
+        name: 'Caja',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 31,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-paquete',
+        typeId: 'unit-type-count',
+        symbol: 'paquete',
+        name: 'Paquete',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 32,
+      ),
+    ];
+
+    return MeasurementUnitCatalog(types: types, units: units).normalized();
+  }
+
+  Future<void> _saveMeasurementUnitCatalog(
+      MeasurementUnitCatalog catalog) async {
+    await _db.into(_db.appSettings).insertOnConflictUpdate(
+          AppSettingsCompanion.insert(
+            key: _measurementCatalogKey,
+            value: jsonEncode(catalog.toJson()),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
+  }
+
+  Future<MeasurementUnitCatalog> _setMeasurementUnitsActive({
+    required MeasurementUnitCatalog catalog,
+    required Set<String> unitIds,
+    required bool isActive,
+  }) async {
+    final List<MeasurementUnitModel> units =
+        catalog.units.toList(growable: true);
+    for (int i = 0; i < units.length; i++) {
+      final MeasurementUnitModel row = units[i];
+      if (!unitIds.contains(row.id)) {
+        continue;
+      }
+      if (!isActive) {
+        final int usage = await _countProductsByCatalogValue(
+          kind: ProductCatalogKind.unit,
+          value: row.symbol,
+        );
+        if (usage > 0) {
+          throw Exception(
+            'No se puede desactivar ${row.symbol}: está en uso por $usage producto(s).',
+          );
+        }
+      }
+      units[i] = row.copyWith(isActive: isActive);
+    }
+    return MeasurementUnitCatalog(types: catalog.types, units: units)
+        .normalized();
+  }
+
+  Future<void> _syncMeasurementUnitsWithProductCatalog(
+    List<MeasurementUnitModel> units,
+  ) async {
+    final List<ProductCatalogItem> catalogUnits =
+        await (_db.select(_db.productCatalogItems)
+              ..where(
+                (ProductCatalogItems tbl) => tbl.kind.equals(
+                  ProductCatalogKind.unit.key,
+                ),
+              ))
+            .get();
+
+    for (final MeasurementUnitModel unit in units) {
+      ProductCatalogItem? existing;
+      for (final ProductCatalogItem row in catalogUnits) {
+        if (row.value.trim().toLowerCase() == unit.symbol.toLowerCase()) {
+          existing = row;
+          break;
+        }
+      }
+      if (existing == null) {
+        if (unit.isActive) {
+          await _db.into(_db.productCatalogItems).insert(
+                ProductCatalogItemsCompanion.insert(
+                  id: _uuid.v4(),
+                  kind: ProductCatalogKind.unit.key,
+                  value: unit.symbol,
+                ),
+              );
+        }
+        continue;
+      }
+      final ProductCatalogItem catalogItem = existing;
+      if (catalogItem.value != unit.symbol ||
+          catalogItem.isActive != unit.isActive) {
+        await (_db.update(_db.productCatalogItems)
+              ..where(
+                (ProductCatalogItems tbl) => tbl.id.equals(catalogItem.id),
+              ))
+            .write(
+          ProductCatalogItemsCompanion(
+            value: Value(unit.symbol),
+            isActive: Value(unit.isActive),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
+      }
+    }
   }
 }

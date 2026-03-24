@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_providers.dart';
@@ -29,6 +30,7 @@ class MovimientosInventarioPage extends ConsumerStatefulWidget {
 class _MovimientosInventarioPageState
     extends ConsumerState<MovimientosInventarioPage> {
   final TextEditingController _searchCtrl = TextEditingController();
+  ProviderSubscription<int>? _inventoryRefreshSubscription;
 
   List<Warehouse> _warehouses = <Warehouse>[];
   List<InventoryMovementReason> _reasons = <InventoryMovementReason>[];
@@ -42,6 +44,15 @@ class _MovimientosInventarioPageState
   @override
   void initState() {
     super.initState();
+    _inventoryRefreshSubscription = ref.listenManual<int>(
+      inventoryRefreshSignalProvider,
+      (int? previous, int next) {
+        if (!mounted) {
+          return;
+        }
+        unawaited(_reloadMovements());
+      },
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;
@@ -52,6 +63,8 @@ class _MovimientosInventarioPageState
 
   @override
   void dispose() {
+    _inventoryRefreshSubscription?.close();
+    _inventoryRefreshSubscription = null;
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -234,11 +247,8 @@ class _MovimientosInventarioPageState
                 : 'Salida manual inventario')
             : note,
       );
-      if (mounted) {
-        setState(() => _selectedWarehouseId = safeWarehouseId);
-      }
       ref.read(inventoryRefreshSignalProvider.notifier).state += 1;
-      await _bootstrap();
+      await _reloadMovements();
       _show('Movimiento registrado.');
     } catch (e) {
       _show('No se pudo registrar movimiento: $e');
@@ -744,7 +754,93 @@ class _MovimientosInventarioPageState
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  List<Widget> _buildGroupedMovementWidgets(List<_MovementDateGroup> groups) {
+  void _goBack() {
+    final NavigatorState navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
+    context.go('/inventario');
+  }
+
+  bool _canArchiveMovement(InventoryMovementView movement) {
+    final UserSession? session = ref.read(currentSessionProvider);
+    if (session?.isAdmin ?? false) {
+      return true;
+    }
+    final String source = movement.movementSource.trim().toLowerCase();
+    final String refType = (movement.refType ?? '').trim().toLowerCase();
+    final bool isSaleRef =
+        refType == 'sale' || refType == 'sale_pos' || refType == 'sale_direct';
+    return source == 'manual' && !isSaleRef && movement.reasonCode != 'sale';
+  }
+
+  Future<void> _archiveMovement(InventoryMovementView movement) async {
+    final session = ref.read(currentSessionProvider);
+    if (session == null) {
+      _show('Debes iniciar sesion.');
+      return;
+    }
+    if (!_canArchiveMovement(movement)) {
+      _show('Solo se pueden dar de baja movimientos manuales.');
+      return;
+    }
+    final bool isAdmin = session.isAdmin;
+
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title:
+              Text(isAdmin ? 'Eliminar movimiento' : 'Dar de baja movimiento'),
+          content: Text(
+            isAdmin
+                ? 'Se eliminará el movimiento de "${movement.productName}" y se revertirá su impacto en stock.\n\nEsta acción puede desajustar inventario, ventas y reportes.'
+                : 'Se ocultara el movimiento de "${movement.productName}" y se revertira su impacto en stock.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(isAdmin ? 'Eliminar' : 'Confirmar'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirm != true) {
+      return;
+    }
+
+    try {
+      await ref.read(inventarioLocalDataSourceProvider).archiveManualMovement(
+            movementId: movement.id,
+            userId: session.userId,
+            note: isAdmin
+                ? 'Movimiento eliminado por admin ${session.username}'
+                : 'Movimiento archivado por ${session.username}',
+            allowAnyMovement: isAdmin,
+            allowNegativeResult: isAdmin,
+          );
+      ref.read(inventoryRefreshSignalProvider.notifier).state += 1;
+      await _reloadMovements();
+      _show(isAdmin ? 'Movimiento eliminado.' : 'Movimiento archivado.');
+    } catch (e) {
+      _show(
+        isAdmin
+            ? 'No se pudo eliminar el movimiento: $e'
+            : 'No se pudo archivar el movimiento: $e',
+      );
+    }
+  }
+
+  List<Widget> _buildGroupedMovementWidgets(
+    List<_MovementDateGroup> groups, {
+    required bool canArchive,
+  }) {
     final List<Widget> widgets = <Widget>[];
     for (final _MovementDateGroup group in groups) {
       widgets.add(
@@ -766,6 +862,9 @@ class _MovimientosInventarioPageState
           InventoryMovementCard(
             movement: movement,
             timeLabel: _formatTimeShort(movement.createdAt),
+            onArchive: canArchive && _canArchiveMovement(movement)
+                ? () => _archiveMovement(movement)
+                : null,
           ),
         );
       }
@@ -790,8 +889,14 @@ class _MovimientosInventarioPageState
       currentRoute: '/inventario-movimientos',
       onRefresh: _bootstrap,
       showTopTabs: false,
+      showBottomNavigationBar: true,
       useDefaultActions: false,
-      showDrawer: true,
+      showDrawer: false,
+      appBarLeading: IconButton(
+        tooltip: 'Volver',
+        onPressed: _goBack,
+        icon: const Icon(Icons.arrow_back_rounded),
+      ),
       appBarActions: <Widget>[
         IconButton(
           tooltip: 'Filtros',
@@ -884,7 +989,10 @@ class _MovimientosInventarioPageState
                       ),
                     )
                   else
-                    ..._buildGroupedMovementWidgets(groups),
+                    ..._buildGroupedMovementWidgets(
+                      groups,
+                      canArchive: license.canWrite,
+                    ),
                 ],
               ),
             ),

@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
@@ -36,6 +38,18 @@ class BackupResult {
   final String path;
   final int sizeBytes;
   final DateTime createdAt;
+}
+
+class BackupRestoreResult {
+  const BackupRestoreResult({
+    required this.path,
+    required this.restoredAt,
+    required this.tablesRestored,
+  });
+
+  final String path;
+  final DateTime restoredAt;
+  final int tablesRestored;
 }
 
 class CsvExportResult {
@@ -78,6 +92,16 @@ class QrPdfExportResult {
   final DateTime createdAt;
 }
 
+class DataResetResult {
+  const DataResetResult({
+    required this.resetAt,
+    required this.tablesCleared,
+  });
+
+  final DateTime resetAt;
+  final int tablesCleared;
+}
+
 class DataManagementLocalDataSource {
   DataManagementLocalDataSource(
     this._db, {
@@ -89,9 +113,57 @@ class DataManagementLocalDataSource {
   final AppDatabase _db;
   final OfflineLicenseService _licenseService;
   final Uuid _uuid;
+  static const MethodChannel _nativeChannel =
+      MethodChannel('com.example.posipv/device_identity');
+  static const List<String> _restorableTables = <String>[
+    'users',
+    'roles',
+    'permissions',
+    'role_permissions',
+    'user_roles',
+    'products',
+    'product_catalog_items',
+    'warehouses',
+    'pos_terminals',
+    'pos_sessions',
+    'pos_session_cash_breakdowns',
+    'employees',
+    'pos_session_employees',
+    'pos_terminal_employees',
+    'stock_balances',
+    'stock_movements',
+    'customers',
+    'sales',
+    'sale_items',
+    'payments',
+    'ipv_reports',
+    'ipv_report_lines',
+    'app_settings',
+    'audit_logs',
+  ];
   static const String _fullLicenseDataMessage =
       'Modo demo: importar/exportar productos y gestionar salvas de la base de datos '
       'esta disponible solo con licencia activa.';
+  static const List<String> _resetOperationalTables = <String>[
+    'payments',
+    'sale_items',
+    'sales',
+    'ipv_report_lines',
+    'ipv_reports',
+    'pos_session_cash_breakdowns',
+    'pos_session_employees',
+    'pos_sessions',
+    'pos_terminal_employees',
+    'stock_movements',
+    'stock_balances',
+    'customers',
+    'products',
+    'employees',
+    'pos_terminals',
+    'warehouses',
+    'product_catalog_items',
+    'audit_logs',
+  ];
 
   Future<String> dataRootPath() async {
     final Directory root = await _resolvePosIpvRootDir();
@@ -123,9 +195,252 @@ class DataManagementLocalDataSource {
     );
   }
 
+  Future<DataResetResult> resetOperationalData() async {
+    await _licenseService.requireFullAccess(message: _fullLicenseDataMessage);
+    await _licenseService.requireWriteAccess();
+
+    final DateTime now = DateTime.now();
+    await _db.customStatement('PRAGMA foreign_keys = OFF;');
+    try {
+      await _db.transaction(() async {
+        for (final String table in _resetOperationalTables) {
+          await _db.customStatement('DELETE FROM $table;');
+        }
+        await _seedDefaultProductCatalogItemsForReset();
+      });
+    } finally {
+      await _db.customStatement('PRAGMA foreign_keys = ON;');
+    }
+
+    return DataResetResult(
+      resetAt: now,
+      tablesCleared: _resetOperationalTables.length,
+    );
+  }
+
   Future<List<DataFileEntry>> listBackupFiles() async {
-    final Directory dir = await _resolveBackupDir();
-    return _listFiles(dir, extension: '.db');
+    final Directory backupDir = await _resolveBackupDir();
+    final Directory rootDir = await _resolvePosIpvRootDir();
+    final Directory downloadsBase = await _resolveDownloadsBaseDir();
+
+    final List<DataFileEntry> collected = <DataFileEntry>[
+      ...await _listFiles(backupDir, extension: '.db'),
+      ...await _listFiles(
+        rootDir,
+        extension: '.db',
+        recursive: true,
+        maxDepth: 3,
+      ),
+      ...await _listFiles(
+        downloadsBase,
+        extension: '.db',
+        recursive: true,
+        maxDepth: 2,
+      ),
+    ];
+
+    final Map<String, DataFileEntry> byPath = <String, DataFileEntry>{
+      for (final DataFileEntry entry in collected) entry.path: entry,
+    };
+    final List<DataFileEntry> out = byPath.values.toList(growable: false)
+      ..sort((DataFileEntry a, DataFileEntry b) {
+        return b.modifiedAt.compareTo(a.modifiedAt);
+      });
+    return out;
+  }
+
+  Future<BackupRestoreResult> restoreDatabaseBackup(String filePath) async {
+    await _licenseService.requireFullAccess(message: _fullLicenseDataMessage);
+    await _licenseService.requireWriteAccess();
+    final String safePath = filePath.trim();
+    if (safePath.isEmpty) {
+      throw Exception('Debes seleccionar una copia de seguridad válida.');
+    }
+
+    final File backup = File(safePath);
+    if (!backup.existsSync()) {
+      throw Exception('La copia seleccionada no existe.');
+    }
+
+    final File tempBackup = await _copyBackupToTemp(backup);
+    final String escapedPath = tempBackup.path.replaceAll("'", "''");
+    final String backupAlias =
+        'backup_db_${DateTime.now().millisecondsSinceEpoch}';
+    final DateTime now = DateTime.now();
+
+    await _db.customStatement('PRAGMA foreign_keys = OFF;');
+    try {
+      await _db.transaction(() async {
+        // Defensive detach in case a previous restore attempt left an alias attached.
+        try {
+          await _db.customStatement('DETACH DATABASE backup_db;');
+        } catch (_) {}
+        await _db
+            .customStatement("ATTACH DATABASE '$escapedPath' AS $backupAlias;");
+        try {
+          final List<QueryRow> rows = await _db.customSelect(
+            '''
+            SELECT name
+            FROM $backupAlias.sqlite_master
+            WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+            ''',
+          ).get();
+          final Set<String> backupTables = rows
+              .map((QueryRow row) => (row.readNullable<String>('name') ?? ''))
+              .map((String name) => name.trim())
+              .where((String name) => name.isNotEmpty)
+              .toSet();
+
+          for (final String table in _restorableTables) {
+            if (!backupTables.contains(table)) {
+              throw Exception(
+                'La copia no es compatible: falta la tabla "$table".',
+              );
+            }
+          }
+
+          for (final String table in _restorableTables.reversed) {
+            await _db.customStatement('DELETE FROM $table;');
+          }
+
+          for (final String table in _restorableTables) {
+            if (table == 'stock_movements') {
+              final Set<String> backupColumns = await _loadBackupTableColumns(
+                backupAlias: backupAlias,
+                tableName: table,
+              );
+              await _restoreStockMovementsWithSanitization(
+                backupAlias: backupAlias,
+                backupColumns: backupColumns,
+              );
+              continue;
+            }
+            await _db.customStatement(
+              'INSERT INTO $table SELECT * FROM $backupAlias.$table;',
+            );
+          }
+        } finally {
+          try {
+            await _db.customStatement('DETACH DATABASE $backupAlias;');
+          } catch (_) {}
+        }
+      });
+    } finally {
+      await _db.customStatement('PRAGMA foreign_keys = ON;');
+      if (tempBackup.existsSync()) {
+        try {
+          await tempBackup.delete();
+        } catch (_) {}
+      }
+    }
+
+    return BackupRestoreResult(
+      path: backup.path,
+      restoredAt: now,
+      tablesRestored: _restorableTables.length,
+    );
+  }
+
+  Future<Set<String>> _loadBackupTableColumns({
+    required String backupAlias,
+    required String tableName,
+  }) async {
+    final List<QueryRow> rows = await _db
+        .customSelect(
+          'PRAGMA $backupAlias.table_info($tableName)',
+        )
+        .get();
+    return rows
+        .map((QueryRow row) => (row.readNullable<String>('name') ?? '').trim())
+        .where((String name) => name.isNotEmpty)
+        .toSet();
+  }
+
+  Future<void> _restoreStockMovementsWithSanitization({
+    required String backupAlias,
+    required Set<String> backupColumns,
+  }) async {
+    String colOr(String column, String fallbackSql) {
+      if (backupColumns.contains(column)) {
+        return column;
+      }
+      return fallbackSql;
+    }
+
+    final String isVoidedExpr = backupColumns.contains('is_voided')
+        ? 'CASE WHEN CAST(COALESCE(is_voided, 0) AS INTEGER) = 1 THEN 1 ELSE 0 END'
+        : '0';
+
+    await _db.customStatement(
+      '''
+      INSERT INTO stock_movements (
+        id,
+        product_id,
+        warehouse_id,
+        type,
+        qty,
+        reason_code,
+        movement_source,
+        ref_type,
+        ref_id,
+        note,
+        is_voided,
+        voided_at,
+        voided_by,
+        void_note,
+        created_by,
+        created_at
+      )
+      SELECT
+        ${colOr('id', "''")},
+        ${colOr('product_id', "''")},
+        ${colOr('warehouse_id', "''")},
+        ${colOr('type', "''")},
+        ${colOr('qty', '0')},
+        ${colOr('reason_code', 'NULL')},
+        ${colOr('movement_source', "'manual'")},
+        ${colOr('ref_type', 'NULL')},
+        ${colOr('ref_id', 'NULL')},
+        ${colOr('note', 'NULL')},
+        $isVoidedExpr,
+        ${colOr('voided_at', 'NULL')},
+        ${colOr('voided_by', 'NULL')},
+        ${colOr('void_note', 'NULL')},
+        ${colOr('created_by', "''")},
+        ${colOr('created_at', 'CURRENT_TIMESTAMP')}
+      FROM $backupAlias.stock_movements
+      ''',
+    );
+  }
+
+  Future<String?> pickBackupFileWithSystemExplorer() async {
+    try {
+      final String? selectedPath =
+          await _nativeChannel.invokeMethod<String>('pickBackupFile');
+      final String cleaned = (selectedPath ?? '').trim();
+      if (cleaned.isEmpty) {
+        return null;
+      }
+      return cleaned;
+    } on PlatformException catch (e) {
+      throw Exception(
+        e.message ?? 'No se pudo abrir el explorador de archivos.',
+      );
+    }
+  }
+
+  Future<void> restartApplication() async {
+    try {
+      await _nativeChannel
+          .invokeMethod<bool>('restartApp')
+          .timeout(const Duration(seconds: 1));
+    } on PlatformException catch (e) {
+      throw Exception(
+        e.message ?? 'No se pudo reiniciar la aplicación.',
+      );
+    } on TimeoutException {
+      throw Exception('Tiempo de espera agotado al reiniciar la aplicación.');
+    }
   }
 
   Future<CsvExportResult> exportProductsCsv() async {
@@ -555,6 +870,55 @@ class DataManagementLocalDataSource {
     await source.copy(target.path);
   }
 
+  Future<File> _copyBackupToTemp(File source) async {
+    final Directory tempDir = await getTemporaryDirectory();
+    final String fileName =
+        'restore-${DateTime.now().millisecondsSinceEpoch}.db';
+    final File target = File(p.join(tempDir.path, fileName));
+    if (target.existsSync()) {
+      await target.delete();
+    }
+    try {
+      await source.copy(target.path);
+      return target;
+    } catch (_) {
+      // fallback below
+    }
+
+    try {
+      final List<int> bytes = await source.readAsBytes();
+      await target.writeAsBytes(bytes, flush: true);
+      return target;
+    } catch (e) {
+      throw Exception(
+        'No se pudo abrir la copia seleccionada. '
+        'Usa "Explorar archivo" y selecciona el respaldo .db.\nDetalle: $e',
+      );
+    }
+  }
+
+  Future<void> _seedDefaultProductCatalogItemsForReset() async {
+    const Map<String, List<String>> defaults = <String, List<String>>{
+      'type': <String>['Fisico', 'Servicio', 'Digital'],
+      'category': <String>['General'],
+      'unit': <String>['Unidad', 'Caja', 'Kg', 'Litro', 'Metro', 'Paquete'],
+    };
+
+    for (final MapEntry<String, List<String>> entry in defaults.entries) {
+      for (final String value in entry.value) {
+        final String id = '${entry.key}-${_slug(value)}';
+        await _db.into(_db.productCatalogItems).insert(
+              ProductCatalogItemsCompanion.insert(
+                id: id,
+                kind: entry.key,
+                value: value,
+              ),
+              mode: InsertMode.insertOrIgnore,
+            );
+      }
+    }
+  }
+
   Future<Directory> _resolvePosIpvRootDir() async {
     final Directory base = await _resolveDownloadsBaseDir();
     final Directory dir = Directory(p.join(base.path, 'POSIPV'));
@@ -631,28 +995,44 @@ class DataManagementLocalDataSource {
   Future<List<DataFileEntry>> _listFiles(
     Directory dir, {
     required String extension,
+    bool recursive = false,
+    int maxDepth = 0,
   }) async {
     if (!dir.existsSync()) {
       return const <DataFileEntry>[];
     }
+
     final List<DataFileEntry> out = <DataFileEntry>[];
-    await for (final FileSystemEntity entity in dir.list(followLinks: false)) {
-      if (entity is! File) {
-        continue;
-      }
-      if (!entity.path.toLowerCase().endsWith(extension)) {
-        continue;
-      }
-      final FileStat stat = await entity.stat();
-      out.add(
-        DataFileEntry(
-          path: entity.path,
-          name: p.basename(entity.path),
-          modifiedAt: stat.modified,
-          sizeBytes: stat.size,
-        ),
-      );
+
+    Future<void> scanDir(Directory current, int depth) async {
+      try {
+        await for (final FileSystemEntity entity
+            in current.list(followLinks: false)) {
+          if (entity is File) {
+            if (!entity.path.toLowerCase().endsWith(extension)) {
+              continue;
+            }
+            final FileStat stat = await entity.stat();
+            out.add(
+              DataFileEntry(
+                path: entity.path,
+                name: p.basename(entity.path),
+                modifiedAt: stat.modified,
+                sizeBytes: stat.size,
+              ),
+            );
+            continue;
+          }
+          if (!recursive || entity is! Directory || depth >= maxDepth) {
+            continue;
+          }
+          await scanDir(entity, depth + 1);
+        }
+      } catch (_) {}
     }
+
+    await scanDir(dir, 0);
+
     out.sort((DataFileEntry a, DataFileEntry b) {
       return b.modifiedAt.compareTo(a.modifiedAt);
     });
@@ -681,6 +1061,13 @@ class DataManagementLocalDataSource {
         .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
         .replaceAll(RegExp(r'_+'), '_')
         .replaceAll(RegExp(r'^_|_$'), '');
+  }
+
+  String _slug(String value) {
+    final String cleaned = value.trim().toLowerCase();
+    return cleaned
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+        .replaceAll(RegExp(r'^-+|-+$'), '');
   }
 
   String _cell(String value) {

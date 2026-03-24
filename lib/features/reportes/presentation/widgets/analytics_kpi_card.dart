@@ -5,19 +5,20 @@ class AnalyticsKpiCard extends StatelessWidget {
     super.key,
     required this.title,
     required this.value,
-    required this.deltaPercent,
-    required this.deltaText,
+    this.deltaPercent,
+    this.deltaText,
   });
 
   final String title;
   final String value;
-  final double deltaPercent;
-  final String deltaText;
+  final double? deltaPercent;
+  final String? deltaText;
 
   @override
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final bool positive = deltaPercent >= 0;
+    final bool hasDelta = deltaPercent != null && deltaText != null;
+    final bool positive = (deltaPercent ?? 0) >= 0;
     final Color deltaColor = positive
         ? (isDark ? const Color(0xFF34D399) : const Color(0xFF059669))
         : (isDark ? const Color(0xFFFB7185) : const Color(0xFFE11D48));
@@ -54,28 +55,30 @@ class AnalyticsKpiCard extends StatelessWidget {
               color: isDark ? Colors.white : const Color(0xFF0F172A),
             ),
           ),
-          const SizedBox(height: 7),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Icon(
-                positive
-                    ? Icons.trending_up_rounded
-                    : Icons.trending_down_rounded,
-                size: 16,
-                color: deltaColor,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                deltaText,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
+          if (hasDelta) ...<Widget>[
+            const SizedBox(height: 7),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Icon(
+                  positive
+                      ? Icons.trending_up_rounded
+                      : Icons.trending_down_rounded,
+                  size: 16,
                   color: deltaColor,
                 ),
-              ),
-            ],
-          ),
+                const SizedBox(width: 4),
+                Text(
+                  deltaText!,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: deltaColor,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
