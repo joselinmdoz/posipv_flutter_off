@@ -8,6 +8,8 @@ class AnalyticsSalesChannelCard extends StatelessWidget {
     required this.posRevenueCents,
     required this.directOrdersCount,
     required this.directRevenueCents,
+    this.onPosTap,
+    this.onDirectTap,
   });
 
   final String currencySymbol;
@@ -15,6 +17,8 @@ class AnalyticsSalesChannelCard extends StatelessWidget {
   final int posRevenueCents;
   final int directOrdersCount;
   final int directRevenueCents;
+  final VoidCallback? onPosTap;
+  final VoidCallback? onDirectTap;
 
   @override
   Widget build(BuildContext context) {
@@ -46,6 +50,7 @@ class AnalyticsSalesChannelCard extends StatelessWidget {
             amount:
                 '$currencySymbol${(posRevenueCents / 100).toStringAsFixed(2)}',
             badgeColor: const Color(0xFF1152D4),
+            onTap: onPosTap,
           ),
           const SizedBox(height: 8),
           _ChannelRow(
@@ -54,6 +59,7 @@ class AnalyticsSalesChannelCard extends StatelessWidget {
             amount:
                 '$currencySymbol${(directRevenueCents / 100).toStringAsFixed(2)}',
             badgeColor: const Color(0xFF0D9488),
+            onTap: onDirectTap,
           ),
         ],
       ),
@@ -67,67 +73,76 @@ class _ChannelRow extends StatelessWidget {
     required this.ordersCount,
     required this.amount,
     required this.badgeColor,
+    required this.onTap,
   });
 
   final String label;
   final int ordersCount;
   final String amount;
   final Color badgeColor;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      decoration: BoxDecoration(
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(12),
-        color: isDark ? const Color(0xFF111827) : const Color(0xFFF8FAFC),
-      ),
-      child: Row(
-        children: <Widget>[
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: badgeColor,
-              borderRadius: BorderRadius.circular(999),
-            ),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            color: isDark ? const Color(0xFF111827) : const Color(0xFFF8FAFC),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: isDark ? Colors.white : const Color(0xFF0F172A),
-                  ),
+          child: Row(
+            children: <Widget>[
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: badgeColor,
+                  borderRadius: BorderRadius.circular(999),
                 ),
-                Text(
-                  '$ordersCount ventas',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isDark
-                        ? const Color(0xFF94A3B8)
-                        : const Color(0xFF64748B),
-                  ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white : const Color(0xFF0F172A),
+                      ),
+                    ),
+                    Text(
+                      '$ordersCount ventas',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark
+                            ? const Color(0xFF94A3B8)
+                            : const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              Text(
+                amount,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: isDark ? Colors.white : const Color(0xFF0F172A),
+                ),
+              ),
+            ],
           ),
-          Text(
-            amount,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-              color: isDark ? Colors.white : const Color(0xFF0F172A),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

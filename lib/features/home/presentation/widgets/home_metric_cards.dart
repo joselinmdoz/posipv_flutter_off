@@ -4,6 +4,7 @@ import '../../../reportes/data/reportes_local_datasource.dart';
 
 class HomeMetricCards extends StatelessWidget {
   final SalesSummary today;
+  final SalesSummary yesterday;
   final int ordersCount; // Usualmente hoy.salesCount
   final int lowStockCount; // Obtenido del insight
   final String Function(int) moneyFormatter;
@@ -11,6 +12,7 @@ class HomeMetricCards extends StatelessWidget {
   const HomeMetricCards({
     super.key,
     required this.today,
+    required this.yesterday,
     required this.ordersCount,
     required this.lowStockCount,
     required this.moneyFormatter,
@@ -36,6 +38,11 @@ class HomeMetricCards extends StatelessWidget {
   Widget _buildHeroCard(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool isDark = theme.brightness == Brightness.dark;
+    final _MetricDelta delta = _calculateDelta(
+      current: today.totalCents,
+      previous: yesterday.totalCents,
+    );
+    final Color deltaColor = _deltaColor(delta, isDark: isDark);
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -75,31 +82,27 @@ class HomeMetricCards extends StatelessWidget {
                   size: 24,
                 ),
               ),
-              // Aquí podría ir el porcentaje si estuviera disponible. 
-              // Ponemos un mockup como en el HTML.
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: isDark
-                      ? const Color(0xFF059669).withValues(alpha: 0.2)
-                      : const Color(0xFFECFDF5),
+                  color: deltaColor.withValues(alpha: isDark ? 0.22 : 0.14),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      Icons.trending_up_rounded,
-                      color: isDark ? const Color(0xFF34D399) : const Color(0xFF059669),
+                      _deltaIcon(delta),
+                      color: deltaColor,
                       size: 14,
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      '+12.5%',
+                      _deltaLabel(delta),
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color: isDark ? const Color(0xFF34D399) : const Color(0xFF059669),
+                        color: deltaColor,
                       ),
                     ),
                   ],
@@ -126,6 +129,15 @@ class HomeMetricCards extends StatelessWidget {
               letterSpacing: -1,
             ),
           ),
+          const SizedBox(height: 6),
+          Text(
+            'Ayer: ${moneyFormatter(yesterday.totalCents)}',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+            ),
+          ),
         ],
       ),
     );
@@ -134,6 +146,11 @@ class HomeMetricCards extends StatelessWidget {
   Widget _buildOrdersCard(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool isDark = theme.brightness == Brightness.dark;
+    final _MetricDelta delta = _calculateDelta(
+      current: ordersCount,
+      previous: yesterday.salesCount,
+    );
+    final Color deltaColor = _deltaColor(delta, isDark: isDark);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -161,16 +178,28 @@ class HomeMetricCards extends StatelessWidget {
             children: [
               Icon(
                 Icons.shopping_cart_outlined,
-                color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                color:
+                    isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
                 size: 24,
               ),
-              Text(
-                '+4%',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: isDark ? const Color(0xFF34D399) : const Color(0xFF059669),
-                ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _deltaIcon(delta),
+                    size: 13,
+                    color: deltaColor,
+                  ),
+                  const SizedBox(width: 3),
+                  Text(
+                    _deltaLabel(delta),
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: deltaColor,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -193,6 +222,15 @@ class HomeMetricCards extends StatelessWidget {
               color: isDark ? Colors.white : const Color(0xFF0F172A),
             ),
           ),
+          const SizedBox(height: 4),
+          Text(
+            'Ayer: ${yesterday.salesCount}',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+            ),
+          ),
         ],
       ),
     );
@@ -201,6 +239,7 @@ class HomeMetricCards extends StatelessWidget {
   Widget _buildStockCard(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool isDark = theme.brightness == Brightness.dark;
+    final _StockStatus stockStatus = _resolveStockStatus(lowStockCount);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -228,15 +267,16 @@ class HomeMetricCards extends StatelessWidget {
             children: [
               Icon(
                 Icons.inventory_2_outlined,
-                color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                color:
+                    isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
                 size: 24,
               ),
               Text(
-                'Crítico',
+                stockStatus.label,
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w800,
-                  color: isDark ? const Color(0xFFFB7185) : const Color(0xFFEF4444),
+                  color: stockStatus.color,
                 ),
               ),
             ],
@@ -253,15 +293,98 @@ class HomeMetricCards extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            '$lowStockCount ítem${lowStockCount != 1 ? 's' : ''}',
+            '$lowStockCount ítem${lowStockCount == 1 ? '' : 's'}',
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.w800,
               color: isDark ? Colors.white : const Color(0xFF0F172A),
             ),
           ),
+          const SizedBox(height: 4),
+          Text(
+            lowStockCount == 0 ? 'Sin alertas críticas' : 'Revisar reposición',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+            ),
+          ),
         ],
       ),
     );
   }
+
+  _MetricDelta _calculateDelta({
+    required int current,
+    required int previous,
+  }) {
+    if (previous == 0) {
+      if (current == 0) {
+        return const _MetricDelta(percent: 0, hasBaseline: true);
+      }
+      return const _MetricDelta(percent: 100, hasBaseline: false);
+    }
+    return _MetricDelta(
+      percent: ((current - previous) / previous) * 100,
+      hasBaseline: true,
+    );
+  }
+
+  String _deltaLabel(_MetricDelta delta) {
+    if (!delta.hasBaseline) {
+      return 'NUEVO';
+    }
+    final String sign = delta.percent > 0 ? '+' : '';
+    return '$sign${delta.percent.toStringAsFixed(1)}%';
+  }
+
+  IconData _deltaIcon(_MetricDelta delta) {
+    if (delta.percent > 0) {
+      return Icons.trending_up_rounded;
+    }
+    if (delta.percent < 0) {
+      return Icons.trending_down_rounded;
+    }
+    return Icons.remove_rounded;
+  }
+
+  Color _deltaColor(_MetricDelta delta, {required bool isDark}) {
+    if (delta.percent > 0) {
+      return isDark ? const Color(0xFF34D399) : const Color(0xFF059669);
+    }
+    if (delta.percent < 0) {
+      return isDark ? const Color(0xFFFB7185) : const Color(0xFFDC2626);
+    }
+    return isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+  }
+
+  _StockStatus _resolveStockStatus(int count) {
+    if (count <= 0) {
+      return const _StockStatus(label: 'OK', color: Color(0xFF059669));
+    }
+    if (count <= 5) {
+      return const _StockStatus(label: 'Atención', color: Color(0xFFD97706));
+    }
+    return const _StockStatus(label: 'Crítico', color: Color(0xFFDC2626));
+  }
+}
+
+class _MetricDelta {
+  const _MetricDelta({
+    required this.percent,
+    required this.hasBaseline,
+  });
+
+  final double percent;
+  final bool hasBaseline;
+}
+
+class _StockStatus {
+  const _StockStatus({
+    required this.label,
+    required this.color,
+  });
+
+  final String label;
+  final Color color;
 }

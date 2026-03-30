@@ -116,12 +116,93 @@ class AnalyticsTopCustomerStat {
   final DateTime? lastSaleAt;
 }
 
+class SalesAnalyticsSaleStat {
+  const SalesAnalyticsSaleStat({
+    required this.saleId,
+    required this.folio,
+    required this.createdAt,
+    required this.warehouseName,
+    required this.cashierUsername,
+    required this.customerName,
+    required this.terminalName,
+    required this.totalCents,
+    required this.itemsCount,
+    required this.channel,
+  });
+
+  final String saleId;
+  final String folio;
+  final DateTime createdAt;
+  final String warehouseName;
+  final String cashierUsername;
+  final String? customerName;
+  final String? terminalName;
+  final int totalCents;
+  final int itemsCount;
+  final String channel;
+}
+
+class SalesAnalyticsSaleLineStat {
+  const SalesAnalyticsSaleLineStat({
+    required this.productId,
+    required this.productName,
+    required this.sku,
+    required this.qty,
+    required this.unitPriceCents,
+    required this.lineTotalCents,
+  });
+
+  final String productId;
+  final String productName;
+  final String sku;
+  final double qty;
+  final int unitPriceCents;
+  final int lineTotalCents;
+}
+
+class SalesAnalyticsSalePaymentStat {
+  const SalesAnalyticsSalePaymentStat({
+    required this.method,
+    required this.amountCents,
+    required this.transactionId,
+    required this.sourceCurrencyCode,
+    required this.sourceAmountCents,
+    required this.createdAt,
+  });
+
+  final String method;
+  final int amountCents;
+  final String? transactionId;
+  final String? sourceCurrencyCode;
+  final int? sourceAmountCents;
+  final DateTime createdAt;
+}
+
+class SalesAnalyticsSaleDetailStat {
+  const SalesAnalyticsSaleDetailStat({
+    required this.sale,
+    required this.lines,
+    required this.payments,
+    required this.subtotalCents,
+    required this.taxCents,
+    required this.totalCents,
+  });
+
+  final SalesAnalyticsSaleStat sale;
+  final List<SalesAnalyticsSaleLineStat> lines;
+  final List<SalesAnalyticsSalePaymentStat> payments;
+  final int subtotalCents;
+  final int taxCents;
+  final int totalCents;
+}
+
 class SalesAnalyticsSnapshot {
   const SalesAnalyticsSnapshot({
     required this.fromDate,
     required this.toDate,
     required this.granularity,
     required this.totalRevenueCents,
+    required this.totalProfitCents,
     required this.avgOrderCents,
     required this.totalRevenueDeltaPercent,
     required this.avgOrderDeltaPercent,
@@ -145,6 +226,7 @@ class SalesAnalyticsSnapshot {
   final DateTime toDate;
   final SalesAnalyticsGranularity granularity;
   final int totalRevenueCents;
+  final int totalProfitCents;
   final int avgOrderCents;
   final double totalRevenueDeltaPercent;
   final double avgOrderDeltaPercent;
@@ -279,6 +361,7 @@ class IpvReportDetailStat {
 class ReportesDashboard {
   const ReportesDashboard({
     required this.today,
+    required this.yesterday,
     required this.lastDays,
     required this.topProducts,
     required this.recentSales,
@@ -287,6 +370,7 @@ class ReportesDashboard {
   });
 
   final SalesSummary today;
+  final SalesSummary yesterday;
   final List<DailySalesPoint> lastDays;
   final List<TopProductStat> topProducts;
   final List<RecentSaleStat> recentSales;
@@ -442,12 +526,16 @@ class ReportesLocalDataSource {
     final int safeIpvLimit = ipvLimit < 1 ? 1 : ipvLimit;
 
     final DateTime startToday = _startOfDay(now);
+    final DateTime startYesterday =
+        startToday.subtract(const Duration(days: 1));
     final DateTime startLastDays =
         startToday.subtract(Duration(days: safeLastDays - 1));
     final DateTime startTopWindow =
         startToday.subtract(Duration(days: safeTopDays - 1));
 
     final Future<List<Sale>> todaySalesFuture = _postedSalesSince(startToday);
+    final Future<List<Sale>> yesterdaySalesFuture =
+        _postedSalesBetween(startYesterday, startToday);
     final Future<List<Sale>> lastSalesFuture = _postedSalesSince(startLastDays);
     final Future<List<TopProductStat>> topFuture =
         _topProducts(startTopWindow, safeTopLimit);
@@ -459,6 +547,7 @@ class ReportesLocalDataSource {
         listIpvReports(limit: safeIpvLimit);
 
     final List<Sale> todaySales = await todaySalesFuture;
+    final List<Sale> yesterdaySales = await yesterdaySalesFuture;
     final List<Sale> lastSales = await lastSalesFuture;
     final List<TopProductStat> top = await topFuture;
     final List<RecentSaleStat> recent = await recentFuture;
@@ -469,6 +558,7 @@ class ReportesLocalDataSource {
 
     return ReportesDashboard(
       today: _buildTodaySummary(todaySales),
+      yesterday: _buildTodaySummary(yesterdaySales),
       lastDays: _buildLastDaysSeries(lastSales),
       topProducts: top,
       recentSales: recent,
@@ -514,6 +604,10 @@ class ReportesLocalDataSource {
       from: from,
       toExclusive: toExclusive,
     );
+    final int totalProfitCents = await _profitCentsForRange(
+      from: from,
+      toExclusive: toExclusive,
+    );
     int posRevenueCents = 0;
     int posOrdersCount = 0;
     int directRevenueCents = 0;
@@ -537,8 +631,12 @@ class ReportesLocalDataSource {
       }
     }
 
-    final List<SalesTrendPointStat> trend =
-        _buildTrend(currentSales, granularity);
+    final List<SalesTrendPointStat> trend = _buildTrend(
+      sales: currentSales,
+      granularity: granularity,
+      from: from,
+      toExclusive: toExclusive,
+    );
     final List<AnalyticsTopProductStat> topProducts =
         await _topProductsForRange(
       from: from,
@@ -573,6 +671,7 @@ class ReportesLocalDataSource {
       toDate: toExclusive.subtract(const Duration(days: 1)),
       granularity: granularity,
       totalRevenueCents: currentTotal,
+      totalProfitCents: totalProfitCents,
       avgOrderCents: currentAvg,
       totalRevenueDeltaPercent: _pctChange(currentTotal, previousTotal),
       avgOrderDeltaPercent: _pctChange(currentAvg, previousAvg),
@@ -590,6 +689,287 @@ class ReportesLocalDataSource {
       byCashier: byCashier,
       byWarehouse: byWarehouse,
       topCustomers: topCustomers,
+    );
+  }
+
+  Future<List<SalesAnalyticsSaleStat>> listSalesForAnalyticsRange({
+    required DateTime fromDate,
+    required DateTime toDate,
+    int limit = 500,
+    String? channel,
+    String? paymentMethodKey,
+    String? dependentKey,
+  }) async {
+    final DateTime from = _startOfDay(fromDate);
+    DateTime toExclusive = _startOfDay(toDate).add(const Duration(days: 1));
+    if (!toExclusive.isAfter(from)) {
+      toExclusive = from.add(const Duration(days: 1));
+    }
+    final String? normalizedChannel = _normalizeChannelFilter(channel);
+    final String? normalizedPaymentMethod =
+        _normalizePaymentMethodKey(paymentMethodKey);
+    final String? normalizedDependentKey = _normalizeDependentKey(dependentKey);
+    final int safeLimit = limit < 1 ? 1 : limit;
+
+    final StringBuffer sql = StringBuffer(
+      '''
+      SELECT
+        s.id AS sale_id,
+        s.folio AS folio,
+        s.created_at AS created_at,
+        s.total_cents AS total_cents,
+        s.terminal_id AS terminal_id,
+        COALESCE(w.name, 'Sin almacén') AS warehouse_name,
+        COALESCE(
+          NULLIF(TRIM(MIN(e.name)), ''),
+          COALESCE(u.username, 'Sin usuario')
+        ) AS cashier_username,
+        c.full_name AS customer_name,
+        t.name AS terminal_name,
+        CAST(
+          COALESCE(
+            (
+              SELECT COUNT(*)
+              FROM sale_items si
+              WHERE si.sale_id = s.id
+            ),
+            0
+          ) AS INTEGER
+        ) AS items_count
+      FROM sales s
+      LEFT JOIN warehouses w ON w.id = s.warehouse_id
+      LEFT JOIN users u ON u.id = s.cashier_id
+      LEFT JOIN customers c ON c.id = s.customer_id
+      LEFT JOIN pos_terminals t ON t.id = s.terminal_id
+      LEFT JOIN pos_session_employees se ON se.session_id = s.terminal_session_id
+      LEFT JOIN employees e ON e.id = se.employee_id
+      WHERE s.status = 'posted'
+        AND s.created_at >= ?
+        AND s.created_at < ?
+      ''',
+    );
+    final List<Variable<Object>> variables = <Variable<Object>>[
+      Variable<DateTime>(from),
+      Variable<DateTime>(toExclusive),
+    ];
+    if (normalizedChannel == 'pos') {
+      sql.write(" AND COALESCE(TRIM(s.terminal_id), '') <> ''");
+    } else if (normalizedChannel == 'directa') {
+      sql.write(" AND COALESCE(TRIM(s.terminal_id), '') = ''");
+    }
+    if (normalizedPaymentMethod != null) {
+      sql.write(
+        '''
+        AND EXISTS (
+          SELECT 1
+          FROM payments p_filter
+          WHERE p_filter.sale_id = s.id
+            AND LOWER(COALESCE(NULLIF(TRIM(p_filter.method), ''), 'unknown')) = ?
+        )
+        ''',
+      );
+      variables.add(Variable<String>(normalizedPaymentMethod));
+    }
+    sql.write(
+      '''
+      GROUP BY
+        s.id,
+        s.folio,
+        s.created_at,
+        s.total_cents,
+        s.terminal_id,
+        s.cashier_id,
+        w.name,
+        u.username,
+        c.full_name,
+        t.name
+      ''',
+    );
+    if (normalizedDependentKey != null) {
+      sql.write(
+        '''
+        HAVING (
+          CASE
+            WHEN MIN(e.id) IS NOT NULL AND TRIM(MIN(e.id)) <> ''
+              THEN 'emp:' || MIN(e.id)
+            ELSE 'usr:' || COALESCE(s.cashier_id, '')
+          END
+        ) = ?
+        ''',
+      );
+      variables.add(Variable<String>(normalizedDependentKey));
+    }
+    sql.write(
+      '''
+      ORDER BY s.created_at DESC
+      LIMIT ?
+      ''',
+    );
+    variables.add(Variable<int>(safeLimit));
+
+    final List<QueryRow> rows = await _db
+        .customSelect(
+          sql.toString(),
+          variables: variables,
+        )
+        .get();
+
+    return rows.map((QueryRow row) {
+      final String terminalId =
+          (row.readNullable<String>('terminal_id') ?? '').trim();
+      return SalesAnalyticsSaleStat(
+        saleId: _readTextCell(row, 'sale_id', fallback: ''),
+        folio: _readTextCell(row, 'folio', fallback: '-'),
+        createdAt: row.readNullable<DateTime>('created_at') ?? DateTime.now(),
+        warehouseName: _readTextCell(
+          row,
+          'warehouse_name',
+          fallback: 'Sin almacén',
+        ),
+        cashierUsername: _readTextCell(
+          row,
+          'cashier_username',
+          fallback: 'Sin usuario',
+        ),
+        customerName: _nullableTextCell(row, 'customer_name'),
+        terminalName: _nullableTextCell(row, 'terminal_name'),
+        totalCents: (row.data['total_cents'] as num?)?.toInt() ?? 0,
+        itemsCount: (row.data['items_count'] as num?)?.toInt() ?? 0,
+        channel: terminalId.isEmpty ? 'directa' : 'pos',
+      );
+    }).toList(growable: false);
+  }
+
+  Future<SalesAnalyticsSaleDetailStat?> getSaleDetailForAnalytics(
+    String saleId,
+  ) async {
+    final String id = saleId.trim();
+    if (id.isEmpty) {
+      return null;
+    }
+    final List<QueryRow> headerRows = await _db.customSelect(
+      '''
+      SELECT
+        s.id AS sale_id,
+        s.folio AS folio,
+        s.created_at AS created_at,
+        s.total_cents AS total_cents,
+        s.subtotal_cents AS subtotal_cents,
+        s.tax_cents AS tax_cents,
+        s.terminal_id AS terminal_id,
+        COALESCE(w.name, 'Sin almacén') AS warehouse_name,
+        COALESCE(
+          NULLIF(TRIM(MIN(e.name)), ''),
+          COALESCE(u.username, 'Sin usuario')
+        ) AS cashier_username,
+        c.full_name AS customer_name,
+        t.name AS terminal_name,
+        CAST(
+          COALESCE(
+            (
+              SELECT COUNT(*)
+              FROM sale_items si
+              WHERE si.sale_id = s.id
+            ),
+            0
+          ) AS INTEGER
+        ) AS items_count
+      FROM sales s
+      LEFT JOIN warehouses w ON w.id = s.warehouse_id
+      LEFT JOIN users u ON u.id = s.cashier_id
+      LEFT JOIN customers c ON c.id = s.customer_id
+      LEFT JOIN pos_terminals t ON t.id = s.terminal_id
+      LEFT JOIN pos_session_employees se ON se.session_id = s.terminal_session_id
+      LEFT JOIN employees e ON e.id = se.employee_id
+      WHERE s.id = ?
+      GROUP BY
+        s.id, s.folio, s.created_at, s.total_cents, s.subtotal_cents,
+        s.tax_cents, s.terminal_id, s.cashier_id, w.name, u.username,
+        c.full_name, t.name
+      LIMIT 1
+      ''',
+      variables: <Variable<Object>>[Variable<String>(id)],
+    ).get();
+    if (headerRows.isEmpty) {
+      return null;
+    }
+    final QueryRow header = headerRows.first;
+    final String terminalId =
+        (header.readNullable<String>('terminal_id') ?? '').trim();
+    final SalesAnalyticsSaleStat sale = SalesAnalyticsSaleStat(
+      saleId: _readTextCell(header, 'sale_id', fallback: id),
+      folio: _readTextCell(header, 'folio', fallback: '-'),
+      createdAt: header.readNullable<DateTime>('created_at') ?? DateTime.now(),
+      warehouseName: _readTextCell(header, 'warehouse_name', fallback: '-'),
+      cashierUsername: _readTextCell(header, 'cashier_username', fallback: '-'),
+      customerName: _nullableTextCell(header, 'customer_name'),
+      terminalName: _nullableTextCell(header, 'terminal_name'),
+      totalCents: (header.data['total_cents'] as num?)?.toInt() ?? 0,
+      itemsCount: (header.data['items_count'] as num?)?.toInt() ?? 0,
+      channel: terminalId.isEmpty ? 'directa' : 'pos',
+    );
+
+    final List<QueryRow> lineRows = await _db.customSelect(
+      '''
+      SELECT
+        si.product_id AS product_id,
+        COALESCE(p.name, si.product_id, 'Producto') AS product_name,
+        COALESCE(p.sku, '-') AS sku,
+        COALESCE(si.qty, 0) AS qty,
+        COALESCE(si.unit_price_cents, 0) AS unit_price_cents,
+        COALESCE(si.line_total_cents, 0) AS line_total_cents
+      FROM sale_items si
+      LEFT JOIN products p ON p.id = si.product_id
+      WHERE si.sale_id = ?
+      ORDER BY product_name ASC
+      ''',
+      variables: <Variable<Object>>[Variable<String>(id)],
+    ).get();
+    final List<SalesAnalyticsSaleLineStat> lines = lineRows.map((QueryRow row) {
+      return SalesAnalyticsSaleLineStat(
+        productId: _readTextCell(row, 'product_id', fallback: '-'),
+        productName: _readTextCell(row, 'product_name', fallback: 'Producto'),
+        sku: _readTextCell(row, 'sku', fallback: '-'),
+        qty: (row.data['qty'] as num?)?.toDouble() ?? 0,
+        unitPriceCents: (row.data['unit_price_cents'] as num?)?.toInt() ?? 0,
+        lineTotalCents: (row.data['line_total_cents'] as num?)?.toInt() ?? 0,
+      );
+    }).toList(growable: false);
+
+    final List<QueryRow> paymentRows = await _db.customSelect(
+      '''
+      SELECT
+        p.method AS method,
+        p.amount_cents AS amount_cents,
+        p.transaction_id AS transaction_id,
+        p.source_currency_code AS source_currency_code,
+        p.source_amount_cents AS source_amount_cents,
+        p.created_at AS created_at
+      FROM payments p
+      WHERE p.sale_id = ?
+      ORDER BY p.created_at ASC
+      ''',
+      variables: <Variable<Object>>[Variable<String>(id)],
+    ).get();
+    final List<SalesAnalyticsSalePaymentStat> payments =
+        paymentRows.map((QueryRow row) {
+      return SalesAnalyticsSalePaymentStat(
+        method: _readTextCell(row, 'method', fallback: 'Pago'),
+        amountCents: (row.data['amount_cents'] as num?)?.toInt() ?? 0,
+        transactionId: _nullableTextCell(row, 'transaction_id'),
+        sourceCurrencyCode: _nullableTextCell(row, 'source_currency_code'),
+        sourceAmountCents: (row.data['source_amount_cents'] as num?)?.toInt(),
+        createdAt: row.readNullable<DateTime>('created_at') ?? sale.createdAt,
+      );
+    }).toList(growable: false);
+
+    return SalesAnalyticsSaleDetailStat(
+      sale: sale,
+      lines: lines,
+      payments: payments,
+      subtotalCents: (header.data['subtotal_cents'] as num?)?.toInt() ?? 0,
+      taxCents: (header.data['tax_cents'] as num?)?.toInt() ?? 0,
+      totalCents: (header.data['total_cents'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -846,6 +1226,35 @@ class ReportesLocalDataSource {
     return (row?.data['qty'] as num?)?.toDouble() ?? 0;
   }
 
+  Future<int> _profitCentsForRange({
+    required DateTime from,
+    required DateTime toExclusive,
+  }) async {
+    final QueryRow? row = await _db.customSelect(
+      '''
+      SELECT
+        COALESCE(SUM(si.line_total_cents), 0) AS revenue_cents,
+        COALESCE(
+          SUM(CAST(ROUND(COALESCE(si.qty, 0) * COALESCE(p.cost_price_cents, 0)) AS INTEGER)),
+          0
+        ) AS cost_cents
+      FROM sale_items si
+      INNER JOIN sales s ON s.id = si.sale_id
+      LEFT JOIN products p ON p.id = si.product_id
+      WHERE s.status = 'posted'
+        AND s.created_at >= ?
+        AND s.created_at < ?
+      ''',
+      variables: <Variable<Object>>[
+        Variable<DateTime>(from),
+        Variable<DateTime>(toExclusive),
+      ],
+    ).getSingleOrNull();
+    final int revenue = (row?.data['revenue_cents'] as num?)?.toInt() ?? 0;
+    final int cost = (row?.data['cost_cents'] as num?)?.toInt() ?? 0;
+    return revenue - cost;
+  }
+
   Future<List<SalesBreakdownStat>> _paymentMethodBreakdownForRange({
     required DateTime from,
     required DateTime toExclusive,
@@ -853,7 +1262,7 @@ class ReportesLocalDataSource {
     final List<QueryRow> rows = await _db.customSelect(
       '''
       SELECT
-        COALESCE(NULLIF(TRIM(p.method), ''), 'unknown') AS key,
+        LOWER(COALESCE(NULLIF(TRIM(p.method), ''), 'unknown')) AS key,
         COUNT(DISTINCT p.sale_id) AS orders_count,
         COALESCE(SUM(p.amount_cents), 0) AS total_cents
       FROM payments p
@@ -887,17 +1296,35 @@ class ReportesLocalDataSource {
   }) async {
     final List<QueryRow> rows = await _db.customSelect(
       '''
+      WITH sale_dependent AS (
+        SELECT
+          s.id AS sale_id,
+          s.total_cents AS total_cents,
+          CASE
+            WHEN MIN(e.id) IS NOT NULL AND TRIM(MIN(e.id)) <> ''
+              THEN 'emp:' || MIN(e.id)
+            ELSE 'usr:' || COALESCE(s.cashier_id, '')
+          END AS dependent_key,
+          COALESCE(
+            NULLIF(TRIM(MIN(e.name)), ''),
+            COALESCE(u.username, 'Sin usuario')
+          ) AS dependent_label
+        FROM sales s
+        LEFT JOIN users u ON u.id = s.cashier_id
+        LEFT JOIN pos_session_employees se ON se.session_id = s.terminal_session_id
+        LEFT JOIN employees e ON e.id = se.employee_id
+        WHERE s.status = 'posted'
+          AND s.created_at >= ?
+          AND s.created_at < ?
+        GROUP BY s.id, s.total_cents, s.cashier_id, u.username
+      )
       SELECT
-        s.cashier_id AS key,
-        COALESCE(u.username, 'Sin usuario') AS label,
+        sd.dependent_key AS key,
+        sd.dependent_label AS label,
         COUNT(*) AS orders_count,
-        COALESCE(SUM(s.total_cents), 0) AS total_cents
-      FROM sales s
-      LEFT JOIN users u ON u.id = s.cashier_id
-      WHERE s.status = 'posted'
-        AND s.created_at >= ?
-        AND s.created_at < ?
-      GROUP BY s.cashier_id, u.username
+        COALESCE(SUM(sd.total_cents), 0) AS total_cents
+      FROM sale_dependent sd
+      GROUP BY sd.dependent_key, sd.dependent_label
       ORDER BY total_cents DESC, orders_count DESC
       ''',
       variables: <Variable<Object>>[
@@ -995,25 +1422,45 @@ class ReportesLocalDataSource {
     }).toList(growable: false);
   }
 
-  List<SalesTrendPointStat> _buildTrend(
-    List<Sale> sales,
-    SalesAnalyticsGranularity granularity,
-  ) {
+  List<SalesTrendPointStat> _buildTrend({
+    required List<Sale> sales,
+    required SalesAnalyticsGranularity granularity,
+    required DateTime from,
+    required DateTime toExclusive,
+  }) {
+    if (!toExclusive.isAfter(from)) {
+      return <SalesTrendPointStat>[];
+    }
+    final _TrendGrouping grouping = _trendGroupingFor(granularity);
+    final DateTime start = _normalizeTrendBucketStart(from, grouping);
+    final DateTime end = _normalizeTrendBucketStart(
+      toExclusive.subtract(const Duration(milliseconds: 1)),
+      grouping,
+    );
+
     final Map<String, _TrendBucket> byKey = <String, _TrendBucket>{};
+    DateTime cursor = start;
+    while (!cursor.isAfter(end)) {
+      final String key = cursor.toIso8601String();
+      byKey[key] = _TrendBucket(
+        bucketStart: cursor,
+        label: _bucketLabel(cursor, grouping),
+      );
+      cursor = _nextTrendBucket(cursor, grouping);
+    }
+
     for (final Sale sale in sales) {
       final DateTime dt = sale.createdAt.toLocal();
-      final DateTime bucketStart = _bucketStart(dt, granularity);
+      final DateTime bucketStart = _normalizeTrendBucketStart(dt, grouping);
       final String key = bucketStart.toIso8601String();
-      final _TrendBucket bucket = byKey.putIfAbsent(
-        key,
-        () => _TrendBucket(
-          bucketStart: bucketStart,
-          label: _bucketLabel(bucketStart, granularity),
-        ),
-      );
+      final _TrendBucket? bucket = byKey[key];
+      if (bucket == null) {
+        continue;
+      }
       bucket.totalCents += sale.totalCents;
       bucket.ordersCount += 1;
     }
+
     final List<_TrendBucket> rows = byKey.values.toList()
       ..sort((_TrendBucket a, _TrendBucket b) {
         return a.bucketStart.compareTo(b.bucketStart);
@@ -1030,22 +1477,41 @@ class ReportesLocalDataSource {
         .toList(growable: false);
   }
 
-  DateTime _bucketStart(DateTime dt, SalesAnalyticsGranularity granularity) {
+  _TrendGrouping _trendGroupingFor(SalesAnalyticsGranularity granularity) {
     switch (granularity) {
       case SalesAnalyticsGranularity.day:
-        return DateTime(dt.year, dt.month, dt.day);
+        return _TrendGrouping.hour;
       case SalesAnalyticsGranularity.week:
-        final int diff = dt.weekday - DateTime.monday;
-        final DateTime monday = dt.subtract(Duration(days: diff));
-        return DateTime(monday.year, monday.month, monday.day);
       case SalesAnalyticsGranularity.month:
-        return DateTime(dt.year, dt.month, 1);
+        return _TrendGrouping.day;
       case SalesAnalyticsGranularity.year:
-        return DateTime(dt.year, 1, 1);
+        return _TrendGrouping.month;
     }
   }
 
-  String _bucketLabel(DateTime dt, SalesAnalyticsGranularity granularity) {
+  DateTime _normalizeTrendBucketStart(DateTime dt, _TrendGrouping grouping) {
+    switch (grouping) {
+      case _TrendGrouping.hour:
+        return DateTime(dt.year, dt.month, dt.day, dt.hour);
+      case _TrendGrouping.day:
+        return DateTime(dt.year, dt.month, dt.day);
+      case _TrendGrouping.month:
+        return DateTime(dt.year, dt.month, 1);
+    }
+  }
+
+  DateTime _nextTrendBucket(DateTime start, _TrendGrouping grouping) {
+    switch (grouping) {
+      case _TrendGrouping.hour:
+        return start.add(const Duration(hours: 1));
+      case _TrendGrouping.day:
+        return start.add(const Duration(days: 1));
+      case _TrendGrouping.month:
+        return DateTime(start.year, start.month + 1, 1);
+    }
+  }
+
+  String _bucketLabel(DateTime dt, _TrendGrouping grouping) {
     const List<String> months = <String>[
       'Ene',
       'Feb',
@@ -1060,17 +1526,15 @@ class ReportesLocalDataSource {
       'Nov',
       'Dic',
     ];
-    switch (granularity) {
-      case SalesAnalyticsGranularity.day:
+    switch (grouping) {
+      case _TrendGrouping.hour:
+        final String hour = dt.hour.toString().padLeft(2, '0');
+        return '$hour:00';
+      case _TrendGrouping.day:
         final String day = dt.day.toString().padLeft(2, '0');
         return '$day ${months[dt.month - 1]}';
-      case SalesAnalyticsGranularity.week:
-        final String day = dt.day.toString().padLeft(2, '0');
-        return '$day ${months[dt.month - 1]}';
-      case SalesAnalyticsGranularity.month:
-        return '${months[dt.month - 1]} ${dt.year.toString().substring(2)}';
-      case SalesAnalyticsGranularity.year:
-        return dt.year.toString();
+      case _TrendGrouping.month:
+        return months[dt.month - 1];
     }
   }
 
@@ -1494,9 +1958,21 @@ class ReportesLocalDataSource {
                     OR (sm.type = 'adjust' AND sm.qty < 0)
                   )
                   AND NOT (
-                    LOWER(COALESCE(sm.reason_code, '')) = 'sale'
-                    OR LOWER(COALESCE(sm.ref_type, '')) IN ('sale', 'sale_pos', 'sale_direct')
-                    OR LOWER(COALESCE(sm.movement_source, '')) IN ('pos', 'direct_sale')
+                    (
+                      LOWER(COALESCE(sm.reason_code, '')) = 'sale'
+                      OR LOWER(COALESCE(sm.ref_type, '')) IN ('sale', 'sale_pos', 'sale_direct')
+                      OR LOWER(COALESCE(sm.movement_source, '')) IN ('pos', 'direct_sale')
+                    )
+                    AND LOWER(COALESCE(sm.reason_code, '')) <> 'consignment_sale'
+                    AND LOWER(COALESCE(sm.ref_type, '')) NOT IN (
+                      'consignment_sale',
+                      'consignment_sale_pos',
+                      'consignment_sale_direct'
+                    )
+                    AND LOWER(COALESCE(sm.movement_source, '')) NOT IN (
+                      'pos_consignment',
+                      'direct_consignment'
+                    )
                   )
                     THEN ABS(sm.qty)
                   ELSE 0
@@ -1509,9 +1985,21 @@ class ReportesLocalDataSource {
                     OR (sm.type = 'adjust' AND sm.qty < 0)
                   )
                   AND (
-                    LOWER(COALESCE(sm.reason_code, '')) = 'sale'
-                    OR LOWER(COALESCE(sm.ref_type, '')) IN ('sale', 'sale_pos', 'sale_direct')
-                    OR LOWER(COALESCE(sm.movement_source, '')) IN ('pos', 'direct_sale')
+                    (
+                      LOWER(COALESCE(sm.reason_code, '')) = 'sale'
+                      OR LOWER(COALESCE(sm.ref_type, '')) IN ('sale', 'sale_pos', 'sale_direct')
+                      OR LOWER(COALESCE(sm.movement_source, '')) IN ('pos', 'direct_sale')
+                    )
+                    AND LOWER(COALESCE(sm.reason_code, '')) <> 'consignment_sale'
+                    AND LOWER(COALESCE(sm.ref_type, '')) NOT IN (
+                      'consignment_sale',
+                      'consignment_sale_pos',
+                      'consignment_sale_direct'
+                    )
+                    AND LOWER(COALESCE(sm.movement_source, '')) NOT IN (
+                      'pos_consignment',
+                      'direct_consignment'
+                    )
                   )
                     THEN ABS(sm.qty)
                   ELSE 0
@@ -1742,6 +2230,9 @@ class ReportesLocalDataSource {
       ..writeln('Ventas sin cliente,${snapshot.salesWithoutCustomerCount}')
       ..writeln(
         'Ingresos totales,${(snapshot.totalRevenueCents / 100).toStringAsFixed(2)}',
+      )
+      ..writeln(
+        'Ganancia total,${(snapshot.totalProfitCents / 100).toStringAsFixed(2)}',
       )
       ..writeln(
         'Pedido promedio,${(snapshot.avgOrderCents / 100).toStringAsFixed(2)}',
@@ -2166,6 +2657,14 @@ class ReportesLocalDataSource {
   }) {
     final String value = (row.readNullable<String>(column) ?? '').trim();
     return value.isEmpty ? fallback : value;
+  }
+
+  String? _nullableTextCell(QueryRow row, String column) {
+    final String value = (row.readNullable<String>(column) ?? '').trim();
+    if (value.isEmpty) {
+      return null;
+    }
+    return value;
   }
 
   DateTime? _readDateCell(Object? raw) {
@@ -2608,9 +3107,41 @@ class ReportesLocalDataSource {
         return 'Transferencia';
       case 'wallet':
         return 'Billetera';
+      case 'consignment':
+        return 'Consignación';
       default:
         return method;
     }
+  }
+
+  String? _normalizeChannelFilter(String? channel) {
+    final String clean = (channel ?? '').trim().toLowerCase();
+    if (clean == 'pos') {
+      return 'pos';
+    }
+    if (clean == 'directa' || clean == 'direct' || clean == 'venta_directa') {
+      return 'directa';
+    }
+    return null;
+  }
+
+  String? _normalizePaymentMethodKey(String? paymentMethodKey) {
+    final String clean = (paymentMethodKey ?? '').trim().toLowerCase();
+    if (clean.isEmpty) {
+      return null;
+    }
+    return clean;
+  }
+
+  String? _normalizeDependentKey(String? dependentKey) {
+    final String clean = (dependentKey ?? '').trim().toLowerCase();
+    if (clean.isEmpty) {
+      return null;
+    }
+    if (clean.startsWith('emp:') || clean.startsWith('usr:')) {
+      return clean;
+    }
+    return 'usr:$clean';
   }
 
   String _analyticsGranularityLabel(SalesAnalyticsGranularity granularity) {
@@ -2852,6 +3383,8 @@ class _DayAccumulator {
   int salesCount = 0;
   int totalCents = 0;
 }
+
+enum _TrendGrouping { hour, day, month }
 
 class _TrendBucket {
   _TrendBucket({

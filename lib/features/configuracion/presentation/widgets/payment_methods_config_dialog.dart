@@ -98,6 +98,8 @@ class _PaymentMethodsConfigDialogState
         return 'Transferencia';
       case 'wallet':
         return 'Billetera';
+      case 'consignment':
+        return 'Consignación';
       default:
         return code.trim().isEmpty ? 'Metodo' : code.trim();
     }

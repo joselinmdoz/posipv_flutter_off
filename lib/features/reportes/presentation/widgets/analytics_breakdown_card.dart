@@ -10,6 +10,7 @@ class AnalyticsBreakdownCard extends StatelessWidget {
     required this.totalBaseCents,
     required this.items,
     this.emptyLabel = 'Sin datos para el rango.',
+    this.onItemTap,
   });
 
   final String title;
@@ -17,6 +18,7 @@ class AnalyticsBreakdownCard extends StatelessWidget {
   final int totalBaseCents;
   final List<SalesBreakdownStat> items;
   final String emptyLabel;
+  final ValueChanged<SalesBreakdownStat>? onItemTap;
 
   @override
   Widget build(BuildContext context) {
@@ -59,6 +61,7 @@ class AnalyticsBreakdownCard extends StatelessWidget {
                       currencySymbol: currencySymbol,
                       totalBaseCents: totalBaseCents,
                       row: row,
+                      onTap: onItemTap == null ? null : () => onItemTap!(row),
                     ),
                   ),
                 ),
@@ -73,11 +76,13 @@ class _BreakdownRow extends StatelessWidget {
     required this.currencySymbol,
     required this.totalBaseCents,
     required this.row,
+    required this.onTap,
   });
 
   final String currencySymbol;
   final int totalBaseCents;
   final SalesBreakdownStat row;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -86,52 +91,65 @@ class _BreakdownRow extends StatelessWidget {
         ? 0
         : ((row.totalCents / totalBaseCents) * 100).clamp(0, 100);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: Text(
-                row.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      row.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white : const Color(0xFF0F172A),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '$currencySymbol${(row.totalCents / 100).toStringAsFixed(2)}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: isDark ? Colors.white : const Color(0xFF0F172A),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '${row.ordersCount} ventas · ${pct.toStringAsFixed(1)}%',
                 style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: isDark ? Colors.white : const Color(0xFF0F172A),
+                  fontSize: 12,
+                  color: isDark
+                      ? const Color(0xFF94A3B8)
+                      : const Color(0xFF64748B),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              '$currencySymbol${(row.totalCents / 100).toStringAsFixed(2)}',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                color: isDark ? Colors.white : const Color(0xFF0F172A),
+              const SizedBox(height: 6),
+              LinearProgressIndicator(
+                value: pct / 100,
+                minHeight: 4,
+                borderRadius: BorderRadius.circular(999),
+                backgroundColor:
+                    isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                valueColor:
+                    const AlwaysStoppedAnimation<Color>(Color(0xFF1152D4)),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 2),
-        Text(
-          '${row.ordersCount} ventas · ${pct.toStringAsFixed(1)}%',
-          style: TextStyle(
-            fontSize: 12,
-            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+            ],
           ),
         ),
-        const SizedBox(height: 6),
-        LinearProgressIndicator(
-          value: pct / 100,
-          minHeight: 4,
-          borderRadius: BorderRadius.circular(999),
-          backgroundColor:
-              isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
-          valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF1152D4)),
-        ),
-      ],
+      ),
     );
   }
 }

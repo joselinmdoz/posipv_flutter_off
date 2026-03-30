@@ -43,12 +43,16 @@ class PosPaymentResult {
     required this.paymentByMethod,
     required this.paymentLines,
     required this.cartLines,
+    required this.isConsignmentSale,
+    this.cancelOrderRequested = false,
     this.selectedCustomer,
   });
 
   final Map<String, int> paymentByMethod;
   final List<PosPaymentLine> paymentLines;
   final List<PosCartLine> cartLines;
+  final bool isConsignmentSale;
+  final bool cancelOrderRequested;
   final PosSelectedCustomer? selectedCustomer;
 }
 

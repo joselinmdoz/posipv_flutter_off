@@ -393,6 +393,7 @@ class ConfiguracionLocalDataSource {
     AppPaymentMethodSetting(code: 'card', isOnline: false),
     AppPaymentMethodSetting(code: 'transfer', isOnline: true),
     AppPaymentMethodSetting(code: 'wallet', isOnline: true),
+    AppPaymentMethodSetting(code: 'consignment', isOnline: false),
   ];
 
   Future<AppConfig> loadConfig() async {

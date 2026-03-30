@@ -229,6 +229,7 @@ class AppPermissionsCatalog {
     '/tpv-empleados': AppPermissionKeys.tpvManageEmployees,
     '/ventas-pos': AppPermissionKeys.salesPos,
     '/ventas-directas': AppPermissionKeys.salesDirect,
+    '/consignaciones': AppPermissionKeys.customersView,
     '/clientes': AppPermissionKeys.customersView,
     '/inventario': AppPermissionKeys.inventoryView,
     '/inventario-movimientos': AppPermissionKeys.inventoryMovements,
@@ -248,6 +249,14 @@ class AppPermissionsCatalog {
     '/configuracion-dashboard-widgets':
         AppPermissionKeys.settingsDashboardWidgets,
     '/licencia': AppPermissionKeys.settingsLicense,
+  };
+
+  static const Map<String, String> routeManagePermissionMap = <String, String>{
+    '/tpv': AppPermissionKeys.tpvManageTerminals,
+    '/productos': AppPermissionKeys.productsManage,
+    '/almacenes': AppPermissionKeys.warehousesManage,
+    '/clientes': AppPermissionKeys.customersManage,
+    '/configuracion': AppPermissionKeys.settingsData,
   };
 
   static const List<String> preferredHomeRoutes = <String>[

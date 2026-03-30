@@ -29,9 +29,21 @@ class SaleService {
       );
     }
 
-    if (input.payments.isEmpty) {
+    final bool isConsignmentSale = input.isConsignmentSale ||
+        input.payments.any((PaymentInput p) => _isConsignmentMethod(p.method));
+    if (input.payments.isEmpty && !isConsignmentSale) {
       return const AppFailure<CreateSaleResult>(
         'La venta debe tener al menos un pago.',
+      );
+    }
+    if (input.payments.any((PaymentInput p) => p.amountCents < 0)) {
+      return const AppFailure<CreateSaleResult>(
+        'Los montos de pago no pueden ser negativos.',
+      );
+    }
+    if (isConsignmentSale && input.payments.isNotEmpty) {
+      return const AppFailure<CreateSaleResult>(
+        'La venta en consignacion se registra sin pagos iniciales.',
       );
     }
     if (input.discountCents < 0) {
@@ -44,11 +56,19 @@ class SaleService {
       final CreateSaleResult result = await _db.transaction(() async {
         final String saleOrigin = input.saleOrigin.trim().toLowerCase();
         final bool isDirectSale = saleOrigin == 'direct';
-        final String movementSource = isDirectSale ? 'direct_sale' : 'pos';
-        final String movementRefType =
-            isDirectSale ? 'sale_direct' : 'sale_pos';
-        final String movementNotePrefix =
-            isDirectSale ? 'Venta directa' : 'Venta POS';
+        final String movementSource = isConsignmentSale
+            ? (isDirectSale ? 'direct_consignment' : 'pos_consignment')
+            : (isDirectSale ? 'direct_sale' : 'pos');
+        final String movementRefType = isConsignmentSale
+            ? (isDirectSale
+                ? 'consignment_sale_direct'
+                : 'consignment_sale_pos')
+            : (isDirectSale ? 'sale_direct' : 'sale_pos');
+        final String movementReasonCode =
+            isConsignmentSale ? 'consignment_sale' : 'sale';
+        final String movementNotePrefix = isConsignmentSale
+            ? (isDirectSale ? 'Consignacion directa' : 'Consignacion POS')
+            : (isDirectSale ? 'Venta directa' : 'Venta POS');
         String? terminalCurrencyCode;
         String? saleTerminalId = input.terminalId?.trim();
         String? saleTerminalSessionId = input.terminalSessionId?.trim();
@@ -109,6 +129,11 @@ class SaleService {
         final String? cleanCustomerId = input.customerId?.trim().isEmpty ?? true
             ? null
             : input.customerId!.trim();
+        if (isConsignmentSale && cleanCustomerId == null) {
+          throw const _SaleException(
+            'La venta en consignacion requiere un cliente seleccionado.',
+          );
+        }
         if (cleanCustomerId != null) {
           final Customer? customer = await (_db.select(_db.customers)
                 ..where((Customers tbl) => tbl.id.equals(cleanCustomerId)))
@@ -199,9 +224,14 @@ class SaleService {
           0,
           (int sum, PaymentInput payment) => sum + payment.amountCents,
         );
-        if (totalPayments != totalCents) {
+        if (!isConsignmentSale && totalPayments != totalCents) {
           throw _SaleException(
             'El total de pagos ($totalPayments) no coincide con el total de la venta ($totalCents).',
+          );
+        }
+        if (isConsignmentSale && totalPayments != 0) {
+          throw const _SaleException(
+            'La venta en consignacion se registra sin pagos iniciales.',
           );
         }
 
@@ -250,7 +280,7 @@ class SaleService {
                   warehouseId: input.warehouseId,
                   type: 'out',
                   qty: line.item.qty,
-                  reasonCode: const Value('sale'),
+                  reasonCode: Value(movementReasonCode),
                   movementSource: Value(movementSource),
                   refType: Value(movementRefType),
                   refId: Value(saleId),
@@ -331,6 +361,10 @@ class SaleService {
     final String mm = now.minute.toString().padLeft(2, '0');
     final String ss = now.second.toString().padLeft(2, '0');
     return 'POS-$y$m$d-$hh$mm$ss';
+  }
+
+  bool _isConsignmentMethod(String method) {
+    return method.trim().toLowerCase() == 'consignment';
   }
 
   Future<void> _enforceDailySalesLimit(DateTime now) async {

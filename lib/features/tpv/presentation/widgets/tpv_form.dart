@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../core/db/app_database.dart';
+import '../../../../core/security/app_permissions.dart';
+import '../../../auth/presentation/auth_providers.dart';
 import '../../../configuracion/data/configuracion_local_datasource.dart';
 import '../../../configuracion/presentation/configuracion_providers.dart';
 import '../../data/tpv_local_datasource.dart';
@@ -40,11 +42,18 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
   bool _payCard = false;
   bool _payTransfer = false;
   bool _payWallet = false;
+  bool _payConsignment = true;
   bool _loadingWarehouseOptions = true;
   bool _loadingEmployeeAccess = true;
   bool _saving = false;
 
   bool get _isEditing => widget.terminal != null;
+  bool get _canManageTerminals {
+    return ref.read(currentSessionProvider)?.hasPermission(
+              AppPermissionKeys.tpvManageTerminals,
+            ) ??
+        false;
+  }
 
   @override
   void initState() {
@@ -69,6 +78,7 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
     _payCard = config.paymentMethods.contains('card');
     _payTransfer = config.paymentMethods.contains('transfer');
     _payWallet = config.paymentMethods.contains('wallet');
+    _payConsignment = config.paymentMethods.contains('consignment');
     _imagePath = widget.terminal?.imagePath;
     _selectedWarehouseId =
         widget.terminal?.warehouseId ?? _autoCreateWarehouseValue;
@@ -181,6 +191,10 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
   }
 
   Future<void> _save() async {
+    if (!_canManageTerminals) {
+      _show('No tienes permisos para gestionar terminales.');
+      return;
+    }
     final String name = _nameCtrl.text.trim();
     final String code = _codeCtrl.text.trim();
     final String currencyCode =
@@ -358,6 +372,7 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
     if (_payCard) methods.add('card');
     if (_payTransfer) methods.add('transfer');
     if (_payWallet) methods.add('wallet');
+    if (_payConsignment) methods.add('consignment');
     return methods;
   }
 
@@ -376,6 +391,11 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
 
   @override
   Widget build(BuildContext context) {
+    final bool canManageTerminals =
+        ref.watch(currentSessionProvider)?.hasPermission(
+                  AppPermissionKeys.tpvManageTerminals,
+                ) ??
+            false;
     final ThemeData theme = Theme.of(context);
     final bool hasSelectedCurrency = _currencyOptions.any(
       (AppCurrencySetting item) => item.code == _selectedCurrencyCode,
@@ -394,248 +414,268 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
           icon: const Icon(Icons.arrow_back_rounded),
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Image Selector
-            Center(
-              child: Stack(
+      body: !canManageTerminals
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.all(20),
+                child: Text(
+                  'No tienes permisos para gestionar terminales.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            )
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 140,
-                    height: 140,
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(
-                        color: theme.colorScheme.outline.withValues(alpha: 0.2),
+                  // Image Selector
+                  Center(
+                    child: Stack(
+                      children: [
+                        Container(
+                          width: 140,
+                          height: 140,
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(
+                              color: theme.colorScheme.outline
+                                  .withValues(alpha: 0.2),
+                            ),
+                            image: DecorationImage(
+                              image: _imagePath != null
+                                  ? FileImage(File(_imagePath!))
+                                  : const AssetImage(
+                                          'assets/images/tpv_default.png')
+                                      as ImageProvider,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                          child: null,
+                        ),
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: IconButton.filled(
+                            onPressed: _pickImage,
+                            icon:
+                                const Icon(Icons.camera_alt_rounded, size: 20),
+                            style: IconButton.styleFrom(
+                              backgroundColor: const Color(0xFF1152D4),
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+
+                  _buildSectionLabel('Información Básica'),
+                  const SizedBox(height: 16),
+                  _buildTextField(
+                    controller: _nameCtrl,
+                    label: 'Nombre del TPV',
+                    hint: 'Ej: Caja Principal',
+                    icon: Icons.badge_outlined,
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildTextField(
+                          controller: _codeCtrl,
+                          label: 'Código',
+                          hint: 'AUTO',
+                          icon: Icons.qr_code_rounded,
+                        ),
                       ),
-                      image: DecorationImage(
-                        image: _imagePath != null
-                            ? FileImage(File(_imagePath!))
-                            : const AssetImage('assets/images/tpv_default.png')
-                                as ImageProvider,
-                        fit: BoxFit.cover,
+                      const SizedBox(width: 12),
+                      IconButton.filledTonal(
+                        onPressed: _saving ? null : _suggestCode,
+                        icon: const Icon(Icons.auto_fix_high_rounded),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  _buildWarehouseSelector(theme),
+
+                  const SizedBox(height: 32),
+                  _buildSectionLabel('Configuración Monetaria'),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    key: ValueKey<String?>(selectedCurrencyValue),
+                    initialValue: selectedCurrencyValue,
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      labelText: 'Moneda del TPV',
+                      hintText: 'Selecciona la moneda',
+                      prefixIcon:
+                          const Icon(Icons.currency_exchange_rounded, size: 20),
+                      filled: true,
+                      fillColor: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest
+                          .withValues(alpha: 0.3),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: const BorderSide(
+                          color: Color(0xFF1152D4),
+                          width: 1.5,
+                        ),
                       ),
                     ),
-                    child: null,
+                    items: _currencyOptions
+                        .map(
+                          (AppCurrencySetting currency) =>
+                              DropdownMenuItem<String>(
+                            value: currency.code,
+                            child:
+                                Text('${currency.code} (${currency.symbol})'),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: _saving
+                        ? null
+                        : (String? value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return;
+                            }
+                            setState(() => _selectedCurrencyCode =
+                                value.trim().toUpperCase());
+                          },
                   ),
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: IconButton.filled(
-                      onPressed: _pickImage,
-                      icon: const Icon(Icons.camera_alt_rounded, size: 20),
-                      style: IconButton.styleFrom(
+                  const SizedBox(height: 10),
+                  Text(
+                    'Símbolo aplicado: ${_symbolForCurrencyCode(_selectedCurrencyCode ?? '')}',
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  _buildTextField(
+                    controller: _denominationsCtrl,
+                    label: 'Denominaciones (Efectivo)',
+                    hint: '100, 50, 20, 10...',
+                    icon: Icons.money_rounded,
+                  ),
+
+                  const SizedBox(height: 32),
+                  _buildSectionLabel('Métodos de Pago'),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 12,
+                    children: [
+                      _buildMethodChip('Efectivo', _payCash,
+                          (v) => setState(() => _payCash = v!)),
+                      _buildMethodChip('Tarjeta', _payCard,
+                          (v) => setState(() => _payCard = v!)),
+                      _buildMethodChip('Transferencia', _payTransfer,
+                          (v) => setState(() => _payTransfer = v!)),
+                      _buildMethodChip('Wallet (NFC)', _payWallet,
+                          (v) => setState(() => _payWallet = v!)),
+                      _buildMethodChip('Consignación', _payConsignment,
+                          (v) => setState(() => _payConsignment = v!)),
+                    ],
+                  ),
+
+                  const SizedBox(height: 32),
+                  _buildSectionLabel('Acceso de Empleados'),
+                  const SizedBox(height: 12),
+                  if (_loadingEmployeeAccess)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: LinearProgressIndicator(minHeight: 3),
+                    )
+                  else if (_eligibleEmployees.isEmpty)
+                    Text(
+                      'No hay empleados elegibles con permisos de TPV y venta POS.',
+                      style: TextStyle(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    )
+                  else
+                    Column(
+                      children: _eligibleEmployees.map((TpvEmployee employee) {
+                        final bool selected =
+                            _selectedEmployeeIds.contains(employee.id);
+                        return CheckboxListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          value: selected,
+                          onChanged: _saving
+                              ? null
+                              : (bool? value) {
+                                  setState(() {
+                                    if (value == true) {
+                                      _selectedEmployeeIds.add(employee.id);
+                                    } else {
+                                      _selectedEmployeeIds.remove(employee.id);
+                                    }
+                                  });
+                                },
+                          secondary: TpvEmployeeAvatar(
+                            imagePath: employee.imagePath,
+                            radius: 18,
+                            backgroundColor: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest,
+                            iconColor: Theme.of(context).colorScheme.primary,
+                          ),
+                          title: Text(employee.name),
+                          subtitle: Text(
+                            (employee.associatedUsername ?? '')
+                                    .trim()
+                                    .isNotEmpty
+                                ? '@${employee.associatedUsername}'
+                                : 'Sin usuario asociado',
+                          ),
+                        );
+                      }).toList(growable: false),
+                    ),
+
+                  const SizedBox(height: 48),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _saving ? null : _save,
+                      style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF1152D4),
                         foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 18),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16)),
+                        elevation: 0,
                       ),
+                      child: _saving
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Text(
+                              'Guardar Configuración',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w800, fontSize: 16),
+                            ),
                     ),
                   ),
+                  const SizedBox(height: 24),
                 ],
               ),
             ),
-            const SizedBox(height: 32),
-
-            _buildSectionLabel('Información Básica'),
-            const SizedBox(height: 16),
-            _buildTextField(
-              controller: _nameCtrl,
-              label: 'Nombre del TPV',
-              hint: 'Ej: Caja Principal',
-              icon: Icons.badge_outlined,
-            ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildTextField(
-                    controller: _codeCtrl,
-                    label: 'Código',
-                    hint: 'AUTO',
-                    icon: Icons.qr_code_rounded,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                IconButton.filledTonal(
-                  onPressed: _saving ? null : _suggestCode,
-                  icon: const Icon(Icons.auto_fix_high_rounded),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            _buildWarehouseSelector(theme),
-
-            const SizedBox(height: 32),
-            _buildSectionLabel('Configuración Monetaria'),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              key: ValueKey<String?>(selectedCurrencyValue),
-              initialValue: selectedCurrencyValue,
-              isExpanded: true,
-              decoration: InputDecoration(
-                labelText: 'Moneda del TPV',
-                hintText: 'Selecciona la moneda',
-                prefixIcon:
-                    const Icon(Icons.currency_exchange_rounded, size: 20),
-                filled: true,
-                fillColor: Theme.of(context)
-                    .colorScheme
-                    .surfaceContainerHighest
-                    .withValues(alpha: 0.3),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide.none,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide.none,
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: const BorderSide(
-                    color: Color(0xFF1152D4),
-                    width: 1.5,
-                  ),
-                ),
-              ),
-              items: _currencyOptions
-                  .map(
-                    (AppCurrencySetting currency) => DropdownMenuItem<String>(
-                      value: currency.code,
-                      child: Text('${currency.code} (${currency.symbol})'),
-                    ),
-                  )
-                  .toList(),
-              onChanged: _saving
-                  ? null
-                  : (String? value) {
-                      if (value == null || value.trim().isEmpty) {
-                        return;
-                      }
-                      setState(() =>
-                          _selectedCurrencyCode = value.trim().toUpperCase());
-                    },
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Símbolo aplicado: ${_symbolForCurrencyCode(_selectedCurrencyCode ?? '')}',
-              style: TextStyle(
-                color: theme.colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 20),
-            _buildTextField(
-              controller: _denominationsCtrl,
-              label: 'Denominaciones (Efectivo)',
-              hint: '100, 50, 20, 10...',
-              icon: Icons.money_rounded,
-            ),
-
-            const SizedBox(height: 32),
-            _buildSectionLabel('Métodos de Pago'),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 12,
-              children: [
-                _buildMethodChip(
-                    'Efectivo', _payCash, (v) => setState(() => _payCash = v!)),
-                _buildMethodChip(
-                    'Tarjeta', _payCard, (v) => setState(() => _payCard = v!)),
-                _buildMethodChip('Transferencia', _payTransfer,
-                    (v) => setState(() => _payTransfer = v!)),
-                _buildMethodChip('Wallet (NFC)', _payWallet,
-                    (v) => setState(() => _payWallet = v!)),
-              ],
-            ),
-
-            const SizedBox(height: 32),
-            _buildSectionLabel('Acceso de Empleados'),
-            const SizedBox(height: 12),
-            if (_loadingEmployeeAccess)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: LinearProgressIndicator(minHeight: 3),
-              )
-            else if (_eligibleEmployees.isEmpty)
-              Text(
-                'No hay empleados elegibles con permisos de TPV y venta POS.',
-                style: TextStyle(
-                  color: theme.colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
-                ),
-              )
-            else
-              Column(
-                children: _eligibleEmployees.map((TpvEmployee employee) {
-                  final bool selected =
-                      _selectedEmployeeIds.contains(employee.id);
-                  return CheckboxListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    value: selected,
-                    onChanged: _saving
-                        ? null
-                        : (bool? value) {
-                            setState(() {
-                              if (value == true) {
-                                _selectedEmployeeIds.add(employee.id);
-                              } else {
-                                _selectedEmployeeIds.remove(employee.id);
-                              }
-                            });
-                          },
-                    secondary: TpvEmployeeAvatar(
-                      imagePath: employee.imagePath,
-                      radius: 18,
-                      backgroundColor:
-                          Theme.of(context).colorScheme.surfaceContainerHighest,
-                      iconColor: Theme.of(context).colorScheme.primary,
-                    ),
-                    title: Text(employee.name),
-                    subtitle: Text(
-                      (employee.associatedUsername ?? '').trim().isNotEmpty
-                          ? '@${employee.associatedUsername}'
-                          : 'Sin usuario asociado',
-                    ),
-                  );
-                }).toList(growable: false),
-              ),
-
-            const SizedBox(height: 48),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _saving ? null : _save,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1152D4),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 18),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16)),
-                  elevation: 0,
-                ),
-                child: _saving
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Text(
-                        'Guardar Configuración',
-                        style: TextStyle(
-                            fontWeight: FontWeight.w800, fontSize: 16),
-                      ),
-              ),
-            ),
-            const SizedBox(height: 24),
-          ],
-        ),
-      ),
     );
   }
 

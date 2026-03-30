@@ -80,7 +80,7 @@ class TpvTerminalConfig {
   static const TpvTerminalConfig defaults = TpvTerminalConfig(
     currencyCode: 'USD',
     currencySymbol: r'$',
-    paymentMethods: <String>['cash'],
+    paymentMethods: <String>['cash', 'consignment'],
     cashDenominationsCents: <int>[10000, 5000, 2000, 1000, 500, 100],
   );
 
@@ -131,6 +131,7 @@ class TpvLocalDataSource {
     'card',
     'transfer',
     'wallet',
+    'consignment',
   ];
 
   Future<List<PosTerminal>> listActiveTerminalOptions() {
@@ -1217,9 +1218,9 @@ class TpvLocalDataSource {
         AND has_sales_pos = 1
       ''',
       variables: <Variable<Object>>[
-        Variable<String>(AppRoleIds.admin),
-        Variable<String>(AppPermissionKeys.tpvView),
-        Variable<String>(AppPermissionKeys.salesPos),
+        const Variable<String>(AppRoleIds.admin),
+        const Variable<String>(AppPermissionKeys.tpvView),
+        const Variable<String>(AppPermissionKeys.salesPos),
       ],
     ).get();
 
@@ -1785,9 +1786,21 @@ class TpvLocalDataSource {
               OR (sm.type = 'adjust' AND sm.qty < 0)
             )
             AND NOT (
-              LOWER(COALESCE(sm.reason_code, '')) = 'sale'
-              OR LOWER(COALESCE(sm.ref_type, '')) IN ('sale', 'sale_pos', 'sale_direct')
-              OR LOWER(COALESCE(sm.movement_source, '')) IN ('pos', 'direct_sale')
+              (
+                LOWER(COALESCE(sm.reason_code, '')) = 'sale'
+                OR LOWER(COALESCE(sm.ref_type, '')) IN ('sale', 'sale_pos', 'sale_direct')
+                OR LOWER(COALESCE(sm.movement_source, '')) IN ('pos', 'direct_sale')
+              )
+              AND LOWER(COALESCE(sm.reason_code, '')) <> 'consignment_sale'
+              AND LOWER(COALESCE(sm.ref_type, '')) NOT IN (
+                'consignment_sale',
+                'consignment_sale_pos',
+                'consignment_sale_direct'
+              )
+              AND LOWER(COALESCE(sm.movement_source, '')) NOT IN (
+                'pos_consignment',
+                'direct_consignment'
+              )
             )
               THEN ABS(sm.qty)
             ELSE 0
@@ -1800,9 +1813,21 @@ class TpvLocalDataSource {
               OR (sm.type = 'adjust' AND sm.qty < 0)
             )
             AND (
-              LOWER(COALESCE(sm.reason_code, '')) = 'sale'
-              OR LOWER(COALESCE(sm.ref_type, '')) IN ('sale', 'sale_pos', 'sale_direct')
-              OR LOWER(COALESCE(sm.movement_source, '')) IN ('pos', 'direct_sale')
+              (
+                LOWER(COALESCE(sm.reason_code, '')) = 'sale'
+                OR LOWER(COALESCE(sm.ref_type, '')) IN ('sale', 'sale_pos', 'sale_direct')
+                OR LOWER(COALESCE(sm.movement_source, '')) IN ('pos', 'direct_sale')
+              )
+              AND LOWER(COALESCE(sm.reason_code, '')) <> 'consignment_sale'
+              AND LOWER(COALESCE(sm.ref_type, '')) NOT IN (
+                'consignment_sale',
+                'consignment_sale_pos',
+                'consignment_sale_direct'
+              )
+              AND LOWER(COALESCE(sm.movement_source, '')) NOT IN (
+                'pos_consignment',
+                'direct_consignment'
+              )
             )
               THEN ABS(sm.qty)
             ELSE 0

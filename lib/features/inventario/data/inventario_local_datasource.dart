@@ -1422,6 +1422,11 @@ class InventarioLocalDataSource {
         normalizedRefType == 'sale_direct') {
       return 'sale';
     }
+    if (normalizedRefType == 'consignment_sale' ||
+        normalizedRefType == 'consignment_sale_pos' ||
+        normalizedRefType == 'consignment_sale_direct') {
+      return 'consignment_sale';
+    }
     return 'adjust';
   }
 
@@ -1441,13 +1446,23 @@ class InventarioLocalDataSource {
     if (normalizedRefType == 'sale_direct') {
       return 'direct_sale';
     }
+    if (normalizedRefType == 'consignment_sale_pos' ||
+        normalizedRefType == 'consignment_sale') {
+      return 'pos_consignment';
+    }
+    if (normalizedRefType == 'consignment_sale_direct') {
+      return 'direct_consignment';
+    }
     return 'manual';
   }
 
   bool _isSaleRefType(String refType) {
     return refType == 'sale' ||
         refType == 'sale_pos' ||
-        refType == 'sale_direct';
+        refType == 'sale_direct' ||
+        refType == 'consignment_sale' ||
+        refType == 'consignment_sale_pos' ||
+        refType == 'consignment_sale_direct';
   }
 
   double _signedMovementDelta(StockMovement movement) {
@@ -1468,6 +1483,8 @@ class InventarioLocalDataSource {
     switch (reasonCode) {
       case 'sale':
         return 'Venta';
+      case 'consignment_sale':
+        return 'Venta en consignacion';
       case 'purchase':
         return 'Compra';
       case 'breakage':

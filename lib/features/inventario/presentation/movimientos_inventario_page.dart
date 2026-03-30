@@ -770,8 +770,12 @@ class _MovimientosInventarioPageState
     }
     final String source = movement.movementSource.trim().toLowerCase();
     final String refType = (movement.refType ?? '').trim().toLowerCase();
-    final bool isSaleRef =
-        refType == 'sale' || refType == 'sale_pos' || refType == 'sale_direct';
+    final bool isSaleRef = refType == 'sale' ||
+        refType == 'sale_pos' ||
+        refType == 'sale_direct' ||
+        refType == 'consignment_sale' ||
+        refType == 'consignment_sale_pos' ||
+        refType == 'consignment_sale_direct';
     return source == 'manual' && !isSaleRef && movement.reasonCode != 'sale';
   }
 

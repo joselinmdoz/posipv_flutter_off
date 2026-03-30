@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/licensing/license_providers.dart';
+import '../../../core/security/session_access.dart';
 import '../../../core/utils/perf_trace.dart';
 import '../../../shared/models/dashboard_widget_config.dart';
 import '../../../shared/models/user_session.dart';
@@ -188,6 +189,7 @@ class _HomePageState extends ConsumerState<HomePage> {
 
     ReportesDashboard dashboard = const ReportesDashboard(
       today: SalesSummary(salesCount: 0, totalCents: 0, taxCents: 0),
+      yesterday: SalesSummary(salesCount: 0, totalCents: 0, taxCents: 0),
       lastDays: <DailySalesPoint>[],
       topProducts: <TopProductStat>[],
       recentSales: <RecentSaleStat>[],
@@ -320,8 +322,10 @@ class _HomePageState extends ConsumerState<HomePage> {
                     insight.lowStockProducts + insight.zeroStockProducts,
                 layout: _dashboardWidgetLayout,
                 moneyFormatter: _money,
+                currencySymbol: _currencySymbol,
                 onNewSaleTap: () => context.go('/tpv'),
                 onAddStockTap: () => context.go('/inventario-movimientos'),
+                onViewAllActivityTap: _buildRecentActivityAction(session),
               ),
             ],
           ],
@@ -332,5 +336,15 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   String _money(int cents) {
     return '$_currencySymbol${(cents / 100).toStringAsFixed(2)}';
+  }
+
+  VoidCallback? _buildRecentActivityAction(UserSession? session) {
+    if (SessionAccess.canAccessRoute(session, '/reportes')) {
+      return () => context.go('/reportes');
+    }
+    if (SessionAccess.canAccessRoute(session, '/ipv-reportes')) {
+      return () => context.go('/ipv-reportes');
+    }
+    return null;
   }
 }

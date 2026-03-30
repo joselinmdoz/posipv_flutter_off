@@ -8,13 +8,13 @@ import '../../configuracion/data/configuracion_local_datasource.dart';
 import '../../configuracion/presentation/configuracion_providers.dart';
 import '../data/reportes_local_datasource.dart';
 import 'reportes_providers.dart';
-import 'widgets/analytics_kpi_card.dart';
 import 'widgets/analytics_period_tabs.dart';
 import 'widgets/analytics_breakdown_card.dart';
 import 'widgets/analytics_sales_channel_card.dart';
+import 'widgets/analytics_sales_summary_cards.dart';
 import 'widgets/analytics_top_customer_tile.dart';
 import 'widgets/analytics_top_product_tile.dart';
-import 'widgets/sales_trend_card.dart';
+import 'widgets/analytics_sales_list_page.dart';
 
 class ReportesPage extends ConsumerStatefulWidget {
   const ReportesPage({super.key});
@@ -262,16 +262,6 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
     return '${qty.toStringAsFixed(2)} unidades vendidas';
   }
 
-  String _number(num value) {
-    if (value is int) {
-      return value.toString();
-    }
-    if ((value - value.roundToDouble()).abs() < 0.000001) {
-      return value.toStringAsFixed(0);
-    }
-    return value.toStringAsFixed(2);
-  }
-
   String _customerTypeLabel(String raw) {
     switch (raw.trim().toLowerCase()) {
       case 'frecuente':
@@ -294,6 +284,40 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
     final String month = d.month.toString().padLeft(2, '0');
     final String year = d.year.toString();
     return '$day/$month/$year';
+  }
+
+  int _kpiColumnsForWidth(double width) {
+    if (width < 700) {
+      return 2;
+    }
+    if (width < 1100) {
+      return 3;
+    }
+    if (width < 1450) {
+      return 4;
+    }
+    return 5;
+  }
+
+  Future<void> _openSalesList({
+    String title = 'Ventas del período',
+    String? channel,
+    String? paymentMethodKey,
+    String? dependentKey,
+  }) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => AnalyticsSalesListPage(
+          fromDate: _range.start,
+          toDate: _range.end,
+          currencySymbol: _currencySymbol,
+          title: title,
+          channel: channel,
+          paymentMethodKey: paymentMethodKey,
+          dependentKey: dependentKey,
+        ),
+      ),
+    );
   }
 
   @override
@@ -437,52 +461,45 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
                   else ...<Widget>[
                     LayoutBuilder(
                       builder: (BuildContext context, BoxConstraints c) {
-                        final bool compact = c.maxWidth < 560;
-                        final double cardWidth =
-                            compact ? c.maxWidth : (c.maxWidth - 12) / 2;
+                        const double spacing = 10;
+                        final int columns = _kpiColumnsForWidth(c.maxWidth);
                         final List<Widget> cards = <Widget>[
-                          AnalyticsKpiCard(
-                            title: 'INGRESOS TOTALES',
-                            value: _money(analytics.totalRevenueCents),
-                            deltaPercent: analytics.totalRevenueDeltaPercent,
-                            deltaText: _formatDelta(
-                                analytics.totalRevenueDeltaPercent),
+                          TotalSalesKpiWidget(
+                            totalSales: analytics.ordersCount,
+                            onTap: () => _openSalesList(
+                              title: 'Total de ventas',
+                            ),
                           ),
-                          AnalyticsKpiCard(
-                            title: 'PEDIDO PROMEDIO',
-                            value: _money(analytics.avgOrderCents),
-                            deltaPercent: analytics.avgOrderDeltaPercent,
-                            deltaText:
-                                _formatDelta(analytics.avgOrderDeltaPercent),
+                          SalesAmountKpiWidget(
+                            totalAmountCents: analytics.totalRevenueCents,
+                            moneyFormatter: _money,
+                            onTap: () => _openSalesList(
+                              title: 'Importe total de ventas',
+                            ),
                           ),
-                          AnalyticsKpiCard(
-                            title: 'VENTAS',
-                            value: _number(analytics.ordersCount),
+                          ProfitKpiWidget(
+                            totalProfitCents: analytics.totalProfitCents,
+                            moneyFormatter: _money,
                           ),
-                          AnalyticsKpiCard(
-                            title: 'UNIDADES VENDIDAS',
-                            value: _number(analytics.itemsSoldQty),
-                          ),
-                          AnalyticsKpiCard(
-                            title: 'CLIENTES ÚNICOS',
-                            value: _number(analytics.uniqueCustomersCount),
-                          ),
-                          AnalyticsKpiCard(
-                            title: 'VENTAS SIN CLIENTE',
-                            value: _number(analytics.salesWithoutCustomerCount),
+                          SoldProductsKpiWidget(
+                            totalProductsSold: analytics.itemsSoldQty,
+                            onTap: () => _openSalesList(
+                              title: 'Productos vendidos',
+                            ),
                           ),
                         ];
-                        return Wrap(
-                          spacing: 12,
-                          runSpacing: 12,
-                          children: cards
-                              .map(
-                                (Widget card) => SizedBox(
-                                  width: cardWidth,
-                                  child: card,
-                                ),
-                              )
-                              .toList(growable: false),
+                        return GridView.builder(
+                          itemCount: cards.length,
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: columns,
+                            mainAxisSpacing: spacing,
+                            crossAxisSpacing: spacing,
+                            childAspectRatio: c.maxWidth < 420 ? 1.25 : 1.45,
+                          ),
+                          itemBuilder: (_, int index) => cards[index],
                         );
                       },
                     ),
@@ -493,11 +510,14 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
                       posRevenueCents: analytics.posRevenueCents,
                       directOrdersCount: analytics.directOrdersCount,
                       directRevenueCents: analytics.directRevenueCents,
-                    ),
-                    const SizedBox(height: 12),
-                    SalesTrendCard(
-                      points: analytics.trend,
-                      currencySymbol: _currencySymbol,
+                      onPosTap: () => _openSalesList(
+                        title: 'Ventas canal POS',
+                        channel: 'pos',
+                      ),
+                      onDirectTap: () => _openSalesList(
+                        title: 'Ventas canal directa',
+                        channel: 'directa',
+                      ),
                     ),
                     const SizedBox(height: 12),
                     AnalyticsBreakdownCard(
@@ -506,13 +526,25 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
                       totalBaseCents: analytics.totalRevenueCents,
                       items: analytics.paymentMethods,
                       emptyLabel: 'No hay pagos registrados en el rango.',
+                      onItemTap: (SalesBreakdownStat row) {
+                        _openSalesList(
+                          title: 'Ventas por ${row.label}',
+                          paymentMethodKey: row.key,
+                        );
+                      },
                     ),
                     const SizedBox(height: 12),
                     AnalyticsBreakdownCard(
-                      title: 'Ventas por Cajero',
+                      title: 'Ventas por Dependiente',
                       currencySymbol: _currencySymbol,
                       totalBaseCents: analytics.totalRevenueCents,
                       items: analytics.byCashier,
+                      onItemTap: (SalesBreakdownStat row) {
+                        _openSalesList(
+                          title: 'Ventas de ${row.label}',
+                          dependentKey: row.key,
+                        );
+                      },
                     ),
                     const SizedBox(height: 12),
                     AnalyticsBreakdownCard(

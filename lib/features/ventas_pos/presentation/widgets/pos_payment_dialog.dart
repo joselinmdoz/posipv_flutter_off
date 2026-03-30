@@ -40,6 +40,8 @@ class PosPaymentDialog extends StatefulWidget {
 }
 
 class _PosPaymentDialogState extends State<PosPaymentDialog> {
+  static const String _consignmentCode = 'consignment';
+
   final List<_PaymentDraft> _payments = <_PaymentDraft>[];
   final TextEditingController _amountCtrl = TextEditingController();
   final TextEditingController _transactionCtrl = TextEditingController();
@@ -137,11 +139,25 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
     );
   }
 
+  bool _isConsignmentMethod(String method) {
+    return method.trim().toLowerCase() == _consignmentCode;
+  }
+
   void _selectMethod(String method) {
     setState(() {
       _selectedMethod = method;
-      if (!_requiresTransactionId(method)) {
+      if (_isConsignmentMethod(method)) {
+        for (final _PaymentDraft draft in _payments) {
+          draft.controller.dispose();
+        }
+        _payments.clear();
         _transactionCtrl.clear();
+        _amountCtrl.text = '0.00';
+      } else {
+        if (!_requiresTransactionId(method)) {
+          _transactionCtrl.clear();
+        }
+        _syncMainAmount();
       }
     });
   }
@@ -210,6 +226,12 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
   }
 
   void _addPaymentLine() {
+    if (_isConsignmentMethod(_selectedMethod)) {
+      _show(
+        'En consignación la venta se registra sin pagos iniciales.',
+      );
+      return;
+    }
     final double current = _toAmount(_amountCtrl.text);
     if (current <= 0) {
       return;
@@ -250,10 +272,30 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
       return;
     }
 
+    final bool isConsignmentSale = _isConsignmentMethod(_selectedMethod) ||
+        _payments.any(
+          (_PaymentDraft row) => _isConsignmentMethod(row.method),
+        );
+    if (isConsignmentSale && _selectedCustomer == null) {
+      _show('La venta en consignación requiere seleccionar un cliente.');
+      return;
+    }
+    if (isConsignmentSale &&
+        (_payments.isNotEmpty || _toCents(_amountCtrl.text) != 0)) {
+      _show('En consignación la venta se registra sin pagos iniciales.');
+      return;
+    }
+
     final List<PosPaymentLine> paymentLines = <PosPaymentLine>[];
     final Map<String, int> finalPayments = <String, int>{};
     final int mainCents = _toCents(_amountCtrl.text);
     if (mainCents > 0) {
+      if (_isConsignmentMethod(_selectedMethod)) {
+        _show(
+          'En consignación la venta se registra sin pagos iniciales.',
+        );
+        return;
+      }
       final String txId = _transactionCtrl.text.trim();
       if (_requiresTransactionId(_selectedMethod) && txId.isEmpty) {
         _show('Debes ingresar el ID de transaccion para este metodo.');
@@ -295,10 +337,14 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
       0,
       (int sum, int value) => sum + value,
     );
-    if (paidCents != _totalCents) {
+    if (!isConsignmentSale && paidCents != _totalCents) {
       _show(
         'La suma de pagos debe ser exacta: ${widget.currencySymbol}${_total.toStringAsFixed(2)}',
       );
+      return;
+    }
+    if (isConsignmentSale && paidCents != 0) {
+      _show('En consignación la venta se registra sin pagos iniciales.');
       return;
     }
 
@@ -309,6 +355,7 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
         paymentLines: paymentLines,
         cartLines:
             _editableLines.map((PosCartLine line) => line.copyWith()).toList(),
+        isConsignmentSale: isConsignmentSale,
         selectedCustomer: _selectedCustomer,
       ),
     );
@@ -417,6 +464,42 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
       return;
     }
     setState(() => _selectedCustomer = null);
+  }
+
+  Future<void> _cancelOrderFromCheckout() async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Cancelar orden'),
+          content: const Text(
+            'Se eliminarán todos los productos de esta orden.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('No'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Sí, cancelar'),
+            ),
+          ],
+        );
+      },
+    );
+    if (!mounted || confirm != true) {
+      return;
+    }
+    Navigator.of(context).pop(
+      const PosPaymentResult(
+        paymentByMethod: <String, int>{},
+        paymentLines: <PosPaymentLine>[],
+        cartLines: <PosCartLine>[],
+        isConsignmentSale: false,
+        cancelOrderRequested: true,
+      ),
+    );
   }
 
   PosSelectedCustomer _toSelectedCustomer(ClienteListItem item) {
@@ -638,15 +721,47 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          const Text(
-            'Resumen de pedido',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.5,
-            ),
+          Row(
+            children: <Widget>[
+              const Expanded(
+                child: Text(
+                  'Resumen de pedido',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed:
+                    _editableLines.isEmpty ? null : _cancelOrderFromCheckout,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFFB42318),
+                  side: BorderSide(
+                    color: const Color(0xFFB42318).withValues(alpha: 0.35),
+                  ),
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  minimumSize: Size.zero,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                icon: const Icon(Icons.close_rounded, size: 16),
+                label: const Text(
+                  'Cancelar',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
           if (_editableLines.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 8),
@@ -743,6 +858,9 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
   }
 
   Widget _buildPaymentForm(bool isDark, Color primaryColor) {
+    final bool isConsignmentSelected = _isConsignmentMethod(_selectedMethod);
+    final bool canValidate = _editableLines.isNotEmpty &&
+        (isConsignmentSelected || _pendingAmount <= 0.01);
     return Column(
       children: <Widget>[
         Container(
@@ -801,13 +919,16 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
                 ),
               ),
               const SizedBox(height: 12),
-              Row(
-                children: widget.paymentMethods.asMap().entries.map((entry) {
-                  final int index = entry.key;
-                  final String method = entry.value;
-                  return Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.only(left: index > 0 ? 8 : 0),
+              SizedBox(
+                height: 48,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: widget.paymentMethods.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (BuildContext context, int index) {
+                    final String method = widget.paymentMethods[index];
+                    return SizedBox(
+                      width: 156,
                       child: _buildMethodBtn(
                         label: widget.paymentMethodLabel(method),
                         icon: _getMethodIcon(method),
@@ -815,10 +936,32 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
                         primaryColor: primaryColor,
                         onTap: () => _selectMethod(method),
                       ),
-                    ),
-                  );
-                }).toList(),
+                    );
+                  },
+                ),
               ),
+              if (isConsignmentSelected) ...<Widget>[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1152D4).withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: const Color(0xFF1152D4).withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: const Text(
+                    'Modo consignación: la venta se valida sin pagos iniciales. El cliente es obligatorio.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1152D4),
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 20),
               const Text(
                 'Monto Recibido',
@@ -1037,9 +1180,7 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _pendingAmount <= 0.01 && _editableLines.isNotEmpty
-                      ? _validatePayment
-                      : null,
+                  onPressed: canValidate ? _validatePayment : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: primaryColor,
                     foregroundColor: Colors.white,
@@ -1172,6 +1313,8 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
         return Icons.payments_outlined;
       case 'card':
         return Icons.credit_card_rounded;
+      case 'consignment':
+        return Icons.inventory_2_outlined;
       case 'bank':
         return Icons.account_balance_rounded;
       case 'transfer':

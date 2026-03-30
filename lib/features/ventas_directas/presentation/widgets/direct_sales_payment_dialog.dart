@@ -10,12 +10,16 @@ class DirectSalesPaymentResult {
     required this.paymentByMethodPrimaryCents,
     required this.paymentLines,
     required this.cartLines,
+    required this.isConsignmentSale,
+    this.cancelOrderRequested = false,
   });
 
   final int discountCents;
   final Map<String, int> paymentByMethodPrimaryCents;
   final List<DirectSalesPaymentLine> paymentLines;
   final List<PosCartLine> cartLines;
+  final bool isConsignmentSale;
+  final bool cancelOrderRequested;
 }
 
 class DirectSalesPaymentLine {
@@ -76,6 +80,8 @@ class DirectSalesPaymentDialog extends StatefulWidget {
 }
 
 class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
+  static const String _consignmentCode = 'consignment';
+
   final List<PosCartLine> _editableLines = <PosCartLine>[];
   final TextEditingController _discountCtrl = TextEditingController();
   final TextEditingController _lineAmountCtrl = TextEditingController();
@@ -166,6 +172,10 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
     return widget.onlinePaymentMethodCodes.contains(
       method.trim().toLowerCase(),
     );
+  }
+
+  bool _isConsignmentMethod(String method) {
+    return method.trim().toLowerCase() == _consignmentCode;
   }
 
   int get _paidPrimaryCents {
@@ -316,6 +326,12 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
   }
 
   void _addPaymentLine() {
+    if (_isConsignmentMethod(_selectedMethod)) {
+      _show(
+        'En consignación la venta se registra sin pagos iniciales.',
+      );
+      return;
+    }
     final int enteredCents = _moneyTextToCents(_lineAmountCtrl.text) ?? 0;
     if (enteredCents <= 0) {
       _show('Ingresa un monto valido para agregar la linea de pago.');
@@ -395,23 +411,31 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
       _show('No hay productos en el resumen para cobrar.');
       return;
     }
-    if (_payments.isEmpty) {
+    final bool isConsignmentSale = _isConsignmentMethod(_selectedMethod) ||
+        _payments.any(
+          (_PaymentDraft row) => _isConsignmentMethod(row.method),
+        );
+    if (!isConsignmentSale && _payments.isEmpty) {
       _show('Debes agregar al menos una linea de pago.');
       return;
     }
-    if (!_settled) {
+    if (!isConsignmentSale && !_settled) {
       _show('La suma de pagos debe coincidir con el total de la venta.');
+      return;
+    }
+    if (isConsignmentSale && _paidPrimaryCents != 0) {
+      _show('En consignación la venta se registra sin pagos iniciales.');
       return;
     }
 
     List<DirectSalesPaymentLine> paymentLines = _paymentLines;
-    if (paymentLines.isEmpty) {
+    if (!isConsignmentSale && paymentLines.isEmpty) {
       _show('Debes ingresar al menos un pago valido.');
       return;
     }
 
     final int delta = _deltaPrimaryCents;
-    if (delta != 0) {
+    if (!isConsignmentSale && delta != 0) {
       final DirectSalesPaymentLine firstLine = paymentLines.first;
       final int adjustedPrimary = firstLine.primaryAmountCents - delta;
       if (adjustedPrimary <= 0) {
@@ -442,6 +466,7 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
         paymentLines: paymentLines,
         cartLines:
             _editableLines.map((PosCartLine line) => line.copyWith()).toList(),
+        isConsignmentSale: isConsignmentSale,
       ),
     );
   }
@@ -450,6 +475,43 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _cancelOrderFromCheckout() async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Cancelar orden'),
+          content: const Text(
+            'Se eliminarán todos los productos de esta orden.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('No'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Sí, cancelar'),
+            ),
+          ],
+        );
+      },
+    );
+    if (!mounted || confirm != true) {
+      return;
+    }
+    Navigator.of(context).pop(
+      const DirectSalesPaymentResult(
+        discountCents: 0,
+        paymentByMethodPrimaryCents: <String, int>{},
+        paymentLines: <DirectSalesPaymentLine>[],
+        cartLines: <PosCartLine>[],
+        isConsignmentSale: false,
+        cancelOrderRequested: true,
+      ),
+    );
   }
 
   @override
@@ -565,14 +627,46 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          const Text(
-            'Resumen de pedido',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-            ),
+          Row(
+            children: <Widget>[
+              const Expanded(
+                child: Text(
+                  'Resumen de pedido',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed:
+                    _editableLines.isEmpty ? null : _cancelOrderFromCheckout,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFFB42318),
+                  side: BorderSide(
+                    color: const Color(0xFFB42318).withValues(alpha: 0.35),
+                  ),
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  minimumSize: Size.zero,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                icon: const Icon(Icons.close_rounded, size: 16),
+                label: const Text(
+                  'Cancelar',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
           if (_editableLines.isEmpty)
             const Text('No hay productos en el resumen.')
           else
@@ -682,8 +776,15 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
                   }
                   setState(() {
                     _selectedMethod = value;
-                    if (!_requiresTransactionId(value)) {
+                    if (_isConsignmentMethod(value)) {
+                      _payments.clear();
                       _lineTransactionCtrl.clear();
+                      _lineAmountCtrl.text = '0.00';
+                    } else {
+                      if (!_requiresTransactionId(value)) {
+                        _lineTransactionCtrl.clear();
+                      }
+                      _prefillPendingAmount();
                     }
                   });
                 },
@@ -735,6 +836,28 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
             },
           ),
           const SizedBox(height: 8),
+          if (_isConsignmentMethod(_selectedMethod)) ...<Widget>[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1152D4).withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: const Color(0xFF1152D4).withValues(alpha: 0.2),
+                ),
+              ),
+              child: const Text(
+                'Modo consignación: la venta se valida sin pagos iniciales. El cliente debe seleccionarse antes de confirmar.',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1152D4),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           if (_requiresTransactionId(_selectedMethod)) ...<Widget>[
             TextField(
               controller: _lineTransactionCtrl,

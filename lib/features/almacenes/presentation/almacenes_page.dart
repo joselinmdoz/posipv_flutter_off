@@ -1,11 +1,15 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_providers.dart';
+import '../../../core/security/app_permissions.dart';
 import '../../../core/utils/perf_trace.dart';
 import '../../../shared/widgets/app_add_action_button.dart';
 import '../../../shared/widgets/app_scaffold.dart';
+import '../../auth/presentation/auth_providers.dart';
 import '../../tpv/presentation/tpv_providers.dart';
 import '../data/almacenes_local_datasource.dart';
 import 'almacenes_providers.dart';
@@ -75,13 +79,24 @@ class _AlmacenesPageState extends ConsumerState<AlmacenesPage> {
   Future<void> _openWarehouseDetails(Warehouse warehouse) async {
     await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
-        builder: (_) => _WarehouseDetailsPage(warehouse: warehouse),
+        builder: (_) => _WarehouseDetailsPage(
+          warehouse: warehouse,
+          canManage: _canManageWarehouses(),
+        ),
       ),
     );
     await _loadWarehouses();
   }
 
   Future<void> _confirmDelete(Warehouse warehouse) async {
+    if (!_canManageWarehouses()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No tienes permisos para gestionar almacenes.'),
+        ),
+      );
+      return;
+    }
     final bool? confirm = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
@@ -263,40 +278,41 @@ class _AlmacenesPageState extends ConsumerState<AlmacenesPage> {
                 ),
               ),
               const SizedBox(width: 8),
-              PopupMenuButton<String>(
-                icon: Icon(
-                  Icons.more_vert_rounded,
-                  size: 20,
-                  color: scheme.onSurfaceVariant.withValues(alpha: 0.4),
+              if (_canManageWarehouses())
+                PopupMenuButton<String>(
+                  icon: Icon(
+                    Icons.more_vert_rounded,
+                    size: 20,
+                    color: scheme.onSurfaceVariant.withValues(alpha: 0.4),
+                  ),
+                  onSelected: (String value) {
+                    if (value == 'edit') _openWarehouseDetails(wws.warehouse);
+                    if (value == 'delete') _confirmDelete(wws.warehouse);
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                      value: 'edit',
+                      child: Row(
+                        children: [
+                          Icon(Icons.edit_outlined, size: 20),
+                          SizedBox(width: 12),
+                          Text('Editar'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete_outline_rounded,
+                              size: 20, color: Colors.red),
+                          SizedBox(width: 12),
+                          Text('Eliminar', style: TextStyle(color: Colors.red)),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                onSelected: (String value) {
-                  if (value == 'edit') _openWarehouseDetails(wws.warehouse);
-                  if (value == 'delete') _confirmDelete(wws.warehouse);
-                },
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: 'edit',
-                    child: Row(
-                      children: [
-                        Icon(Icons.edit_outlined, size: 20),
-                        SizedBox(width: 12),
-                        Text('Editar'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Row(
-                      children: [
-                        Icon(Icons.delete_outline_rounded,
-                            size: 20, color: Colors.red),
-                        SizedBox(width: 12),
-                        Text('Eliminar', style: TextStyle(color: Colors.red)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
             ],
           ),
         ),
@@ -304,9 +320,19 @@ class _AlmacenesPageState extends ConsumerState<AlmacenesPage> {
     );
   }
 
+  bool _canManageWarehouses() {
+    final session = ref.read(currentSessionProvider);
+    return session?.hasPermission(AppPermissionKeys.warehousesManage) ?? false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final license = ref.watch(currentLicenseStatusProvider);
+    final bool canManageWarehouses =
+        ref.watch(currentSessionProvider)?.hasPermission(
+                  AppPermissionKeys.warehousesManage,
+                ) ??
+            false;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final bool isDark = theme.brightness == Brightness.dark;
@@ -328,7 +354,7 @@ class _AlmacenesPageState extends ConsumerState<AlmacenesPage> {
           tooltip: 'Opciones',
         ),
       ],
-      floatingActionButton: license.canWrite
+      floatingActionButton: license.canWrite && canManageWarehouses
           ? AppAddActionButton(
               currentRoute: '/almacenes',
               iconSize: 32,
@@ -476,6 +502,18 @@ class _WarehouseFormPageState extends ConsumerState<_WarehouseFormPage> {
   }
 
   Future<void> _save() async {
+    final bool canManage = ref.read(currentSessionProvider)?.hasPermission(
+              AppPermissionKeys.warehousesManage,
+            ) ??
+        false;
+    if (!canManage) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No tienes permisos para gestionar almacenes.'),
+        ),
+      );
+      return;
+    }
     final String name = _nameCtrl.text.trim();
 
     if (name.isEmpty) {
@@ -514,6 +552,10 @@ class _WarehouseFormPageState extends ConsumerState<_WarehouseFormPage> {
 
   @override
   Widget build(BuildContext context) {
+    final bool canManage = ref.watch(currentSessionProvider)?.hasPermission(
+              AppPermissionKeys.warehousesManage,
+            ) ??
+        false;
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
@@ -532,132 +574,144 @@ class _WarehouseFormPageState extends ConsumerState<_WarehouseFormPage> {
           icon: const Icon(Icons.close_rounded),
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text(
-              'Información General',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w900,
-                color: theme.colorScheme.primary,
-                letterSpacing: 1.2,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Nombre del almacén',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: theme.colorScheme.onSurface,
-              ),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _nameCtrl,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-              decoration: InputDecoration(
-                hintText: 'Ej: Tienda Central, Sucursal 1',
-                filled: true,
-                fillColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-                contentPadding: const EdgeInsets.all(16),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(
-                    color: isDark
-                        ? const Color(0xFF334155)
-                        : const Color(0xFFE2E8F0),
-                  ),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(
-                    color: isDark
-                        ? const Color(0xFF334155)
-                        : const Color(0xFFE2E8F0),
-                  ),
+      body: !canManage
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.all(20),
+                child: Text(
+                  'No tienes permisos para gestionar almacenes.',
+                  textAlign: TextAlign.center,
                 ),
               ),
-            ),
-            const SizedBox(height: 32),
-            Text(
-              'Tipo de almacén',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: theme.colorScheme.onSurface,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Selecciona la función que cumplirá este almacén.',
-              style: TextStyle(
-                fontSize: 12,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: _TypeOption(
-                    label: 'Central',
-                    icon: Icons.warehouse_rounded,
-                    isSelected: _selectedType == 'Central',
-                    color: const Color(0xFF148A65),
-                    onTap: () => setState(() => _selectedType = 'Central'),
+            )
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    'Información General',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                      color: theme.colorScheme.primary,
+                      letterSpacing: 1.2,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _TypeOption(
-                    label: 'TPV',
-                    icon: Icons.store_rounded,
-                    isSelected: _selectedType == 'TPV',
-                    color: const Color(0xFF1152D4),
-                    onTap: () => setState(() => _selectedType = 'TPV'),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Nombre del almacén',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: theme.colorScheme.onSurface,
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 48),
-            SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: FilledButton(
-                onPressed: _saving ? null : _save,
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF1152D4),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  elevation: 0,
-                ),
-                child: _saving
-                    ? const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 3,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Text(
-                        'Crear almacén',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _nameCtrl,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                    decoration: InputDecoration(
+                      hintText: 'Ej: Tienda Central, Sucursal 1',
+                      filled: true,
+                      fillColor:
+                          isDark ? const Color(0xFF1E293B) : Colors.white,
+                      contentPadding: const EdgeInsets.all(16),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(
+                          color: isDark
+                              ? const Color(0xFF334155)
+                              : const Color(0xFFE2E8F0),
                         ),
                       ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(
+                          color: isDark
+                              ? const Color(0xFF334155)
+                              : const Color(0xFFE2E8F0),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  Text(
+                    'Tipo de almacén',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Selecciona la función que cumplirá este almacén.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: _TypeOption(
+                          label: 'Central',
+                          icon: Icons.warehouse_rounded,
+                          isSelected: _selectedType == 'Central',
+                          color: const Color(0xFF148A65),
+                          onTap: () =>
+                              setState(() => _selectedType = 'Central'),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: _TypeOption(
+                          label: 'TPV',
+                          icon: Icons.store_rounded,
+                          isSelected: _selectedType == 'TPV',
+                          color: const Color(0xFF1152D4),
+                          onTap: () => setState(() => _selectedType = 'TPV'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 48),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: FilledButton(
+                      onPressed: _saving ? null : _save,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF1152D4),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: _saving
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 3,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text(
+                              'Crear almacén',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -750,9 +804,13 @@ class _TypeOption extends StatelessWidget {
 }
 
 class _WarehouseDetailsPage extends ConsumerStatefulWidget {
-  const _WarehouseDetailsPage({required this.warehouse});
+  const _WarehouseDetailsPage({
+    required this.warehouse,
+    required this.canManage,
+  });
 
   final Warehouse warehouse;
+  final bool canManage;
 
   @override
   ConsumerState<_WarehouseDetailsPage> createState() =>
@@ -760,12 +818,16 @@ class _WarehouseDetailsPage extends ConsumerStatefulWidget {
 }
 
 class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
+  static const int _stockPageSize = 10;
+
   late TextEditingController _nameCtrl;
   late String _selectedType;
   bool _isEditing = false;
   bool _saving = false;
   List<StockBalanceWithProduct> _stock = <StockBalanceWithProduct>[];
   bool _loadingStock = true;
+  int _stockPageIndex = 0;
+  final ScrollController _stockScrollController = ScrollController();
 
   @override
   void initState() {
@@ -777,6 +839,7 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
 
   @override
   void dispose() {
+    _stockScrollController.dispose();
     _nameCtrl.dispose();
     super.dispose();
   }
@@ -789,6 +852,7 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
       if (mounted) {
         setState(() {
           _stock = stock;
+          _stockPageIndex = 0;
           _loadingStock = false;
         });
       }
@@ -799,7 +863,45 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
     }
   }
 
+  int get _stockPageCount {
+    if (_stock.isEmpty) {
+      return 1;
+    }
+    return (_stock.length / _stockPageSize).ceil();
+  }
+
+  List<StockBalanceWithProduct> get _currentStockPageItems {
+    if (_stock.isEmpty) {
+      return const <StockBalanceWithProduct>[];
+    }
+    final int start = _stockPageIndex * _stockPageSize;
+    if (start >= _stock.length) {
+      return const <StockBalanceWithProduct>[];
+    }
+    final int end = math.min(start + _stockPageSize, _stock.length);
+    return _stock.sublist(start, end);
+  }
+
+  void _goToStockPage(int pageIndex) {
+    final int safeIndex = pageIndex.clamp(0, _stockPageCount - 1);
+    if (safeIndex == _stockPageIndex) {
+      return;
+    }
+    setState(() => _stockPageIndex = safeIndex);
+    if (_stockScrollController.hasClients) {
+      _stockScrollController.jumpTo(0);
+    }
+  }
+
   Future<void> _saveChanges() async {
+    if (!widget.canManage) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No tienes permisos para gestionar almacenes.'),
+        ),
+      );
+      return;
+    }
     final String name = _nameCtrl.text.trim();
 
     if (name.isEmpty) {
@@ -862,7 +964,7 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
           icon: const Icon(Icons.arrow_back_rounded),
         ),
         actions: <Widget>[
-          if (!_isEditing)
+          if (!_isEditing && widget.canManage)
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
               child: IconButton.filledTonal(
@@ -870,7 +972,7 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
                 icon: const Icon(Icons.edit_rounded, size: 20),
               ),
             )
-          else
+          else if (widget.canManage)
             IconButton(
               onPressed: _saving ? null : _saveChanges,
               icon: _saving
@@ -1153,89 +1255,171 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
                       ),
                     )
                   else
-                    ListView.separated(
-                      key: const PageStorageKey<String>('almacen-detail-stock'),
-                      shrinkWrap: true,
-                      cacheExtent: 280,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: _stock.length > 10 ? 10 : _stock.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (BuildContext context, int index) {
-                        final item = _stock[index];
-                        return KeyedSubtree(
-                          key: ValueKey<String>(item.product.id),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            child: Row(
+                    Builder(
+                      builder: (BuildContext context) {
+                        final List<StockBalanceWithProduct> pageItems =
+                            _currentStockPageItems;
+                        final int totalPages = _stockPageCount;
+                        final int startItem = pageItems.isEmpty
+                            ? 0
+                            : (_stockPageIndex * _stockPageSize) + 1;
+                        final int endItem = pageItems.isEmpty
+                            ? 0
+                            : startItem + pageItems.length - 1;
+                        final double stockListHeight =
+                            (MediaQuery.sizeOf(context).height * 0.34)
+                                .clamp(220.0, 420.0);
+
+                        return Column(
+                          children: <Widget>[
+                            SizedBox(
+                              height: stockListHeight,
+                              child: Scrollbar(
+                                controller: _stockScrollController,
+                                thumbVisibility: true,
+                                child: ListView.separated(
+                                  key: PageStorageKey<String>(
+                                    'almacen-detail-stock-page-$_stockPageIndex',
+                                  ),
+                                  controller: _stockScrollController,
+                                  itemCount: pageItems.length,
+                                  separatorBuilder: (_, __) =>
+                                      const Divider(height: 1),
+                                  itemBuilder:
+                                      (BuildContext context, int index) {
+                                    final item = pageItems[index];
+                                    return KeyedSubtree(
+                                      key: ValueKey<String>(item.product.id),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 10),
+                                        child: Row(
+                                          children: <Widget>[
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: <Widget>[
+                                                  Text(
+                                                    item.product.name,
+                                                    style: TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                      fontSize: 14,
+                                                      color: theme.colorScheme
+                                                          .onSurface,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Text(
+                                                    'SKU: ${item.product.sku}',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      color: theme.colorScheme
+                                                          .onSurfaceVariant,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.end,
+                                              children: <Widget>[
+                                                Text(
+                                                  item.stockBalance.qty
+                                                      .toStringAsFixed(0),
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.w800,
+                                                    fontSize: 16,
+                                                    color:
+                                                        item.stockBalance.qty >
+                                                                0
+                                                            ? const Color(
+                                                                0xFF148A65)
+                                                            : const Color(
+                                                                0xFFE1487D),
+                                                  ),
+                                                ),
+                                                Text(
+                                                  _formatCurrency(
+                                                    item.product.priceCents,
+                                                  ),
+                                                  style: const TextStyle(
+                                                    fontSize: 12,
+                                                    color: Color(0xFF8B83A8),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            Row(
                               children: <Widget>[
                                 Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: <Widget>[
-                                      Text(
-                                        item.product.name,
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 14,
-                                          color: theme.colorScheme.onSurface,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        'SKU: ${item.product.sku}',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: theme
-                                              .colorScheme.onSurfaceVariant,
-                                        ),
-                                      ),
-                                    ],
+                                  child: Text(
+                                    'Mostrando $startItem-$endItem de ${_stock.length}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: <Widget>[
-                                    Text(
-                                      item.stockBalance.qty.toStringAsFixed(0),
+                                if (totalPages > 1) ...<Widget>[
+                                  IconButton.filledTonal(
+                                    onPressed: _stockPageIndex > 0
+                                        ? () => _goToStockPage(
+                                              _stockPageIndex - 1,
+                                            )
+                                        : null,
+                                    icon: const Icon(
+                                      Icons.chevron_left_rounded,
+                                    ),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                    ),
+                                    child: Text(
+                                      '${_stockPageIndex + 1}/$totalPages',
                                       style: TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 16,
-                                        color: item.stockBalance.qty > 0
-                                            ? const Color(0xFF148A65)
-                                            : const Color(0xFFE1487D),
-                                      ),
-                                    ),
-                                    Text(
-                                      _formatCurrency(item.product.priceCents),
-                                      style: const TextStyle(
                                         fontSize: 12,
-                                        color: Color(0xFF8B83A8),
+                                        fontWeight: FontWeight.w700,
+                                        color:
+                                            theme.colorScheme.onSurfaceVariant,
                                       ),
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                  IconButton.filledTonal(
+                                    onPressed: _stockPageIndex + 1 < totalPages
+                                        ? () => _goToStockPage(
+                                              _stockPageIndex + 1,
+                                            )
+                                        : null,
+                                    icon: const Icon(
+                                      Icons.chevron_right_rounded,
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
-                          ),
+                          ],
                         );
                       },
                     ),
-                  if (_stock.length > 10) ...<Widget>[
-                    const SizedBox(height: 16),
-                    Center(
-                      child: Text(
-                        'y ${_stock.length - 10} más...',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),

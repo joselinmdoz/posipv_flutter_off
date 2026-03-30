@@ -8,7 +8,7 @@ class TpvTerminalCard extends StatelessWidget {
   final VoidCallback onOpenSession;
   final VoidCallback onCloseSession;
   final VoidCallback onGoToPos;
-  final VoidCallback onEdit;
+  final VoidCallback? onEdit;
   final VoidCallback? onDelete;
   final VoidCallback onHistory;
   final VoidCallback onIpv;
@@ -20,7 +20,7 @@ class TpvTerminalCard extends StatelessWidget {
     required this.onOpenSession,
     required this.onCloseSession,
     required this.onGoToPos,
-    required this.onEdit,
+    this.onEdit,
     this.onDelete,
     required this.onHistory,
     required this.onIpv,
@@ -32,15 +32,15 @@ class TpvTerminalCard extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final isOpen = terminal.openSession != null;
-    
-    // As per user request: "en la card de los tpv no es necesario mostrar los metodos de pagos configurados, 
+
+    // As per user request: "en la card de los tpv no es necesario mostrar los metodos de pagos configurados,
     // ni los usuarios ni el almacen, si muestra el tipo de moneda en la que se trabaja"
     // We also need to show the status (OPEN/CLOSED) and the image if any.
-    
-    // Note: terminal.terminal currently doesn't have imagePath in DB, 
+
+    // Note: terminal.terminal currently doesn't have imagePath in DB,
     // we'll assume it will be added or we use the unsplash placeholder for now.
     // If I add it, it would be terminal.terminal.imagePath.
-    
+
     return Container(
       margin: const EdgeInsets.only(bottom: 24),
       decoration: BoxDecoration(
@@ -70,7 +70,7 @@ class TpvTerminalCard extends StatelessWidget {
               children: [
                 // For now using placeholder, but ready for terminal.terminal.imagePath when added
                 _buildTerminalImage(isDark, scheme),
-                
+
                 Container(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -83,15 +83,18 @@ class TpvTerminalCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                
+
                 // Status Badge
                 Positioned(
                   top: 16,
                   right: 16,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: isOpen ? const Color(0xFF10B981) : Colors.black.withValues(alpha: 0.5),
+                      color: isOpen
+                          ? const Color(0xFF10B981)
+                          : Colors.black.withValues(alpha: 0.5),
                       borderRadius: BorderRadius.circular(100),
                       boxShadow: [
                         BoxShadow(
@@ -126,7 +129,7 @@ class TpvTerminalCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                
+
                 // Menu
                 Positioned(
                   top: 8,
@@ -136,7 +139,7 @@ class TpvTerminalCard extends StatelessWidget {
               ],
             ),
           ),
-          
+
           Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
@@ -157,7 +160,8 @@ class TpvTerminalCard extends StatelessWidget {
                       ),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
                         color: const Color(0xFF1152D4).withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
@@ -181,9 +185,9 @@ class TpvTerminalCard extends StatelessWidget {
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                
+
                 const SizedBox(height: 24),
-                
+
                 // Action Buttons
                 Row(
                   children: [
@@ -195,17 +199,23 @@ class TpvTerminalCard extends StatelessWidget {
                           backgroundColor: const Color(0xFF1152D4),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16)),
                           elevation: 0,
                         ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(isOpen ? Icons.point_of_sale_rounded : Icons.lock_open_rounded, size: 20),
+                            Icon(
+                                isOpen
+                                    ? Icons.point_of_sale_rounded
+                                    : Icons.lock_open_rounded,
+                                size: 20),
                             const SizedBox(width: 10),
                             Text(
                               isOpen ? 'Ir al POS' : 'Abrir Turno',
-                              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w800, fontSize: 15),
                             ),
                           ],
                         ),
@@ -218,12 +228,17 @@ class TpvTerminalCard extends StatelessWidget {
                           onPressed: onCloseSession,
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 16),
-                            side: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            side: BorderSide(
+                                color: isDark
+                                    ? const Color(0xFF334155)
+                                    : const Color(0xFFE2E8F0)),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16)),
                           ),
                           child: const Text(
                             'Cerrar',
-                            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                            style: TextStyle(
+                                fontWeight: FontWeight.w700, fontSize: 15),
                           ),
                         ),
                       ),
@@ -237,7 +252,8 @@ class TpvTerminalCard extends StatelessWidget {
                     child: TextButton.icon(
                       onPressed: onIpv,
                       icon: const Icon(Icons.analytics_rounded, size: 18),
-                      label: const Text('Análisis de Turno (IPV)', style: TextStyle(fontWeight: FontWeight.w600)),
+                      label: const Text('Análisis de Turno (IPV)',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
                       style: TextButton.styleFrom(
                         foregroundColor: const Color(0xFF1152D4),
                         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -265,7 +281,7 @@ class TpvTerminalCard extends StatelessWidget {
         );
       }
     }
-    
+
     return Image.asset(
       'assets/images/tpv_default.png',
       fit: BoxFit.cover,
@@ -292,24 +308,26 @@ class TpvTerminalCard extends StatelessWidget {
           color: Colors.black.withValues(alpha: 0.3),
           shape: BoxShape.circle,
         ),
-        child: const Icon(Icons.more_vert_rounded, color: Colors.white, size: 20),
+        child:
+            const Icon(Icons.more_vert_rounded, color: Colors.white, size: 20),
       ),
       onSelected: (value) {
-        if (value == 'edit') onEdit();
+        if (value == 'edit' && onEdit != null) onEdit!();
         if (value == 'history') onHistory();
         if (value == 'delete' && onDelete != null) onDelete!();
       },
       itemBuilder: (context) => [
-        const PopupMenuItem(
-          value: 'edit',
-          child: Row(
-            children: [
-              Icon(Icons.edit_outlined, size: 20),
-              SizedBox(width: 12),
-              Text('Editar terminal'),
-            ],
+        if (onEdit != null)
+          const PopupMenuItem(
+            value: 'edit',
+            child: Row(
+              children: [
+                Icon(Icons.edit_outlined, size: 20),
+                SizedBox(width: 12),
+                Text('Editar terminal'),
+              ],
+            ),
           ),
-        ),
         const PopupMenuItem(
           value: 'history',
           child: Row(

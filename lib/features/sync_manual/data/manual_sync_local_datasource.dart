@@ -1131,7 +1131,10 @@ class ManualSyncLocalDataSource {
     final String cleanRefType = (refType ?? '').trim().toLowerCase();
     if (cleanRefType == 'sale' ||
         cleanRefType == 'sale_pos' ||
-        cleanRefType == 'sale_direct') {
+        cleanRefType == 'sale_direct' ||
+        cleanRefType == 'consignment_sale' ||
+        cleanRefType == 'consignment_sale_pos' ||
+        cleanRefType == 'consignment_sale_direct') {
       return saleIdMap[cleanRefId] ?? cleanRefId;
     }
     return cleanRefId;

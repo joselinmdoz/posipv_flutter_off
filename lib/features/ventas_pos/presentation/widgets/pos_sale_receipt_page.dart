@@ -369,6 +369,12 @@ class PosSaleReceiptPage extends StatelessWidget {
   Widget _buildTotals(ColorScheme scheme, bool isDark) {
     final Color labelColor = isDark ? Colors.white60 : const Color(0xFF64748B);
     final Color valueColor = isDark ? Colors.white : const Color(0xFF0F172A);
+    final int safePaid = receipt.paidCents < 0
+        ? 0
+        : (receipt.paidCents > receipt.totalCents
+            ? receipt.totalCents
+            : receipt.paidCents);
+    final int pendingCents = receipt.totalCents - safePaid;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -405,6 +411,15 @@ class PosSaleReceiptPage extends StatelessWidget {
               ],
             ),
           ],
+          const SizedBox(height: 8),
+          _detailRow('Pagado', _money(safePaid), labelColor, valueColor),
+          const SizedBox(height: 8),
+          _detailRow(
+            'Pendiente',
+            _money(pendingCents),
+            labelColor,
+            pendingCents > 0 ? const Color(0xFFB91C1C) : valueColor,
+          ),
           const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -595,6 +610,9 @@ class PosSaleReceiptPage extends StatelessWidget {
     }
     if (lower.contains('transfer')) {
       return Icons.swap_horiz_rounded;
+    }
+    if (lower.contains('consign')) {
+      return Icons.inventory_2_outlined;
     }
     return Icons.payment_rounded;
   }

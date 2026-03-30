@@ -70,6 +70,12 @@ class AppScaffold extends ConsumerWidget {
       AppPermissionKeys.salesDirect,
     ),
     _NavItem(
+      'Consignaciones',
+      '/consignaciones',
+      Icons.inventory_2_outlined,
+      AppPermissionKeys.customersView,
+    ),
+    _NavItem(
       'Clientes',
       '/clientes',
       Icons.groups_rounded,
@@ -716,7 +722,9 @@ class AppScaffold extends ConsumerWidget {
   }
 
   bool _isSalesRoute(String route) {
-    return route == '/ventas-pos' || route == '/ventas-directas';
+    return route == '/ventas-pos' ||
+        route == '/ventas-directas' ||
+        route == '/consignaciones';
   }
 
   bool _isGeneralReportsRoute(String route) {
@@ -765,6 +773,7 @@ class AppScaffold extends ConsumerWidget {
       case '/tpv-empleados':
       case '/perfil-empleado':
       case '/ventas-directas':
+      case '/consignaciones':
         candidate = '/home';
         break;
       case '/ventas-pos':

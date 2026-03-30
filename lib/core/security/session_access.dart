@@ -19,6 +19,15 @@ class SessionAccess {
     return hasPermission(session, required);
   }
 
+  static bool canManageRoute(UserSession? session, String route) {
+    final String? required =
+        AppPermissionsCatalog.routeManagePermissionMap[route];
+    if (required == null) {
+      return canAccessRoute(session, route);
+    }
+    return hasPermission(session, required);
+  }
+
   static String firstAllowedRoute(UserSession? session) {
     if (session == null) {
       return '/login';

@@ -40,6 +40,7 @@ class CreateSaleInput {
     this.discountCents = 0,
     this.allowNegativeStock = false,
     this.saleOrigin = 'pos',
+    this.isConsignmentSale = false,
   });
 
   final String warehouseId;
@@ -52,6 +53,7 @@ class CreateSaleInput {
   final int discountCents;
   final bool allowNegativeStock;
   final String saleOrigin;
+  final bool isConsignmentSale;
 }
 
 class CreateSaleResult {

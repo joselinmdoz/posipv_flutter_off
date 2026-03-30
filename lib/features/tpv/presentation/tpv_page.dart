@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_providers.dart';
+import '../../../core/security/app_permissions.dart';
 import '../../../core/utils/perf_trace.dart';
 import '../../../shared/models/user_session.dart';
 import '../../../shared/widgets/app_add_action_button.dart';
@@ -86,6 +87,10 @@ class _TpvPageState extends ConsumerState<TpvPage> {
   }
 
   Future<void> _openForm({PosTerminal? terminal}) async {
+    if (!_canManageTerminals()) {
+      _show('No tienes permisos para gestionar terminales.');
+      return;
+    }
     final bool? saved = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
         builder: (_) => TpvFormPage(terminal: terminal),
@@ -542,6 +547,10 @@ class _TpvPageState extends ConsumerState<TpvPage> {
   }
 
   Future<void> _deactivate(TpvTerminalView terminal) async {
+    if (!_canManageTerminals()) {
+      _show('No tienes permisos para gestionar terminales.');
+      return;
+    }
     final bool? confirm = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
@@ -608,6 +617,8 @@ class _TpvPageState extends ConsumerState<TpvPage> {
         return 'Transferencia';
       case 'wallet':
         return 'Billetera';
+      case 'consignment':
+        return 'Consignación';
       default:
         return method;
     }
@@ -620,6 +631,12 @@ class _TpvPageState extends ConsumerState<TpvPage> {
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  bool _canManageTerminals() {
+    final UserSession? session = ref.read(currentSessionProvider);
+    return session?.hasPermission(AppPermissionKeys.tpvManageTerminals) ??
+        false;
   }
 
   List<TpvTerminalView> _getFilteredTerminals() {
@@ -678,6 +695,11 @@ class _TpvPageState extends ConsumerState<TpvPage> {
     ref.listen(tpvTerminalsProvider, (_, __) => _load());
 
     final license = ref.watch(currentLicenseStatusProvider);
+    final bool canManageTerminals =
+        ref.watch(currentSessionProvider)?.hasPermission(
+                  AppPermissionKeys.tpvManageTerminals,
+                ) ??
+            false;
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final List<TpvTerminalView> filteredTerminals = _getFilteredTerminals();
@@ -707,7 +729,7 @@ class _TpvPageState extends ConsumerState<TpvPage> {
           tooltip: 'Opciones',
         ),
       ],
-      floatingActionButton: license.canWrite
+      floatingActionButton: license.canWrite && canManageTerminals
           ? AppAddActionButton(
               currentRoute: '/tpv',
               iconSize: 28,
@@ -836,8 +858,13 @@ class _TpvPageState extends ConsumerState<TpvPage> {
                                     key: ValueKey<String>(terminal.terminal.id),
                                     terminal: terminal,
                                     isDark: theme.brightness == Brightness.dark,
-                                    onEdit: () =>
-                                        _openForm(terminal: terminal.terminal),
+                                    onEdit: canManageTerminals
+                                        ? () => _openForm(
+                                            terminal: terminal.terminal)
+                                        : null,
+                                    onDelete: canManageTerminals
+                                        ? () => _deactivate(terminal)
+                                        : null,
                                     onGoToPos: () => _goToPos(terminal),
                                     onOpenSession: () => _openSession(terminal),
                                     onCloseSession: () =>

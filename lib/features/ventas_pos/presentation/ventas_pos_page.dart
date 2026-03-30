@@ -440,6 +440,8 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
         .toList();
   }
 
+  bool get _hasCartItems => _qtyByProductId.values.any((double qty) => qty > 0);
+
   int _subtotalFromLines(List<_CartLine> lines) {
     int subtotal = 0;
     for (final _CartLine line in lines) {
@@ -665,7 +667,10 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
 
     final List<String> methods = _terminalConfig.paymentMethods.isEmpty
         ? <String>['cash', 'card']
-        : _terminalConfig.paymentMethods;
+        : List<String>.from(_terminalConfig.paymentMethods);
+    if (!methods.contains('consignment')) {
+      methods.add('consignment');
+    }
     List<ClienteListItem> customers = const <ClienteListItem>[];
     Set<String> onlinePaymentMethodCodes = <String>{
       'transfer',
@@ -712,9 +717,20 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       ),
     );
 
-    if (result == null ||
-        result.paymentLines.isEmpty ||
-        result.cartLines.isEmpty) {
+    if (result == null) {
+      return;
+    }
+    if (result.cancelOrderRequested) {
+      if (mounted) {
+        setState(() => _qtyByProductId.clear());
+      }
+      _show('Orden cancelada.');
+      return;
+    }
+    if (result.cartLines.isEmpty) {
+      return;
+    }
+    if (!result.isConsignmentSale && result.paymentLines.isEmpty) {
       return;
     }
 
@@ -731,6 +747,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       discountCents: 0,
       paymentLines: result.paymentLines,
       linesOverride: finalLines,
+      isConsignmentSale: result.isConsignmentSale,
     );
   }
 
@@ -754,6 +771,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     required int discountCents,
     required List<PosPaymentLine> paymentLines,
     List<_CartLine>? linesOverride,
+    bool isConsignmentSale = false,
   }) async {
     final session = ref.read(currentSessionProvider);
     if (session == null) {
@@ -774,6 +792,10 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       _show('Agrega al menos un producto con cantidad mayor a 0.');
       return;
     }
+    if (isConsignmentSale && _selectedCustomer == null) {
+      _show('La venta en consignación requiere seleccionar un cliente.');
+      return;
+    }
 
     final int subtotalCents = _subtotalFromLines(lines);
     final int taxCents = _taxFromLines(lines);
@@ -788,8 +810,12 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       0,
       (int sum, PosPaymentLine value) => sum + value.amountCents,
     );
-    if (paymentsTotal != totalCents) {
+    if (!isConsignmentSale && paymentsTotal != totalCents) {
       _show('La suma de pagos no coincide con el total de la venta.');
+      return;
+    }
+    if (isConsignmentSale && paymentsTotal != 0) {
+      _show('La venta en consignación se registra sin pagos iniciales.');
       return;
     }
 
@@ -822,6 +848,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
           .toList(),
       discountCents: discountCents,
       allowNegativeStock: _allowNegativeStock,
+      isConsignmentSale: isConsignmentSale,
     );
 
     setState(() => _posting = true);
@@ -859,16 +886,23 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
           taxCents: taxCents,
           discountCents: discountCents,
           totalCents: totalCents,
-          payments: paymentLines
-              .map(
-                (PosPaymentLine line) => ReceiptPayment(
-                  method: (line.transactionId ?? '').trim().isEmpty
-                      ? _paymentMethodLabel(line.method)
-                      : '${_paymentMethodLabel(line.method)} • TX: ${line.transactionId!.trim()}',
-                  amountCents: line.amountCents,
-                ),
-              )
-              .toList(),
+          payments: (isConsignmentSale && paymentLines.isEmpty)
+              ? const <ReceiptPayment>[
+                  ReceiptPayment(
+                    method: 'Consignación (pendiente)',
+                    amountCents: 0,
+                  ),
+                ]
+              : paymentLines
+                  .map(
+                    (PosPaymentLine line) => ReceiptPayment(
+                      method: (line.transactionId ?? '').trim().isEmpty
+                          ? _paymentMethodLabel(line.method)
+                          : '${_paymentMethodLabel(line.method)} • TX: ${line.transactionId!.trim()}',
+                      amountCents: line.amountCents,
+                    ),
+                  )
+                  .toList(),
           paidCents: paymentsTotal,
           isDemoMode: !licenseStatus.isFull,
         );
@@ -1177,6 +1211,8 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
         return 'Transferencia';
       case 'wallet':
         return 'Billetera';
+      case 'consignment':
+        return 'Consignación';
       default:
         return method;
     }
@@ -1340,9 +1376,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
                               .toInt(),
                           total: _computeTotal(),
                           currencySymbol: _currencySymbol,
-                          onPayTap: _qtyByProductId.values.any((q) => q > 0)
-                              ? _openPaymentSheet
-                              : null,
+                          onPayTap: _hasCartItems ? _openPaymentSheet : null,
                         ),
                       ],
                     ),

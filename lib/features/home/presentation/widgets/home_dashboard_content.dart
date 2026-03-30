@@ -14,8 +14,10 @@ class HomeDashboardContent extends StatelessWidget {
     required this.lowStockCount,
     required this.layout,
     required this.moneyFormatter,
+    required this.currencySymbol,
     required this.onNewSaleTap,
     required this.onAddStockTap,
+    required this.onViewAllActivityTap,
   });
 
   final ReportesDashboard dashboard;
@@ -23,8 +25,10 @@ class HomeDashboardContent extends StatelessWidget {
   final int lowStockCount;
   final DashboardWidgetLayout layout;
   final String Function(int) moneyFormatter;
+  final String currencySymbol;
   final VoidCallback onNewSaleTap;
   final VoidCallback onAddStockTap;
+  final VoidCallback? onViewAllActivityTap;
 
   @override
   Widget build(BuildContext context) {
@@ -68,6 +72,7 @@ class HomeDashboardContent extends StatelessWidget {
       case DashboardWidgetKeys.metrics:
         return HomeMetricCards(
           today: today,
+          yesterday: dashboard.yesterday,
           ordersCount: today.salesCount,
           lowStockCount: lowStockCount,
           moneyFormatter: moneyFormatter,
@@ -80,7 +85,11 @@ class HomeDashboardContent extends StatelessWidget {
       case DashboardWidgetKeys.recentActivity:
         return HomeRecentActivity(
           recentSales: dashboard.recentSales,
+          recentSessionClosures: dashboard.recentSessionClosures,
+          recentIpvReports: dashboard.recentIpvReports,
+          currencySymbol: currencySymbol,
           moneyFormatter: moneyFormatter,
+          onViewAllTap: onViewAllActivityTap,
         );
       default:
         return null;

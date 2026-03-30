@@ -87,7 +87,10 @@ class _QtyStepperInputState extends State<QtyStepperInput> {
   void _commitTextValue() {
     final String raw = _controller.text.trim().replaceAll(',', '.');
     if (raw.isEmpty) {
-      _controller.text = _formatValue(widget.value);
+      _controller.text = _formatValue(0);
+      if (widget.value > 0.000001) {
+        widget.onSubmittedValue(0);
+      }
       return;
     }
     final double? parsed = double.tryParse(raw);

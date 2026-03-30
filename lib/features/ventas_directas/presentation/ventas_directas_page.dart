@@ -64,6 +64,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
     'card',
     'transfer',
     'wallet',
+    'consignment',
   ];
 
   @override
@@ -302,6 +303,8 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
         .whereType<_DirectCartLine>()
         .toList();
   }
+
+  bool get _hasCartItems => _qtyByProductId.values.any((double qty) => qty > 0);
 
   int get _cartUnits {
     double total = 0;
@@ -559,10 +562,22 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
       ),
     );
 
-    if (result == null ||
-        result.paymentByMethodPrimaryCents.isEmpty ||
-        result.paymentLines.isEmpty ||
-        result.cartLines.isEmpty) {
+    if (result == null) {
+      return;
+    }
+    if (result.cancelOrderRequested) {
+      if (mounted) {
+        setState(() => _qtyByProductId.clear());
+      }
+      _show('Orden cancelada.');
+      return;
+    }
+    if (result.cartLines.isEmpty) {
+      return;
+    }
+    if (!result.isConsignmentSale &&
+        (result.paymentByMethodPrimaryCents.isEmpty ||
+            result.paymentLines.isEmpty)) {
       return;
     }
 
@@ -581,6 +596,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
       paymentByMethod: result.paymentByMethodPrimaryCents,
       paymentLines: result.paymentLines,
       linesOverride: finalLines,
+      isConsignmentSale: result.isConsignmentSale,
     );
   }
 
@@ -606,6 +622,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
     List<DirectSalesPaymentLine> paymentLines =
         const <DirectSalesPaymentLine>[],
     List<_DirectCartLine>? linesOverride,
+    bool isConsignmentSale = false,
   }) async {
     final session = ref.read(currentSessionProvider);
     if (session == null) {
@@ -620,6 +637,10 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
     final List<_DirectCartLine> lines = linesOverride ?? _cartLines;
     if (lines.isEmpty) {
       _show('Agrega al menos un producto con cantidad mayor a 0.');
+      return;
+    }
+    if (isConsignmentSale && _selectedCustomer == null) {
+      _show('La venta en consignación requiere seleccionar un cliente.');
       return;
     }
     final int subtotalCents = _subtotalFromLines(lines);
@@ -640,8 +661,12 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
             (int sum, DirectSalesPaymentLine line) =>
                 sum + line.primaryAmountCents,
           );
-    if (paymentsTotal != totalCents) {
+    if (!isConsignmentSale && paymentsTotal != totalCents) {
       _show('La suma de pagos no coincide con el total de la venta.');
+      return;
+    }
+    if (isConsignmentSale && paymentsTotal != 0) {
+      _show('La venta en consignación se registra sin pagos iniciales.');
       return;
     }
 
@@ -704,6 +729,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
       discountCents: discountCents,
       allowNegativeStock: _allowNegativeStock,
       saleOrigin: 'direct',
+      isConsignmentSale: isConsignmentSale,
     );
 
     setState(() => _posting = true);
@@ -724,6 +750,8 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
           terminalName: 'Venta Directa',
           warehouseName: _selectedWarehouseName(),
           currencySymbol: _currencyConfig.primaryCurrency.symbol,
+          customerName: _selectedCustomer?.fullName,
+          customerCode: _selectedCustomer?.code,
           lines: lines.map(
             (_DirectCartLine line) {
               final String code =
@@ -748,7 +776,14 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
           taxCents: taxCents,
           discountCents: discountCents,
           totalCents: totalCents,
-          payments: receiptPayments,
+          payments: (isConsignmentSale && receiptPayments.isEmpty)
+              ? const <ReceiptPayment>[
+                  ReceiptPayment(
+                    method: 'Consignación (pendiente)',
+                    amountCents: 0,
+                  ),
+                ]
+              : receiptPayments,
           paidCents: paymentsTotal,
           isDemoMode: !licenseStatus.isFull,
         );
@@ -843,6 +878,8 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
         return 'Transferencia';
       case 'wallet':
         return 'Billetera';
+      case 'consignment':
+        return 'Consignación';
       default:
         return method;
     }
@@ -1090,10 +1127,7 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
                           total: _computeFooterTotal(),
                           currencySymbol:
                               _currencyConfig.primaryCurrency.symbol,
-                          onPayTap:
-                              _qtyByProductId.values.any((double q) => q > 0)
-                                  ? _openPaymentSheet
-                                  : null,
+                          onPayTap: _hasCartItems ? _openPaymentSheet : null,
                         ),
                       ],
                     ),

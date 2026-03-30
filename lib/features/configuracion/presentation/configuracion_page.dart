@@ -94,6 +94,14 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
   }
 
   Future<void> _openBusinessDialog() async {
+    final bool canManageData = ref.read(currentSessionProvider)?.hasPermission(
+              AppPermissionKeys.settingsData,
+            ) ??
+        false;
+    if (!canManageData) {
+      _show('No tienes permisos para gestionar datos de configuración.');
+      return;
+    }
     final String? businessName = await showDialog<String>(
       context: context,
       builder: (BuildContext context) {
@@ -173,6 +181,14 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
   }
 
   Future<void> _openTransactionsDialog() async {
+    final bool canManageData = ref.read(currentSessionProvider)?.hasPermission(
+              AppPermissionKeys.settingsData,
+            ) ??
+        false;
+    if (!canManageData) {
+      _show('No tienes permisos para gestionar datos de configuración.');
+      return;
+    }
     bool allowNegative = _config.allowNegativeStock;
     final bool? apply = await showDialog<bool>(
       context: context,
@@ -315,7 +331,8 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
                   icon: Icons.storefront_outlined,
                   title: 'Informacion del negocio',
                   subtitle: _config.businessName,
-                  onTap: _saving ? null : _openBusinessDialog,
+                  onTap:
+                      (_saving || !canManageData) ? null : _openBusinessDialog,
                 ),
                 const SizedBox(height: 14),
                 const ConfigSectionLabel(text: 'Localizacion'),
@@ -383,7 +400,9 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
                   subtitle: _config.allowNegativeStock
                       ? 'Stock negativo permitido'
                       : 'Stock negativo bloqueado',
-                  onTap: _saving ? null : _openTransactionsDialog,
+                  onTap: (_saving || !canManageData)
+                      ? null
+                      : _openTransactionsDialog,
                 ),
                 ConfigOptionTile(
                   icon: Icons.payments_outlined,

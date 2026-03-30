@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../core/security/app_permissions.dart';
 import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_providers.dart';
 import '../../../core/utils/perf_trace.dart';
+import '../../auth/presentation/auth_providers.dart';
 import '../../../shared/widgets/app_add_action_button.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../../shared/widgets/code_scanner_page.dart';
@@ -131,7 +133,14 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
     }
   }
 
-  Future<void> _openProductForm({Product? product}) async {
+  Future<void> _openProductForm({
+    Product? product,
+    required bool canManageProducts,
+  }) async {
+    if (!canManageProducts) {
+      _show('No tienes permisos para gestionar productos.');
+      return;
+    }
     final bool isEditing = product != null;
     final String? result = await Navigator.of(context).push<String>(
       MaterialPageRoute<String>(
@@ -162,14 +171,18 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
   @override
   Widget build(BuildContext context) {
     final license = ref.watch(currentLicenseStatusProvider);
+    final session = ref.watch(currentSessionProvider);
+    final bool canManageProducts =
+        session?.hasPermission(AppPermissionKeys.productsManage) ?? false;
     return AppScaffold(
       title: 'Productos',
       currentRoute: '/productos',
       onRefresh: _loadProducts,
-      floatingActionButton: license.canWrite
+      floatingActionButton: license.canWrite && canManageProducts
           ? AppAddActionButton(
               currentRoute: '/productos',
-              onPressed: () => _openProductForm(),
+              onPressed: () =>
+                  _openProductForm(canManageProducts: canManageProducts),
             )
           : null,
       body: _loading
@@ -205,7 +218,12 @@ class _ProductosPageState extends ConsumerState<ProductosPage> {
                           key: ValueKey<String>(product.id),
                           child: ProductCard(
                             product: product,
-                            onTap: () => _openProductForm(product: product),
+                            onTap: canManageProducts
+                                ? () => _openProductForm(
+                                      product: product,
+                                      canManageProducts: canManageProducts,
+                                    )
+                                : null,
                           ),
                         );
                       },
@@ -263,6 +281,10 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
   bool _syncingPriceFields = false;
 
   bool get _isEditing => widget.product != null;
+  bool get _canManageProducts {
+    final session = ref.read(currentSessionProvider);
+    return session?.hasPermission(AppPermissionKeys.productsManage) ?? false;
+  }
 
   Color _accentColor(ThemeData theme) => theme.colorScheme.primary;
 
@@ -532,6 +554,10 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
   }
 
   Future<void> _save() async {
+    if (!_canManageProducts) {
+      _show('No tienes permisos para gestionar productos.');
+      return;
+    }
     final String code = _codeCtrl.text.trim();
     final String barcode = _barcodeCtrl.text.trim();
     final String name = _nameCtrl.text.trim();
@@ -617,6 +643,10 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
   }
 
   Future<void> _deleteCurrentProduct() async {
+    if (!_canManageProducts) {
+      _show('No tienes permisos para gestionar productos.');
+      return;
+    }
     if (!_isEditing) {
       return;
     }
@@ -1312,6 +1342,11 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
 
   @override
   Widget build(BuildContext context) {
+    final bool canManageProducts =
+        ref.watch(currentSessionProvider)?.hasPermission(
+                  AppPermissionKeys.productsManage,
+                ) ??
+            false;
     final ThemeData theme = Theme.of(context);
     final bool isDark = theme.brightness == Brightness.dark;
     final Color accent = _accentColor(theme);
@@ -1345,159 +1380,173 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
           ),
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 104),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            _buildImagePickerThumb(),
-            const SizedBox(height: 18),
-            _buildSectionTitle('INFORMACIÓN BÁSICA'),
-            const SizedBox(height: 12),
-            _buildFieldLabel('Nombre del Producto'),
-            TextField(
-              controller: _nameCtrl,
-              decoration: _fieldDecoration(
-                hintText: 'Ej. Camiseta de Algodón Premium',
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (_loadingCatalogs)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 8),
-                child: LinearProgressIndicator(minHeight: 3),
-              ),
-            _catalogDropdownField(
-              label: 'Categoría',
-              options: _categoryOptions,
-              selected: _selectedCategory,
-              onAddPressed: _saving
-                  ? null
-                  : () => _quickAddCatalogValue(
-                        kind: ProductCatalogKind.category,
-                        title: 'categoría',
-                        hint: 'Ej. Abarrotes',
-                      ),
-              addTooltip: 'Añadir categoría',
-              onChanged: (String value) {
-                setState(() => _selectedCategory = value);
-              },
-            ),
-            const SizedBox(height: 12),
-            _catalogDropdownField(
-              label: 'Unidad de Medida',
-              options: _unitOptions,
-              selected: _selectedUnit,
-              onAddPressed: _saving
-                  ? null
-                  : () => _quickAddCatalogValue(
-                        kind: ProductCatalogKind.unit,
-                        title: 'unidad de medida',
-                        hint: 'Ej. Docena',
-                      ),
-              addTooltip: 'Añadir unidad de medida',
-              onChanged: (String value) {
-                setState(() => _selectedUnit = value);
-              },
-            ),
-            const SizedBox(height: 12),
-            _buildTypeSelector(
-              onAddPressed: _saving
-                  ? null
-                  : () => _quickAddCatalogValue(
-                        kind: ProductCatalogKind.type,
-                        title: 'tipo de producto',
-                        hint: 'Ej. Materia prima',
-                      ),
-            ),
-            const SizedBox(height: 20),
-            _buildSectionTitle('PRECIOS Y MÁRGENES'),
-            const SizedBox(height: 12),
-            _buildPricingFields(),
-            const SizedBox(height: 20),
-            _buildSectionTitle('IDENTIFICACIÓN'),
-            const SizedBox(height: 12),
-            _buildFieldLabel('Código Personalizado'),
-            TextField(
-              controller: _codeCtrl,
-              decoration: _fieldDecoration(
-                hintText: 'Ej: A-001',
-              ),
-            ),
-            const SizedBox(height: 12),
-            _buildFieldLabel('Código de Barras'),
-            TextField(
-              controller: _barcodeCtrl,
-              decoration: _fieldDecoration(
-                hintText: 'Escanea o escribe',
-                suffixIcon: IconButton(
-                  tooltip: 'Escanear',
-                  onPressed: _saving ? null : _scanAndSetBarcode,
-                  icon: Icon(
-                    Icons.qr_code_scanner_rounded,
-                    color: accent,
-                  ),
+      body: !canManageProducts
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.all(20),
+                child: Text(
+                  'No tienes permisos para gestionar productos.',
+                  textAlign: TextAlign.center,
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-          ],
-        ),
-      ),
-      bottomNavigationBar: Container(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF141B29) : pageColor,
-          border: Border(
-            top: BorderSide(
-              color: isDark ? const Color(0xFF2D3850) : const Color(0xFFD8E0EB),
-            ),
-          ),
-        ),
-        child: Row(
-          children: <Widget>[
-            if (_isEditing) ...<Widget>[
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _saving ? null : _deleteCurrentProduct,
-                  icon: const Icon(Icons.delete_outline_rounded),
-                  label: const Text('Dar de baja'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFFC73D6A),
-                    side: const BorderSide(color: Color(0xFFC73D6A)),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+            )
+          : SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 104),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  _buildImagePickerThumb(),
+                  const SizedBox(height: 18),
+                  _buildSectionTitle('INFORMACIÓN BÁSICA'),
+                  const SizedBox(height: 12),
+                  _buildFieldLabel('Nombre del Producto'),
+                  TextField(
+                    controller: _nameCtrl,
+                    decoration: _fieldDecoration(
+                      hintText: 'Ej. Camiseta de Algodón Premium',
                     ),
                   ),
-                ),
+                  const SizedBox(height: 12),
+                  if (_loadingCatalogs)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 8),
+                      child: LinearProgressIndicator(minHeight: 3),
+                    ),
+                  _catalogDropdownField(
+                    label: 'Categoría',
+                    options: _categoryOptions,
+                    selected: _selectedCategory,
+                    onAddPressed: _saving
+                        ? null
+                        : () => _quickAddCatalogValue(
+                              kind: ProductCatalogKind.category,
+                              title: 'categoría',
+                              hint: 'Ej. Abarrotes',
+                            ),
+                    addTooltip: 'Añadir categoría',
+                    onChanged: (String value) {
+                      setState(() => _selectedCategory = value);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  _catalogDropdownField(
+                    label: 'Unidad de Medida',
+                    options: _unitOptions,
+                    selected: _selectedUnit,
+                    onAddPressed: _saving
+                        ? null
+                        : () => _quickAddCatalogValue(
+                              kind: ProductCatalogKind.unit,
+                              title: 'unidad de medida',
+                              hint: 'Ej. Docena',
+                            ),
+                    addTooltip: 'Añadir unidad de medida',
+                    onChanged: (String value) {
+                      setState(() => _selectedUnit = value);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  _buildTypeSelector(
+                    onAddPressed: _saving
+                        ? null
+                        : () => _quickAddCatalogValue(
+                              kind: ProductCatalogKind.type,
+                              title: 'tipo de producto',
+                              hint: 'Ej. Materia prima',
+                            ),
+                  ),
+                  const SizedBox(height: 20),
+                  _buildSectionTitle('PRECIOS Y MÁRGENES'),
+                  const SizedBox(height: 12),
+                  _buildPricingFields(),
+                  const SizedBox(height: 20),
+                  _buildSectionTitle('IDENTIFICACIÓN'),
+                  const SizedBox(height: 12),
+                  _buildFieldLabel('Código Personalizado'),
+                  TextField(
+                    controller: _codeCtrl,
+                    decoration: _fieldDecoration(
+                      hintText: 'Ej: A-001',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildFieldLabel('Código de Barras'),
+                  TextField(
+                    controller: _barcodeCtrl,
+                    decoration: _fieldDecoration(
+                      hintText: 'Escanea o escribe',
+                      suffixIcon: IconButton(
+                        tooltip: 'Escanear',
+                        onPressed: _saving ? null : _scanAndSetBarcode,
+                        icon: Icon(
+                          Icons.qr_code_scanner_rounded,
+                          color: accent,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
               ),
-              const SizedBox(width: 10),
-            ],
-            Expanded(
-              flex: _isEditing ? 2 : 1,
-              child: FilledButton.icon(
-                onPressed: _saving ? null : _save,
-                icon: const Icon(Icons.save_rounded),
-                label: Text(
-                  _saving
-                      ? 'Guardando...'
-                      : _isEditing
-                          ? 'Actualizar producto'
-                          : 'Guardar producto',
-                ),
-                style: FilledButton.styleFrom(
-                  backgroundColor: accent,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+            ),
+      bottomNavigationBar: !canManageProducts
+          ? null
+          : Container(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF141B29) : pageColor,
+                border: Border(
+                  top: BorderSide(
+                    color: isDark
+                        ? const Color(0xFF2D3850)
+                        : const Color(0xFFD8E0EB),
                   ),
                 ),
               ),
+              child: Row(
+                children: <Widget>[
+                  if (_isEditing) ...<Widget>[
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _saving ? null : _deleteCurrentProduct,
+                        icon: const Icon(Icons.delete_outline_rounded),
+                        label: const Text('Dar de baja'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFFC73D6A),
+                          side: const BorderSide(color: Color(0xFFC73D6A)),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                  ],
+                  Expanded(
+                    flex: _isEditing ? 2 : 1,
+                    child: FilledButton.icon(
+                      onPressed: _saving ? null : _save,
+                      icon: const Icon(Icons.save_rounded),
+                      label: Text(
+                        _saving
+                            ? 'Guardando...'
+                            : _isEditing
+                                ? 'Actualizar producto'
+                                : 'Guardar producto',
+                      ),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: accent,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
-      ),
     );
   }
 }
