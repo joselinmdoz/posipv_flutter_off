@@ -5,6 +5,7 @@ class AnalyticsKpiCard extends StatelessWidget {
     super.key,
     required this.title,
     required this.value,
+    required this.icon,
     this.deltaPercent,
     this.deltaText,
     this.onTap,
@@ -12,6 +13,7 @@ class AnalyticsKpiCard extends StatelessWidget {
 
   final String title;
   final String value;
+  final IconData icon;
   final double? deltaPercent;
   final String? deltaText;
   final VoidCallback? onTap;
@@ -24,6 +26,11 @@ class AnalyticsKpiCard extends StatelessWidget {
     final Color deltaColor = positive
         ? (isDark ? const Color(0xFF34D399) : const Color(0xFF059669))
         : (isDark ? const Color(0xFFFB7185) : const Color(0xFFE11D48));
+    final Color cardColor = isDark ? const Color(0xFF111827) : Colors.white;
+    final Color borderColor =
+        isDark ? const Color(0xFF263244) : const Color(0xFFDDE2EB);
+    final Color tileColor =
+        isDark ? const Color(0xFF1E293B) : const Color(0x1A1152D4);
 
     return Material(
       color: Colors.transparent,
@@ -33,61 +40,78 @@ class AnalyticsKpiCard extends StatelessWidget {
         child: Ink(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF0F172A) : Colors.white,
+            color: cardColor,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: isDark ? const Color(0xFF263244) : const Color(0xFFD8E0EC),
-            ),
+            border: Border.all(color: borderColor),
+            boxShadow: isDark
+                ? null
+                : const <BoxShadow>[
+                    BoxShadow(
+                      color: Color(0x0F0F172A),
+                      blurRadius: 8,
+                      offset: Offset(0, 3),
+                    ),
+                  ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: tileColor,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(icon, size: 18, color: const Color(0xFF1152D4)),
+                  ),
+                  const Spacer(),
+                  if (hasDelta)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: positive
+                            ? const Color(0x1A059669)
+                            : const Color(0x1AE11D48),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        deltaText!,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: deltaColor,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 10),
               Text(
                 title,
                 style: TextStyle(
-                  fontSize: 12,
-                  letterSpacing: 1,
-                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
                   color: isDark
                       ? const Color(0xFF94A3B8)
-                      : const Color(0xFF64748B),
+                      : const Color(0xFF5E6775),
                 ),
               ),
-              const SizedBox(height: 7),
+              const SizedBox(height: 3),
               Text(
                 value,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 23,
+                  fontSize: 30 / 2,
                   fontWeight: FontWeight.w800,
                   color: isDark ? Colors.white : const Color(0xFF0F172A),
                 ),
               ),
-              if (hasDelta) ...<Widget>[
-                const SizedBox(height: 7),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Icon(
-                      positive
-                          ? Icons.trending_up_rounded
-                          : Icons.trending_down_rounded,
-                      size: 16,
-                      color: deltaColor,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      deltaText!,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: deltaColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
             ],
           ),
         ),

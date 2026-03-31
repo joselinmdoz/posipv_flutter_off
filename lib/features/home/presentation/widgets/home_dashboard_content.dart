@@ -18,6 +18,9 @@ class HomeDashboardContent extends StatelessWidget {
     required this.onNewSaleTap,
     required this.onAddStockTap,
     required this.onViewAllActivityTap,
+    this.onSalesTap,
+    this.onOrdersTap,
+    this.onLowStockTap,
   });
 
   final ReportesDashboard dashboard;
@@ -29,6 +32,9 @@ class HomeDashboardContent extends StatelessWidget {
   final VoidCallback onNewSaleTap;
   final VoidCallback onAddStockTap;
   final VoidCallback? onViewAllActivityTap;
+  final VoidCallback? onSalesTap;
+  final VoidCallback? onOrdersTap;
+  final VoidCallback? onLowStockTap;
 
   @override
   Widget build(BuildContext context) {
@@ -76,6 +82,9 @@ class HomeDashboardContent extends StatelessWidget {
           ordersCount: today.salesCount,
           lowStockCount: lowStockCount,
           moneyFormatter: moneyFormatter,
+          onSalesTap: onSalesTap,
+          onOrdersTap: onOrdersTap,
+          onLowStockTap: onLowStockTap,
         );
       case DashboardWidgetKeys.quickActions:
         return HomeQuickActions(

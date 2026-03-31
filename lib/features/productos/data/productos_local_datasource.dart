@@ -101,6 +101,18 @@ class ProductCatalogEntry {
   final int usageCount;
 }
 
+class ProductPriceEditionCheck {
+  const ProductPriceEditionCheck({
+    required this.allowed,
+    required this.hasPriceChanges,
+    this.blockReason,
+  });
+
+  final bool allowed;
+  final bool hasPriceChanges;
+  final String? blockReason;
+}
+
 class MeasurementUnitTypeModel {
   const MeasurementUnitTypeModel({
     required this.id,
@@ -1106,6 +1118,11 @@ class ProductosLocalDataSource {
     required ProductFormInput input,
   }) async {
     await _licenseService.requireWriteAccess();
+    await _assertPriceEditionAllowed(
+      productId: productId,
+      nextSalePriceCents: input.salePriceCents,
+      nextCostPriceCents: input.costPriceCents,
+    );
     await (_db.update(_db.products)..where((tbl) => tbl.id.equals(productId)))
         .write(
       ProductsCompanion(
@@ -1152,12 +1169,110 @@ class ProductosLocalDataSource {
     );
   }
 
+  Future<void> permanentlyDeleteArchivedProduct({
+    required String productId,
+    required String userId,
+  }) async {
+    await _licenseService.requireWriteAccess();
+    final String safeProductId = productId.trim();
+    final String safeUserId = userId.trim();
+    if (safeProductId.isEmpty) {
+      throw Exception('Producto inválido.');
+    }
+    if (safeUserId.isEmpty) {
+      throw Exception('Usuario inválido.');
+    }
+
+    await _db.transaction(() async {
+      final Product? product = await (_db.select(_db.products)
+            ..where((Products tbl) => tbl.id.equals(safeProductId)))
+          .getSingleOrNull();
+      if (product == null) {
+        return;
+      }
+      if (product.isActive) {
+        throw Exception(
+          'Solo puedes eliminar definitivamente productos archivados.',
+        );
+      }
+
+      final QueryRow? refs = await _db.customSelect(
+        '''
+        SELECT
+          CAST((SELECT COUNT(*) FROM sale_items WHERE product_id = ?) AS INTEGER) AS sale_items_count,
+          CAST((SELECT COUNT(*) FROM ipv_report_lines WHERE product_id = ?) AS INTEGER) AS ipv_lines_count,
+          CAST((SELECT COUNT(*) FROM stock_movements WHERE product_id = ?) AS INTEGER) AS movements_count,
+          CAST((SELECT COUNT(*) FROM stock_balances WHERE product_id = ?) AS INTEGER) AS balances_count
+        ''',
+        variables: <Variable<Object>>[
+          Variable<String>(safeProductId),
+          Variable<String>(safeProductId),
+          Variable<String>(safeProductId),
+          Variable<String>(safeProductId),
+        ],
+      ).getSingleOrNull();
+
+      final int saleItemsCount =
+          (refs?.data['sale_items_count'] as num?)?.toInt() ?? 0;
+      if (saleItemsCount > 0) {
+        throw Exception(
+          'Este producto tiene historial en ventas. '
+          'Primero archiva y elimina definitivamente esas ventas.',
+        );
+      }
+
+      final int ipvLinesCount =
+          (refs?.data['ipv_lines_count'] as num?)?.toInt() ?? 0;
+      final int movementsCount =
+          (refs?.data['movements_count'] as num?)?.toInt() ?? 0;
+      final int balancesCount =
+          (refs?.data['balances_count'] as num?)?.toInt() ?? 0;
+
+      await (_db.delete(_db.ipvReportLines)
+            ..where(
+                (IpvReportLines tbl) => tbl.productId.equals(safeProductId)))
+          .go();
+      await (_db.delete(_db.stockMovements)
+            ..where(
+                (StockMovements tbl) => tbl.productId.equals(safeProductId)))
+          .go();
+      await (_db.delete(_db.stockBalances)
+            ..where((StockBalances tbl) => tbl.productId.equals(safeProductId)))
+          .go();
+      await (_db.delete(_db.products)
+            ..where((Products tbl) => tbl.id.equals(safeProductId)))
+          .go();
+
+      await _db.into(_db.auditLogs).insert(
+            AuditLogsCompanion.insert(
+              id: _uuid.v4(),
+              userId: Value(safeUserId),
+              action: 'PRODUCT_PURGED',
+              entity: 'product',
+              entityId: safeProductId,
+              payloadJson: jsonEncode(<String, Object?>{
+                'sku': product.sku,
+                'name': product.name,
+                'ipvLinesDeleted': ipvLinesCount,
+                'movementsDeleted': movementsCount,
+                'balancesDeleted': balancesCount,
+              }),
+            ),
+          );
+    });
+  }
+
   Future<void> updatePrice({
     required String productId,
     required int priceCents,
     required int taxRateBps,
   }) async {
     await _licenseService.requireWriteAccess();
+    await _assertPriceEditionAllowed(
+      productId: productId,
+      nextSalePriceCents: priceCents,
+      nextCostPriceCents: null,
+    );
     await (_db.update(_db.products)..where((tbl) => tbl.id.equals(productId)))
         .write(
       ProductsCompanion(
@@ -1165,6 +1280,70 @@ class ProductosLocalDataSource {
         taxRateBps: Value(taxRateBps),
         updatedAt: Value(DateTime.now()),
       ),
+    );
+  }
+
+  Future<ProductPriceEditionCheck> checkPriceEditionAllowed({
+    required String productId,
+    required int? nextSalePriceCents,
+    required int? nextCostPriceCents,
+  }) async {
+    final String safeProductId = productId.trim();
+    if (safeProductId.isEmpty) {
+      throw Exception('Producto inválido.');
+    }
+    final Product? existing = await (_db.select(_db.products)
+          ..where((Products tbl) => tbl.id.equals(safeProductId)))
+        .getSingleOrNull();
+    if (existing == null) {
+      throw Exception('El producto no existe.');
+    }
+
+    final int targetSale = nextSalePriceCents ?? existing.priceCents;
+    final int targetCost = nextCostPriceCents ?? existing.costPriceCents;
+    final bool salePriceChanged = existing.priceCents != targetSale;
+    final bool costPriceChanged = existing.costPriceCents != targetCost;
+    final bool hasPriceChanges = salePriceChanged || costPriceChanged;
+    if (!hasPriceChanges) {
+      return const ProductPriceEditionCheck(
+        allowed: true,
+        hasPriceChanges: false,
+      );
+    }
+
+    final QueryRow? row = await _db.customSelect(
+      '''
+      SELECT CAST(COUNT(*) AS INTEGER) AS total
+      FROM pos_sessions s
+      INNER JOIN pos_terminals t
+        ON t.id = s.terminal_id
+      INNER JOIN stock_balances sb
+        ON sb.warehouse_id = t.warehouse_id
+      WHERE s.status = 'open'
+        AND sb.product_id = ?
+        AND COALESCE(sb.qty, 0) > 0
+      LIMIT 1
+      ''',
+      variables: <Variable<Object>>[
+        Variable<String>(safeProductId),
+      ],
+    ).getSingleOrNull();
+
+    final int openSessionsWithStock =
+        (row?.data['total'] as num?)?.toInt() ?? 0;
+    if (openSessionsWithStock > 0) {
+      return const ProductPriceEditionCheck(
+        allowed: false,
+        hasPriceChanges: true,
+        blockReason:
+            'No se puede modificar el precio mientras haya un turno TPV abierto '
+            'donde este producto tenga stock.',
+      );
+    }
+
+    return const ProductPriceEditionCheck(
+      allowed: true,
+      hasPriceChanges: true,
     );
   }
 
@@ -1206,6 +1385,23 @@ class ProductosLocalDataSource {
       return trimmed.toLowerCase();
     }
     return _normalizeCatalogValue(trimmed);
+  }
+
+  Future<void> _assertPriceEditionAllowed({
+    required String productId,
+    required int nextSalePriceCents,
+    required int? nextCostPriceCents,
+  }) async {
+    final ProductPriceEditionCheck check = await checkPriceEditionAllowed(
+      productId: productId,
+      nextSalePriceCents: nextSalePriceCents,
+      nextCostPriceCents: nextCostPriceCents,
+    );
+    if (!check.allowed) {
+      throw Exception(
+        check.blockReason ?? 'No se puede modificar el precio en este momento.',
+      );
+    }
   }
 
   Future<void> _ensureCatalogDefaultsForKind(ProductCatalogKind kind) async {

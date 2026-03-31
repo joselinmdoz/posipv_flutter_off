@@ -10,11 +10,17 @@ import '../../inventario/presentation/inventario_providers.dart';
 import '../../inventario/presentation/widgets/inventory_movement_type_tabs.dart';
 import '../../productos/data/productos_local_datasource.dart';
 import '../../productos/presentation/productos_providers.dart';
+import '../../tpv/data/tpv_local_datasource.dart';
+import '../../tpv/presentation/tpv_providers.dart';
+import '../../ventas_pos/data/sale_service.dart';
+import '../../ventas_pos/presentation/ventas_pos_providers.dart';
+import 'widgets/archived_employee_card.dart';
 import 'widgets/archived_movement_card.dart';
 import 'widgets/archived_product_card.dart';
+import 'widgets/archived_sale_card.dart';
 import 'widgets/config_section_label.dart';
 
-enum _ArchivedTab { products, movements }
+enum _ArchivedTab { products, movements, sales, employees }
 
 class ArchivedDataPage extends ConsumerStatefulWidget {
   const ArchivedDataPage({super.key});
@@ -35,6 +41,8 @@ class _ArchivedDataPageState extends ConsumerState<ArchivedDataPage> {
   List<ArchivedProductView> _archivedProducts = const <ArchivedProductView>[];
   List<InventoryArchivedMovementView> _archivedMovements =
       const <InventoryArchivedMovementView>[];
+  List<ArchivedSaleView> _archivedSales = const <ArchivedSaleView>[];
+  List<TpvEmployee> _archivedEmployees = const <TpvEmployee>[];
 
   @override
   void initState() {
@@ -62,6 +70,8 @@ class _ArchivedDataPageState extends ConsumerState<ArchivedDataPage> {
           _loading = false;
           _archivedProducts = const <ArchivedProductView>[];
           _archivedMovements = const <InventoryArchivedMovementView>[];
+          _archivedSales = const <ArchivedSaleView>[];
+          _archivedEmployees = const <TpvEmployee>[];
         });
       }
       return;
@@ -74,12 +84,16 @@ class _ArchivedDataPageState extends ConsumerState<ArchivedDataPage> {
     try {
       final productosDs = ref.read(productosLocalDataSourceProvider);
       final inventarioDs = ref.read(inventarioLocalDataSourceProvider);
+      final ventasDs = ref.read(ventasPosLocalDataSourceProvider);
+      final tpvDs = ref.read(tpvLocalDataSourceProvider);
       final results = await Future.wait<Object>(<Future<Object>>[
         productosDs.listArchivedProducts(search: _search),
         inventarioDs.listArchivedMovements(
           movementType: _movementType,
           search: _search,
         ),
+        ventasDs.listArchivedSales(search: _search),
+        tpvDs.listArchivedEmployees(search: _search),
       ]);
       if (!mounted) {
         return;
@@ -87,6 +101,8 @@ class _ArchivedDataPageState extends ConsumerState<ArchivedDataPage> {
       setState(() {
         _archivedProducts = results[0] as List<ArchivedProductView>;
         _archivedMovements = results[1] as List<InventoryArchivedMovementView>;
+        _archivedSales = results[2] as List<ArchivedSaleView>;
+        _archivedEmployees = results[3] as List<TpvEmployee>;
         _loading = false;
       });
     } catch (error) {
@@ -161,6 +177,57 @@ class _ArchivedDataPageState extends ConsumerState<ArchivedDataPage> {
     }
   }
 
+  Future<void> _deleteProductPermanently(ArchivedProductView product) async {
+    final session = ref.read(currentSessionProvider);
+    if (session == null || !session.isAdmin) {
+      _show('Solo el administrador puede eliminar definitivamente.');
+      return;
+    }
+
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Eliminar producto definitivamente'),
+          content: Text(
+            'Se eliminará de forma permanente "${product.name}".\n\n'
+            'Esta acción no se puede deshacer.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFB91C1C),
+              ),
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Eliminar'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirm != true) {
+      return;
+    }
+
+    try {
+      await ref
+          .read(productosLocalDataSourceProvider)
+          .permanentlyDeleteArchivedProduct(
+            productId: product.id,
+            userId: session.userId,
+          );
+      ref.read(productosCatalogRevisionProvider.notifier).state += 1;
+      await _load();
+      _show('Producto eliminado definitivamente.');
+    } catch (error) {
+      _show('No se pudo eliminar definitivamente el producto: $error');
+    }
+  }
+
   Future<void> _restoreMovement(InventoryArchivedMovementView movement) async {
     final session = ref.read(currentSessionProvider);
     if (session == null || !session.isAdmin) {
@@ -203,6 +270,242 @@ class _ArchivedDataPageState extends ConsumerState<ArchivedDataPage> {
       _show('Movimiento restaurado.');
     } catch (error) {
       _show('No se pudo restaurar el movimiento: $error');
+    }
+  }
+
+  Future<void> _deleteMovementPermanently(
+    InventoryArchivedMovementView movement,
+  ) async {
+    final session = ref.read(currentSessionProvider);
+    if (session == null || !session.isAdmin) {
+      _show('Solo el administrador puede eliminar definitivamente.');
+      return;
+    }
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Eliminar movimiento definitivamente'),
+          content: Text(
+            'Se eliminará de forma permanente el movimiento de "${movement.productName}".\n\n'
+            'Esta acción no se puede deshacer.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFB91C1C),
+              ),
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Eliminar'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirm != true) {
+      return;
+    }
+
+    try {
+      await ref
+          .read(inventarioLocalDataSourceProvider)
+          .permanentlyDeleteArchivedMovement(
+            movementId: movement.id,
+            userId: session.userId,
+          );
+      ref.read(inventoryRefreshSignalProvider.notifier).state += 1;
+      await _load();
+      _show('Movimiento eliminado definitivamente.');
+    } catch (error) {
+      _show('No se pudo eliminar definitivamente el movimiento: $error');
+    }
+  }
+
+  Future<void> _restoreSale(ArchivedSaleView sale) async {
+    final session = ref.read(currentSessionProvider);
+    if (session == null || !session.isAdmin) {
+      _show('Solo el administrador puede restaurar ventas.');
+      return;
+    }
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Restaurar venta archivada'),
+          content: Text(
+            'Se restaurará la venta "${sale.folio}" y volverá a contar en reportes y caja.\n\n'
+            'También se reaplicará la salida de inventario.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Restaurar'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirm != true) {
+      return;
+    }
+
+    try {
+      await ref.read(ventasPosLocalDataSourceProvider).restoreArchivedSale(
+            saleId: sale.id,
+            userId: session.userId,
+            allowNegativeResult: true,
+          );
+      ref.read(inventoryRefreshSignalProvider.notifier).state += 1;
+      await _load();
+      _show('Venta restaurada.');
+    } catch (error) {
+      _show('No se pudo restaurar la venta: $error');
+    }
+  }
+
+  Future<void> _deleteSalePermanently(ArchivedSaleView sale) async {
+    final session = ref.read(currentSessionProvider);
+    if (session == null || !session.isAdmin) {
+      _show('Solo el administrador puede eliminar definitivamente ventas.');
+      return;
+    }
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Eliminar venta definitivamente'),
+          content: Text(
+            'Se eliminará de forma permanente la venta "${sale.folio}".\n\n'
+            'Esta acción no se puede deshacer.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFB91C1C),
+              ),
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Eliminar'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirm != true) {
+      return;
+    }
+
+    try {
+      await ref
+          .read(ventasPosLocalDataSourceProvider)
+          .permanentlyDeleteArchivedSale(
+            saleId: sale.id,
+            userId: session.userId,
+          );
+      await _load();
+      _show('Venta eliminada definitivamente.');
+    } catch (error) {
+      _show('No se pudo eliminar definitivamente la venta: $error');
+    }
+  }
+
+  Future<void> _restoreEmployee(TpvEmployee employee) async {
+    final session = ref.read(currentSessionProvider);
+    if (session == null || !session.isAdmin) {
+      _show('Solo el administrador puede restaurar empleados.');
+      return;
+    }
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Restaurar empleado'),
+          content: Text(
+            'Se reactivará el empleado "${employee.name}" para volver al listado activo.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Restaurar'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirm != true) {
+      return;
+    }
+
+    try {
+      await ref
+          .read(tpvLocalDataSourceProvider)
+          .reactivateEmployee(employee.id);
+      await _load();
+      _show('Empleado restaurado.');
+    } catch (error) {
+      _show('No se pudo restaurar el empleado: $error');
+    }
+  }
+
+  Future<void> _deleteEmployeePermanently(TpvEmployee employee) async {
+    final session = ref.read(currentSessionProvider);
+    if (session == null || !session.isAdmin) {
+      _show('Solo el administrador puede eliminar definitivamente empleados.');
+      return;
+    }
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Eliminar empleado definitivamente'),
+          content: Text(
+            'Se eliminará de forma permanente "${employee.name}".\n\n'
+            'Esta acción no se puede deshacer.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFB91C1C),
+              ),
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Eliminar'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirm != true) {
+      return;
+    }
+
+    try {
+      await ref.read(tpvLocalDataSourceProvider).permanentlyDeleteEmployee(
+            employeeId: employee.id,
+            userId: session.userId,
+          );
+      await _load();
+      _show('Empleado eliminado definitivamente.');
+    } catch (error) {
+      _show('No se pudo eliminar definitivamente el empleado: $error');
     }
   }
 
@@ -263,7 +566,11 @@ class _ArchivedDataPageState extends ConsumerState<ArchivedDataPage> {
             prefixIcon: const Icon(Icons.search_rounded),
             hintText: _activeTab == _ArchivedTab.products
                 ? 'Buscar producto archivado...'
-                : 'Buscar por nombre o SKU...',
+                : _activeTab == _ArchivedTab.movements
+                    ? 'Buscar por nombre o SKU...'
+                    : _activeTab == _ArchivedTab.sales
+                        ? 'Buscar por folio, cliente o usuario...'
+                        : 'Buscar por nombre, código o usuario...',
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
             ),
@@ -286,6 +593,16 @@ class _ArchivedDataPageState extends ConsumerState<ArchivedDataPage> {
               value: _ArchivedTab.movements,
               icon: Icon(Icons.swap_horiz_rounded),
               label: Text('Movimientos'),
+            ),
+            ButtonSegment<_ArchivedTab>(
+              value: _ArchivedTab.sales,
+              icon: Icon(Icons.receipt_long_rounded),
+              label: Text('Ventas'),
+            ),
+            ButtonSegment<_ArchivedTab>(
+              value: _ArchivedTab.employees,
+              icon: Icon(Icons.badge_outlined),
+              label: Text('Empleados'),
             ),
           ],
           selected: <_ArchivedTab>{_activeTab},
@@ -311,28 +628,51 @@ class _ArchivedDataPageState extends ConsumerState<ArchivedDataPage> {
           const Center(child: CircularProgressIndicator())
         else if (_activeTab == _ArchivedTab.products)
           _buildArchivedProducts()
+        else if (_activeTab == _ArchivedTab.movements)
+          _buildArchivedMovements()
+        else if (_activeTab == _ArchivedTab.sales)
+          _buildArchivedSales()
         else
-          _buildArchivedMovements(),
+          _buildArchivedEmployees(),
       ],
     );
   }
 
   Widget _buildCounters() {
-    return Row(
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
       children: <Widget>[
-        Expanded(
+        SizedBox(
+          width: 220,
           child: _CounterCard(
             label: 'Productos archivados',
             value: _archivedProducts.length.toString(),
             icon: Icons.inventory_2_outlined,
           ),
         ),
-        const SizedBox(width: 10),
-        Expanded(
+        SizedBox(
+          width: 220,
           child: _CounterCard(
             label: 'Movimientos archivados',
             value: _archivedMovements.length.toString(),
             icon: Icons.swap_horiz_rounded,
+          ),
+        ),
+        SizedBox(
+          width: 220,
+          child: _CounterCard(
+            label: 'Ventas archivadas',
+            value: _archivedSales.length.toString(),
+            icon: Icons.receipt_long_rounded,
+          ),
+        ),
+        SizedBox(
+          width: 220,
+          child: _CounterCard(
+            label: 'Empleados archivados',
+            value: _archivedEmployees.length.toString(),
+            icon: Icons.badge_outlined,
           ),
         ),
       ],
@@ -355,6 +695,7 @@ class _ArchivedDataPageState extends ConsumerState<ArchivedDataPage> {
             product: product,
             dateLabel: _formatDateTime(product.archivedAt),
             onRestore: () => _restoreProduct(product),
+            onDeletePermanently: () => _deleteProductPermanently(product),
           );
         }),
       ],
@@ -378,6 +719,54 @@ class _ArchivedDataPageState extends ConsumerState<ArchivedDataPage> {
             createdAtLabel: _formatDateTime(movement.createdAt),
             voidedAtLabel: _formatDateTime(movement.voidedAt),
             onRestore: () => _restoreMovement(movement),
+            onDeletePermanently: () => _deleteMovementPermanently(movement),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildArchivedSales() {
+    if (_archivedSales.isEmpty) {
+      return const _EmptyArchiveState(
+        icon: Icons.receipt_long_rounded,
+        message: 'No hay ventas archivadas.',
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        const ConfigSectionLabel(text: 'Ventas archivadas'),
+        ..._archivedSales.map((ArchivedSaleView sale) {
+          return ArchivedSaleCard(
+            sale: sale,
+            createdAtLabel: _formatDateTime(sale.createdAt),
+            archivedAtLabel: _formatDateTime(sale.archivedAt),
+            totalLabel: (sale.totalCents / 100).toStringAsFixed(2),
+            onRestore: () => _restoreSale(sale),
+            onDeletePermanently: () => _deleteSalePermanently(sale),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildArchivedEmployees() {
+    if (_archivedEmployees.isEmpty) {
+      return const _EmptyArchiveState(
+        icon: Icons.badge_outlined,
+        message: 'No hay empleados archivados.',
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        const ConfigSectionLabel(text: 'Empleados archivados'),
+        ..._archivedEmployees.map((TpvEmployee employee) {
+          return ArchivedEmployeeCard(
+            employee: employee,
+            onRestore: () => _restoreEmployee(employee),
+            onDeletePermanently: () => _deleteEmployeePermanently(employee),
           );
         }),
       ],

@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/licensing/license_providers.dart';
 import '../../../../core/utils/perf_trace.dart';
+import '../../../auth/presentation/auth_providers.dart';
 import '../../data/reportes_local_datasource.dart';
 import '../reportes_providers.dart';
+import '../../../tpv/presentation/tpv_providers.dart';
 
 class IpvReporteDetailPage extends ConsumerStatefulWidget {
   final IpvReportSummaryStat summary;
@@ -18,6 +20,7 @@ class IpvReporteDetailPage extends ConsumerStatefulWidget {
 
 class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
   bool _loading = true;
+  bool _reconciling = false;
   IpvReportDetailStat? _detail;
 
   @override
@@ -102,7 +105,7 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
   }
 
   int _lineTotalAmountCents(IpvReportLineStat line) {
-    return (line.salesQty * line.salePriceCents).round();
+    return line.totalAmountCents;
   }
 
   int _tableTotalAmountCents(IpvReportDetailStat detail) {
@@ -113,10 +116,78 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
     return total;
   }
 
+  Future<void> _reconcileIpv() async {
+    final session = ref.read(currentSessionProvider);
+    if (session == null || !session.isAdmin) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Solo el administrador puede reconciliar IPV.'),
+        ),
+      );
+      return;
+    }
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Reconciliar IPV'),
+          content: const Text(
+            'Se recalcularán las líneas del IPV con ventas y movimientos actuales. '
+            'Úsalo para corregir conciliaciones administrativas.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Reconciliar'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirm != true || !mounted) {
+      return;
+    }
+
+    setState(() => _reconciling = true);
+    try {
+      await ref.read(tpvLocalDataSourceProvider).reconcileIpvReport(
+            reportId: widget.summary.reportId,
+            userId: session.userId,
+          );
+      if (!mounted) {
+        return;
+      }
+      await _loadDetail();
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('IPV reconciliado correctamente.')),
+      );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo reconciliar IPV: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _reconciling = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool isDark = theme.brightness == Brightness.dark;
+    final session = ref.watch(currentSessionProvider);
+    final bool canReconcile = session?.isAdmin ?? false;
 
     return Scaffold(
       backgroundColor:
@@ -163,13 +234,24 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
           ],
         ),
         actions: [
-          IconButton(
-            icon: Icon(
-              Icons.more_vert_rounded,
-              color: isDark ? Colors.white : const Color(0xFF0F172A),
+          if (canReconcile)
+            IconButton(
+              tooltip: 'Reconciliar IPV',
+              onPressed: _loading || _reconciling ? null : _reconcileIpv,
+              icon: _reconciling
+                  ? SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: isDark ? Colors.white : const Color(0xFF0F172A),
+                      ),
+                    )
+                  : Icon(
+                      Icons.sync_rounded,
+                      color: isDark ? Colors.white : const Color(0xFF0F172A),
+                    ),
             ),
-            onPressed: () {},
-          ),
         ],
       ),
       body: _loading
@@ -462,10 +544,10 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Text(line.sku,
+                            Text(line.productName,
                                 style: const TextStyle(
                                     fontWeight: FontWeight.bold, fontSize: 14)),
-                            Text(line.productName,
+                            Text(line.sku,
                                 style: const TextStyle(
                                     fontSize: 12, color: Colors.grey)),
                           ],

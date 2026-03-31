@@ -197,11 +197,12 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
         _redirectToTpv('No tienes permiso para operar este TPV.');
         return;
       }
-      final Future<PosSession?> openSessionFuture =
-          tpvDs.getOpenSessionForTerminalAndUser(
-        terminalId: terminalView.terminal.id,
-        userId: session.userId,
-      );
+      final Future<PosSession?> openSessionFuture = session.isAdmin
+          ? tpvDs.getOpenSessionForTerminal(terminalView.terminal.id)
+          : tpvDs.getOpenSessionForTerminalAndUser(
+              terminalId: terminalView.terminal.id,
+              userId: session.userId,
+            );
       final Future<List<InventoryView>> stockedFuture = ref
           .read(inventarioLocalDataSourceProvider)
           .listStocked(warehouseId: terminalView.warehouse.id);
@@ -209,9 +210,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       final PosSession? openSession = await openSessionFuture;
       String sellerName = session.username;
       final TpvSessionWithUser? sessionInfo = terminalView.openSession;
-      if (sessionInfo != null &&
-          sessionInfo.session.userId == session.userId &&
-          sessionInfo.responsibleEmployees.isNotEmpty) {
+      if (sessionInfo != null && sessionInfo.responsibleEmployees.isNotEmpty) {
         sellerName = sessionInfo.responsibleEmployees.first.name;
       } else if (openSession != null) {
         final List<TpvEmployee> responsible =
@@ -264,7 +263,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       trace.end('ok');
 
       if (openSession == null) {
-        _redirectToTpv('No hay un turno abierto para este usuario en el TPV.');
+        _redirectToTpv('No hay un turno abierto en este TPV.');
       }
     } catch (e) {
       if (!mounted) {
@@ -1106,13 +1105,14 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     }
 
     final TpvLocalDataSource tpvDs = ref.read(tpvLocalDataSourceProvider);
-    final PosSession? openSession =
-        await tpvDs.getOpenSessionForTerminalAndUser(
-      terminalId: terminalId,
-      userId: userSession.userId,
-    );
+    final PosSession? openSession = userSession.isAdmin
+        ? await tpvDs.getOpenSessionForTerminal(terminalId)
+        : await tpvDs.getOpenSessionForTerminalAndUser(
+            terminalId: terminalId,
+            userId: userSession.userId,
+          );
     if (openSession == null) {
-      _show('No hay turno abierto para este usuario.');
+      _show('No hay turno abierto en este TPV.');
       _redirectToTpv('Abre un turno para operar el POS.');
       return;
     }

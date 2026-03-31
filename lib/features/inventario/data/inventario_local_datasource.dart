@@ -1043,6 +1043,167 @@ class InventarioLocalDataSource {
     });
   }
 
+  Future<void> updateManualMovement({
+    required String movementId,
+    required String productId,
+    required String warehouseId,
+    required String type,
+    required double qty,
+    required String reasonCode,
+    required String userId,
+    String? note,
+  }) async {
+    await _licenseService.requireWriteAccess();
+    final String safeMovementId = movementId.trim();
+    final String safeProductId = productId.trim();
+    final String safeWarehouseId = warehouseId.trim();
+    final String safeUserId = userId.trim();
+    if (safeMovementId.isEmpty) {
+      throw Exception('Movimiento inválido.');
+    }
+    if (safeProductId.isEmpty || safeWarehouseId.isEmpty) {
+      throw Exception('Producto o almacén inválido.');
+    }
+    if (safeUserId.isEmpty) {
+      throw Exception('Usuario inválido.');
+    }
+    if (qty <= 0) {
+      throw Exception('La cantidad debe ser mayor que 0.');
+    }
+    final String safeType = _sanitizeMovementType(type);
+    final String safeReasonCode = _sanitizeReasonCode(reasonCode);
+    final List<InventoryMovementReason> manualReasons =
+        await listManualMovementReasons(movementType: safeType);
+    final bool reasonAllowed = manualReasons.any(
+      (InventoryMovementReason row) => row.code == safeReasonCode,
+    );
+    if (!reasonAllowed) {
+      throw Exception('Motivo de movimiento invalido.');
+    }
+
+    await _db.transaction(() async {
+      final StockMovement? existing = await (_db.select(_db.stockMovements)
+            ..where((StockMovements tbl) => tbl.id.equals(safeMovementId)))
+          .getSingleOrNull();
+      if (existing == null) {
+        throw Exception('El movimiento no existe.');
+      }
+      if (existing.isVoided) {
+        throw Exception('No se puede editar un movimiento archivado.');
+      }
+
+      final String source = existing.movementSource.trim().toLowerCase();
+      final String refType = (existing.refType ?? '').trim().toLowerCase();
+      if (source != 'manual' || _isSaleRefType(refType)) {
+        throw Exception('Solo se pueden editar movimientos manuales.');
+      }
+
+      final double oldSignedDelta = _signedMovementDelta(existing);
+      final double nextSignedDelta = safeType == 'in' ? qty.abs() : -qty.abs();
+
+      if (existing.productId == safeProductId &&
+          existing.warehouseId == safeWarehouseId) {
+        final StockBalance? current = await (_db.select(_db.stockBalances)
+              ..where(
+                (StockBalances tbl) =>
+                    tbl.productId.equals(safeProductId) &
+                    tbl.warehouseId.equals(safeWarehouseId),
+              ))
+            .getSingleOrNull();
+        final double oldQty = current?.qty ?? 0;
+        final double nextQty = oldQty + (nextSignedDelta - oldSignedDelta);
+        if (nextQty < 0) {
+          throw Exception('La edición deja el stock en negativo.');
+        }
+        await _upsertStockBalance(
+          productId: safeProductId,
+          warehouseId: safeWarehouseId,
+          qty: nextQty,
+        );
+      } else {
+        final StockBalance? oldBalance = await (_db.select(_db.stockBalances)
+              ..where(
+                (StockBalances tbl) =>
+                    tbl.productId.equals(existing.productId) &
+                    tbl.warehouseId.equals(existing.warehouseId),
+              ))
+            .getSingleOrNull();
+        final double oldBalanceQty = oldBalance?.qty ?? 0;
+        final double revertedOldQty = oldBalanceQty - oldSignedDelta;
+        if (revertedOldQty < 0) {
+          throw Exception(
+            'No hay stock suficiente para revertir el movimiento anterior.',
+          );
+        }
+        await _upsertStockBalance(
+          productId: existing.productId,
+          warehouseId: existing.warehouseId,
+          qty: revertedOldQty,
+        );
+
+        final StockBalance? nextBalance = await (_db.select(_db.stockBalances)
+              ..where(
+                (StockBalances tbl) =>
+                    tbl.productId.equals(safeProductId) &
+                    tbl.warehouseId.equals(safeWarehouseId),
+              ))
+            .getSingleOrNull();
+        final double nextBalanceQty = nextBalance?.qty ?? 0;
+        final double nextQty = nextBalanceQty + nextSignedDelta;
+        if (nextQty < 0) {
+          throw Exception('La edición deja el stock en negativo.');
+        }
+        await _upsertStockBalance(
+          productId: safeProductId,
+          warehouseId: safeWarehouseId,
+          qty: nextQty,
+        );
+      }
+
+      await (_db.update(_db.stockMovements)
+            ..where((StockMovements tbl) => tbl.id.equals(safeMovementId)))
+          .write(
+        StockMovementsCompanion(
+          productId: Value(safeProductId),
+          warehouseId: Value(safeWarehouseId),
+          type: Value(safeType),
+          qty: Value(qty.abs()),
+          reasonCode: Value(safeReasonCode),
+          movementSource: const Value('manual'),
+          refType: const Value('manual_move'),
+          refId: const Value(null),
+          note: Value(_normalizeOptional(note)),
+        ),
+      );
+
+      await _db.into(_db.auditLogs).insert(
+            AuditLogsCompanion.insert(
+              id: _uuid.v4(),
+              userId: Value(safeUserId),
+              action: 'STOCK_MOVEMENT_EDITED',
+              entity: 'stock_movement',
+              entityId: safeMovementId,
+              payloadJson: jsonEncode(<String, Object?>{
+                'from': <String, Object?>{
+                  'productId': existing.productId,
+                  'warehouseId': existing.warehouseId,
+                  'type': existing.type,
+                  'qty': existing.qty,
+                  'reasonCode': existing.reasonCode,
+                },
+                'to': <String, Object?>{
+                  'productId': safeProductId,
+                  'warehouseId': safeWarehouseId,
+                  'type': safeType,
+                  'qty': qty.abs(),
+                  'reasonCode': safeReasonCode,
+                },
+              }),
+            ),
+          );
+    });
+  }
+
   Future<void> archiveManualMovement({
     required String movementId,
     required String userId,
@@ -1183,6 +1344,59 @@ class InventarioLocalDataSource {
           note: Value(auditNote),
         ),
       );
+    });
+  }
+
+  Future<void> permanentlyDeleteArchivedMovement({
+    required String movementId,
+    required String userId,
+  }) async {
+    await _licenseService.requireWriteAccess();
+    final String safeMovementId = movementId.trim();
+    if (safeMovementId.isEmpty) {
+      throw Exception('Movimiento inválido.');
+    }
+    final String safeUserId = userId.trim();
+    if (safeUserId.isEmpty) {
+      throw Exception('Usuario inválido.');
+    }
+
+    await _db.transaction(() async {
+      final StockMovement? movement = await (_db.select(_db.stockMovements)
+            ..where((StockMovements tbl) => tbl.id.equals(safeMovementId)))
+          .getSingleOrNull();
+      if (movement == null) {
+        return;
+      }
+      if (!movement.isVoided) {
+        throw Exception(
+          'Solo se pueden eliminar definitivamente movimientos archivados.',
+        );
+      }
+
+      await (_db.delete(_db.stockMovements)
+            ..where((StockMovements tbl) => tbl.id.equals(safeMovementId)))
+          .go();
+
+      await _db.into(_db.auditLogs).insert(
+            AuditLogsCompanion.insert(
+              id: _uuid.v4(),
+              userId: Value(safeUserId),
+              action: 'STOCK_MOVEMENT_PURGED',
+              entity: 'stock_movement',
+              entityId: safeMovementId,
+              payloadJson: jsonEncode(<String, Object?>{
+                'productId': movement.productId,
+                'warehouseId': movement.warehouseId,
+                'type': movement.type,
+                'qty': movement.qty,
+                'reasonCode': movement.reasonCode,
+                'movementSource': movement.movementSource,
+                'refType': movement.refType,
+                'refId': movement.refId,
+              }),
+            ),
+          );
     });
   }
 

@@ -23,6 +23,13 @@ class PosInventoryMovementDialog extends StatefulWidget {
   final String? initialWarehouseId;
   final Future<List<InventoryView>> Function(String warehouseId)?
       loadAdjustRowsForWarehouse;
+  final String? initialProductId;
+  final bool? initialIsEntry;
+  final String? initialReasonCode;
+  final double? initialQty;
+  final String? initialNote;
+  final String title;
+  final String confirmLabel;
 
   const PosInventoryMovementDialog({
     super.key,
@@ -34,6 +41,13 @@ class PosInventoryMovementDialog extends StatefulWidget {
     this.warehouseOptions = const <InventoryMovementWarehouseOption>[],
     this.initialWarehouseId,
     this.loadAdjustRowsForWarehouse,
+    this.initialProductId,
+    this.initialIsEntry,
+    this.initialReasonCode,
+    this.initialQty,
+    this.initialNote,
+    this.title = 'Movimiento de Inventario',
+    this.confirmLabel = 'Aplicar',
   });
 
   @override
@@ -70,15 +84,32 @@ class _PosInventoryMovementDialogState
     }
     _reindexRows();
 
-    _selectedProductId = _adjustRows.isEmpty ? '' : _adjustRows.first.productId;
-    _isEntry = widget.entryReasons.isNotEmpty || widget.outputReasons.isEmpty;
-    _selectedReasonCode = _isEntry
-        ? (widget.entryReasons.isNotEmpty
-            ? widget.entryReasons.first.code
-            : null)
-        : (widget.outputReasons.isNotEmpty
-            ? widget.outputReasons.first.code
-            : null);
+    final String desiredProductId = (widget.initialProductId ?? '').trim();
+    _selectedProductId = _adjustRows.isEmpty
+        ? ''
+        : (_rowByProductId.containsKey(desiredProductId)
+            ? desiredProductId
+            : _adjustRows.first.productId);
+
+    _isEntry = widget.initialIsEntry ??
+        (widget.entryReasons.isNotEmpty || widget.outputReasons.isEmpty);
+    final List<InventoryMovementReason> reasons =
+        _isEntry ? widget.entryReasons : widget.outputReasons;
+    final String initialReasonCode = (widget.initialReasonCode ?? '').trim();
+    final bool hasInitialReason = reasons.any(
+      (InventoryMovementReason row) => row.code == initialReasonCode,
+    );
+    _selectedReasonCode = hasInitialReason
+        ? initialReasonCode
+        : (reasons.isNotEmpty ? reasons.first.code : null);
+
+    if (widget.initialQty != null && widget.initialQty! > 0) {
+      _qtyCtrl.text = widget.initialQty!.toStringAsFixed(2);
+    }
+    final String initialNote = (widget.initialNote ?? '').trim();
+    if (initialNote.isNotEmpty) {
+      _noteCtrl.text = initialNote;
+    }
   }
 
   @override
@@ -139,10 +170,10 @@ class _PosInventoryMovementDialogState
                         color: primaryColor, size: 24),
                   ),
                   const SizedBox(width: 12),
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      'Movimiento de Inventario',
-                      style: TextStyle(
+                      widget.title,
+                      style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w800,
                         letterSpacing: -0.5,
@@ -576,9 +607,9 @@ class _PosInventoryMovementDialogState
                       ),
                     ),
                     icon: const Icon(Icons.done_rounded, size: 20),
-                    label: const Text(
-                      'Aplicar',
-                      style: TextStyle(fontWeight: FontWeight.w800),
+                    label: Text(
+                      widget.confirmLabel,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
                   ),
                 ],

@@ -8,6 +8,8 @@ class HomeRecentActivity extends StatelessWidget {
   final String currencySymbol;
   final String Function(int) moneyFormatter;
   final VoidCallback? onViewAllTap;
+  final VoidCallback? onCardTap;
+  final int? maxItems;
 
   const HomeRecentActivity({
     super.key,
@@ -17,6 +19,8 @@ class HomeRecentActivity extends StatelessWidget {
     required this.currencySymbol,
     required this.moneyFormatter,
     this.onViewAllTap,
+    this.onCardTap,
+    this.maxItems = 5,
   });
 
   @override
@@ -24,8 +28,10 @@ class HomeRecentActivity extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final bool isDark = theme.brightness == Brightness.dark;
     final List<_ActivityEntry> entries = _buildEntries();
-    final List<_ActivityEntry> visibleEntries =
-        entries.take(5).toList(growable: false);
+    final int? limit = maxItems;
+    final List<_ActivityEntry> visibleEntries = limit == null
+        ? entries
+        : entries.take(limit < 0 ? 0 : limit).toList(growable: false);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -61,56 +67,64 @@ class HomeRecentActivity extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 16),
-        Container(
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onCardTap,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
-            ),
-            boxShadow: isDark
-                ? <BoxShadow>[]
-                : <BoxShadow>[
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.02),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-          ),
-          child: Column(
-            children: visibleEntries.isEmpty
-                ? <Widget>[
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(
-                        'No hay actividad reciente para mostrar.',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: isDark
-                              ? const Color(0xFF94A3B8)
-                              : const Color(0xFF64748B),
+            child: Container(
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color:
+                      isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                ),
+                boxShadow: isDark
+                    ? <BoxShadow>[]
+                    : <BoxShadow>[
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.02),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
                         ),
-                      ),
-                    ),
-                  ]
-                : visibleEntries.asMap().entries.map((entry) {
-                    final int idx = entry.key;
-                    final _ActivityEntry row = entry.value;
-                    return Column(
-                      children: [
-                        _buildActivityItem(row: row, isDark: isDark),
-                        if (idx < visibleEntries.length - 1)
-                          Divider(
-                            height: 1,
-                            thickness: 1,
-                            color: isDark
-                                ? const Color(0xFF334155)
-                                : const Color(0xFFF8FAFC),
-                          ),
                       ],
-                    );
-                  }).toList(),
+              ),
+              child: Column(
+                children: visibleEntries.isEmpty
+                    ? <Widget>[
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Text(
+                            'No hay actividad reciente para mostrar.',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: isDark
+                                  ? const Color(0xFF94A3B8)
+                                  : const Color(0xFF64748B),
+                            ),
+                          ),
+                        ),
+                      ]
+                    : visibleEntries.asMap().entries.map((entry) {
+                        final int idx = entry.key;
+                        final _ActivityEntry row = entry.value;
+                        return Column(
+                          children: [
+                            _buildActivityItem(row: row, isDark: isDark),
+                            if (idx < visibleEntries.length - 1)
+                              Divider(
+                                height: 1,
+                                thickness: 1,
+                                color: isDark
+                                    ? const Color(0xFF334155)
+                                    : const Color(0xFFF8FAFC),
+                              ),
+                          ],
+                        );
+                      }).toList(),
+              ),
+            ),
           ),
         ),
       ],

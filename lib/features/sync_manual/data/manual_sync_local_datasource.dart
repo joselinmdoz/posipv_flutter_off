@@ -926,16 +926,22 @@ class ManualSyncLocalDataSource {
         if (resolvedSaleId.isEmpty || resolvedProductId.isEmpty) {
           continue;
         }
+        final double qty = _readDouble(row['qty']);
+        final int unitCostCents = _readIntOrNull(row['unitCostCents']) ?? 0;
+        final int lineCostCents = _readIntOrNull(row['lineCostCents']) ??
+            (qty * unitCostCents).round();
         await _db.into(_db.saleItems).insert(
               SaleItemsCompanion.insert(
                 id: remoteId,
                 saleId: resolvedSaleId,
                 productId: resolvedProductId,
-                qty: _readDouble(row['qty']),
+                qty: qty,
                 unitPriceCents: _readInt(row['unitPriceCents']),
+                unitCostCents: Value(unitCostCents),
                 taxRateBps: _readInt(row['taxRateBps']),
                 lineSubtotalCents: _readInt(row['lineSubtotalCents']),
                 lineTaxCents: _readInt(row['lineTaxCents']),
+                lineCostCents: Value(lineCostCents),
                 lineTotalCents: _readInt(row['lineTotalCents']),
               ),
               mode: InsertMode.insertOrIgnore,
@@ -1456,9 +1462,11 @@ class ManualSyncLocalDataSource {
       'productId': row.productId,
       'qty': row.qty,
       'unitPriceCents': row.unitPriceCents,
+      'unitCostCents': row.unitCostCents,
       'taxRateBps': row.taxRateBps,
       'lineSubtotalCents': row.lineSubtotalCents,
       'lineTaxCents': row.lineTaxCents,
+      'lineCostCents': row.lineCostCents,
       'lineTotalCents': row.lineTotalCents,
     };
   }

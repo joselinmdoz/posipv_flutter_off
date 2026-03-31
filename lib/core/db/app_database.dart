@@ -283,9 +283,11 @@ class SaleItems extends Table {
   TextColumn get productId => text().references(Products, #id)();
   RealColumn get qty => real()();
   IntColumn get unitPriceCents => integer()();
+  IntColumn get unitCostCents => integer().withDefault(const Constant(0))();
   IntColumn get taxRateBps => integer()();
   IntColumn get lineSubtotalCents => integer()();
   IntColumn get lineTaxCents => integer()();
+  IntColumn get lineCostCents => integer().withDefault(const Constant(0))();
   IntColumn get lineTotalCents => integer()();
 
   @override
@@ -398,7 +400,7 @@ class AppDatabase extends _$AppDatabase {
   final Uuid _uuid = const Uuid();
 
   @override
-  int get schemaVersion => 23;
+  int get schemaVersion => 24;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -690,6 +692,36 @@ class AppDatabase extends _$AppDatabase {
           if (from < 23) {
             await _rebuildProductCatalogItemsForSchema23(m);
           }
+          if (from < 24) {
+            await _addSaleItemColumnIfMissing(
+              m,
+              'unit_cost_cents',
+              () => m.addColumn(saleItems, saleItems.unitCostCents),
+            );
+            await _addSaleItemColumnIfMissing(
+              m,
+              'line_cost_cents',
+              () => m.addColumn(saleItems, saleItems.lineCostCents),
+            );
+            await customStatement(
+              '''
+              UPDATE sale_items AS si
+              SET unit_cost_cents = COALESCE(
+                (SELECT p.cost_price_cents FROM products p WHERE p.id = si.product_id),
+                0
+              )
+              ''',
+            );
+            await customStatement(
+              '''
+              UPDATE sale_items
+              SET line_cost_cents = CAST(
+                ROUND(COALESCE(qty, 0) * COALESCE(unit_cost_cents, 0))
+                AS INTEGER
+              )
+              ''',
+            );
+          }
         },
       );
 
@@ -765,6 +797,17 @@ class AppDatabase extends _$AppDatabase {
     Future<void> Function() addColumn,
   ) async {
     final bool exists = await _tableHasColumn('payments', columnName);
+    if (!exists) {
+      await addColumn();
+    }
+  }
+
+  Future<void> _addSaleItemColumnIfMissing(
+    Migrator migrator,
+    String columnName,
+    Future<void> Function() addColumn,
+  ) async {
+    final bool exists = await _tableHasColumn('sale_items', columnName);
     if (!exists) {
       await addColumn();
     }

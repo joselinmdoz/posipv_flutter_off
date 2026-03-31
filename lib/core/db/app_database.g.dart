@@ -7970,6 +7970,14 @@ class $SaleItemsTable extends SaleItems
   late final GeneratedColumn<int> unitPriceCents = GeneratedColumn<int>(
       'unit_price_cents', aliasedName, false,
       type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _unitCostCentsMeta =
+      const VerificationMeta('unitCostCents');
+  @override
+  late final GeneratedColumn<int> unitCostCents = GeneratedColumn<int>(
+      'unit_cost_cents', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
   static const VerificationMeta _taxRateBpsMeta =
       const VerificationMeta('taxRateBps');
   @override
@@ -7988,6 +7996,14 @@ class $SaleItemsTable extends SaleItems
   late final GeneratedColumn<int> lineTaxCents = GeneratedColumn<int>(
       'line_tax_cents', aliasedName, false,
       type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _lineCostCentsMeta =
+      const VerificationMeta('lineCostCents');
+  @override
+  late final GeneratedColumn<int> lineCostCents = GeneratedColumn<int>(
+      'line_cost_cents', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
   static const VerificationMeta _lineTotalCentsMeta =
       const VerificationMeta('lineTotalCents');
   @override
@@ -8001,9 +8017,11 @@ class $SaleItemsTable extends SaleItems
         productId,
         qty,
         unitPriceCents,
+        unitCostCents,
         taxRateBps,
         lineSubtotalCents,
         lineTaxCents,
+        lineCostCents,
         lineTotalCents
       ];
   @override
@@ -8047,6 +8065,12 @@ class $SaleItemsTable extends SaleItems
     } else if (isInserting) {
       context.missing(_unitPriceCentsMeta);
     }
+    if (data.containsKey('unit_cost_cents')) {
+      context.handle(
+          _unitCostCentsMeta,
+          unitCostCents.isAcceptableOrUnknown(
+              data['unit_cost_cents']!, _unitCostCentsMeta));
+    }
     if (data.containsKey('tax_rate_bps')) {
       context.handle(
           _taxRateBpsMeta,
@@ -8070,6 +8094,12 @@ class $SaleItemsTable extends SaleItems
               data['line_tax_cents']!, _lineTaxCentsMeta));
     } else if (isInserting) {
       context.missing(_lineTaxCentsMeta);
+    }
+    if (data.containsKey('line_cost_cents')) {
+      context.handle(
+          _lineCostCentsMeta,
+          lineCostCents.isAcceptableOrUnknown(
+              data['line_cost_cents']!, _lineCostCentsMeta));
     }
     if (data.containsKey('line_total_cents')) {
       context.handle(
@@ -8098,12 +8128,16 @@ class $SaleItemsTable extends SaleItems
           .read(DriftSqlType.double, data['${effectivePrefix}qty'])!,
       unitPriceCents: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}unit_price_cents'])!,
+      unitCostCents: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}unit_cost_cents'])!,
       taxRateBps: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}tax_rate_bps'])!,
       lineSubtotalCents: attachedDatabase.typeMapping.read(
           DriftSqlType.int, data['${effectivePrefix}line_subtotal_cents'])!,
       lineTaxCents: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}line_tax_cents'])!,
+      lineCostCents: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}line_cost_cents'])!,
       lineTotalCents: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}line_total_cents'])!,
     );
@@ -8121,9 +8155,11 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
   final String productId;
   final double qty;
   final int unitPriceCents;
+  final int unitCostCents;
   final int taxRateBps;
   final int lineSubtotalCents;
   final int lineTaxCents;
+  final int lineCostCents;
   final int lineTotalCents;
   const SaleItem(
       {required this.id,
@@ -8131,9 +8167,11 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
       required this.productId,
       required this.qty,
       required this.unitPriceCents,
+      required this.unitCostCents,
       required this.taxRateBps,
       required this.lineSubtotalCents,
       required this.lineTaxCents,
+      required this.lineCostCents,
       required this.lineTotalCents});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -8143,9 +8181,11 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
     map['product_id'] = Variable<String>(productId);
     map['qty'] = Variable<double>(qty);
     map['unit_price_cents'] = Variable<int>(unitPriceCents);
+    map['unit_cost_cents'] = Variable<int>(unitCostCents);
     map['tax_rate_bps'] = Variable<int>(taxRateBps);
     map['line_subtotal_cents'] = Variable<int>(lineSubtotalCents);
     map['line_tax_cents'] = Variable<int>(lineTaxCents);
+    map['line_cost_cents'] = Variable<int>(lineCostCents);
     map['line_total_cents'] = Variable<int>(lineTotalCents);
     return map;
   }
@@ -8157,9 +8197,11 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
       productId: Value(productId),
       qty: Value(qty),
       unitPriceCents: Value(unitPriceCents),
+      unitCostCents: Value(unitCostCents),
       taxRateBps: Value(taxRateBps),
       lineSubtotalCents: Value(lineSubtotalCents),
       lineTaxCents: Value(lineTaxCents),
+      lineCostCents: Value(lineCostCents),
       lineTotalCents: Value(lineTotalCents),
     );
   }
@@ -8173,9 +8215,11 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
       productId: serializer.fromJson<String>(json['productId']),
       qty: serializer.fromJson<double>(json['qty']),
       unitPriceCents: serializer.fromJson<int>(json['unitPriceCents']),
+      unitCostCents: serializer.fromJson<int>(json['unitCostCents']),
       taxRateBps: serializer.fromJson<int>(json['taxRateBps']),
       lineSubtotalCents: serializer.fromJson<int>(json['lineSubtotalCents']),
       lineTaxCents: serializer.fromJson<int>(json['lineTaxCents']),
+      lineCostCents: serializer.fromJson<int>(json['lineCostCents']),
       lineTotalCents: serializer.fromJson<int>(json['lineTotalCents']),
     );
   }
@@ -8188,9 +8232,11 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
       'productId': serializer.toJson<String>(productId),
       'qty': serializer.toJson<double>(qty),
       'unitPriceCents': serializer.toJson<int>(unitPriceCents),
+      'unitCostCents': serializer.toJson<int>(unitCostCents),
       'taxRateBps': serializer.toJson<int>(taxRateBps),
       'lineSubtotalCents': serializer.toJson<int>(lineSubtotalCents),
       'lineTaxCents': serializer.toJson<int>(lineTaxCents),
+      'lineCostCents': serializer.toJson<int>(lineCostCents),
       'lineTotalCents': serializer.toJson<int>(lineTotalCents),
     };
   }
@@ -8201,9 +8247,11 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
           String? productId,
           double? qty,
           int? unitPriceCents,
+          int? unitCostCents,
           int? taxRateBps,
           int? lineSubtotalCents,
           int? lineTaxCents,
+          int? lineCostCents,
           int? lineTotalCents}) =>
       SaleItem(
         id: id ?? this.id,
@@ -8211,9 +8259,11 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
         productId: productId ?? this.productId,
         qty: qty ?? this.qty,
         unitPriceCents: unitPriceCents ?? this.unitPriceCents,
+        unitCostCents: unitCostCents ?? this.unitCostCents,
         taxRateBps: taxRateBps ?? this.taxRateBps,
         lineSubtotalCents: lineSubtotalCents ?? this.lineSubtotalCents,
         lineTaxCents: lineTaxCents ?? this.lineTaxCents,
+        lineCostCents: lineCostCents ?? this.lineCostCents,
         lineTotalCents: lineTotalCents ?? this.lineTotalCents,
       );
   SaleItem copyWithCompanion(SaleItemsCompanion data) {
@@ -8225,6 +8275,9 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
       unitPriceCents: data.unitPriceCents.present
           ? data.unitPriceCents.value
           : this.unitPriceCents,
+      unitCostCents: data.unitCostCents.present
+          ? data.unitCostCents.value
+          : this.unitCostCents,
       taxRateBps:
           data.taxRateBps.present ? data.taxRateBps.value : this.taxRateBps,
       lineSubtotalCents: data.lineSubtotalCents.present
@@ -8233,6 +8286,9 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
       lineTaxCents: data.lineTaxCents.present
           ? data.lineTaxCents.value
           : this.lineTaxCents,
+      lineCostCents: data.lineCostCents.present
+          ? data.lineCostCents.value
+          : this.lineCostCents,
       lineTotalCents: data.lineTotalCents.present
           ? data.lineTotalCents.value
           : this.lineTotalCents,
@@ -8247,17 +8303,29 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
           ..write('productId: $productId, ')
           ..write('qty: $qty, ')
           ..write('unitPriceCents: $unitPriceCents, ')
+          ..write('unitCostCents: $unitCostCents, ')
           ..write('taxRateBps: $taxRateBps, ')
           ..write('lineSubtotalCents: $lineSubtotalCents, ')
           ..write('lineTaxCents: $lineTaxCents, ')
+          ..write('lineCostCents: $lineCostCents, ')
           ..write('lineTotalCents: $lineTotalCents')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, saleId, productId, qty, unitPriceCents,
-      taxRateBps, lineSubtotalCents, lineTaxCents, lineTotalCents);
+  int get hashCode => Object.hash(
+      id,
+      saleId,
+      productId,
+      qty,
+      unitPriceCents,
+      unitCostCents,
+      taxRateBps,
+      lineSubtotalCents,
+      lineTaxCents,
+      lineCostCents,
+      lineTotalCents);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -8267,9 +8335,11 @@ class SaleItem extends DataClass implements Insertable<SaleItem> {
           other.productId == this.productId &&
           other.qty == this.qty &&
           other.unitPriceCents == this.unitPriceCents &&
+          other.unitCostCents == this.unitCostCents &&
           other.taxRateBps == this.taxRateBps &&
           other.lineSubtotalCents == this.lineSubtotalCents &&
           other.lineTaxCents == this.lineTaxCents &&
+          other.lineCostCents == this.lineCostCents &&
           other.lineTotalCents == this.lineTotalCents);
 }
 
@@ -8279,9 +8349,11 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
   final Value<String> productId;
   final Value<double> qty;
   final Value<int> unitPriceCents;
+  final Value<int> unitCostCents;
   final Value<int> taxRateBps;
   final Value<int> lineSubtotalCents;
   final Value<int> lineTaxCents;
+  final Value<int> lineCostCents;
   final Value<int> lineTotalCents;
   final Value<int> rowid;
   const SaleItemsCompanion({
@@ -8290,9 +8362,11 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
     this.productId = const Value.absent(),
     this.qty = const Value.absent(),
     this.unitPriceCents = const Value.absent(),
+    this.unitCostCents = const Value.absent(),
     this.taxRateBps = const Value.absent(),
     this.lineSubtotalCents = const Value.absent(),
     this.lineTaxCents = const Value.absent(),
+    this.lineCostCents = const Value.absent(),
     this.lineTotalCents = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -8302,9 +8376,11 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
     required String productId,
     required double qty,
     required int unitPriceCents,
+    this.unitCostCents = const Value.absent(),
     required int taxRateBps,
     required int lineSubtotalCents,
     required int lineTaxCents,
+    this.lineCostCents = const Value.absent(),
     required int lineTotalCents,
     this.rowid = const Value.absent(),
   })  : id = Value(id),
@@ -8322,9 +8398,11 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
     Expression<String>? productId,
     Expression<double>? qty,
     Expression<int>? unitPriceCents,
+    Expression<int>? unitCostCents,
     Expression<int>? taxRateBps,
     Expression<int>? lineSubtotalCents,
     Expression<int>? lineTaxCents,
+    Expression<int>? lineCostCents,
     Expression<int>? lineTotalCents,
     Expression<int>? rowid,
   }) {
@@ -8334,9 +8412,11 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
       if (productId != null) 'product_id': productId,
       if (qty != null) 'qty': qty,
       if (unitPriceCents != null) 'unit_price_cents': unitPriceCents,
+      if (unitCostCents != null) 'unit_cost_cents': unitCostCents,
       if (taxRateBps != null) 'tax_rate_bps': taxRateBps,
       if (lineSubtotalCents != null) 'line_subtotal_cents': lineSubtotalCents,
       if (lineTaxCents != null) 'line_tax_cents': lineTaxCents,
+      if (lineCostCents != null) 'line_cost_cents': lineCostCents,
       if (lineTotalCents != null) 'line_total_cents': lineTotalCents,
       if (rowid != null) 'rowid': rowid,
     });
@@ -8348,9 +8428,11 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
       Value<String>? productId,
       Value<double>? qty,
       Value<int>? unitPriceCents,
+      Value<int>? unitCostCents,
       Value<int>? taxRateBps,
       Value<int>? lineSubtotalCents,
       Value<int>? lineTaxCents,
+      Value<int>? lineCostCents,
       Value<int>? lineTotalCents,
       Value<int>? rowid}) {
     return SaleItemsCompanion(
@@ -8359,9 +8441,11 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
       productId: productId ?? this.productId,
       qty: qty ?? this.qty,
       unitPriceCents: unitPriceCents ?? this.unitPriceCents,
+      unitCostCents: unitCostCents ?? this.unitCostCents,
       taxRateBps: taxRateBps ?? this.taxRateBps,
       lineSubtotalCents: lineSubtotalCents ?? this.lineSubtotalCents,
       lineTaxCents: lineTaxCents ?? this.lineTaxCents,
+      lineCostCents: lineCostCents ?? this.lineCostCents,
       lineTotalCents: lineTotalCents ?? this.lineTotalCents,
       rowid: rowid ?? this.rowid,
     );
@@ -8385,6 +8469,9 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
     if (unitPriceCents.present) {
       map['unit_price_cents'] = Variable<int>(unitPriceCents.value);
     }
+    if (unitCostCents.present) {
+      map['unit_cost_cents'] = Variable<int>(unitCostCents.value);
+    }
     if (taxRateBps.present) {
       map['tax_rate_bps'] = Variable<int>(taxRateBps.value);
     }
@@ -8393,6 +8480,9 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
     }
     if (lineTaxCents.present) {
       map['line_tax_cents'] = Variable<int>(lineTaxCents.value);
+    }
+    if (lineCostCents.present) {
+      map['line_cost_cents'] = Variable<int>(lineCostCents.value);
     }
     if (lineTotalCents.present) {
       map['line_total_cents'] = Variable<int>(lineTotalCents.value);
@@ -8411,9 +8501,11 @@ class SaleItemsCompanion extends UpdateCompanion<SaleItem> {
           ..write('productId: $productId, ')
           ..write('qty: $qty, ')
           ..write('unitPriceCents: $unitPriceCents, ')
+          ..write('unitCostCents: $unitCostCents, ')
           ..write('taxRateBps: $taxRateBps, ')
           ..write('lineSubtotalCents: $lineSubtotalCents, ')
           ..write('lineTaxCents: $lineTaxCents, ')
+          ..write('lineCostCents: $lineCostCents, ')
           ..write('lineTotalCents: $lineTotalCents, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -19384,9 +19476,11 @@ typedef $$SaleItemsTableCreateCompanionBuilder = SaleItemsCompanion Function({
   required String productId,
   required double qty,
   required int unitPriceCents,
+  Value<int> unitCostCents,
   required int taxRateBps,
   required int lineSubtotalCents,
   required int lineTaxCents,
+  Value<int> lineCostCents,
   required int lineTotalCents,
   Value<int> rowid,
 });
@@ -19396,9 +19490,11 @@ typedef $$SaleItemsTableUpdateCompanionBuilder = SaleItemsCompanion Function({
   Value<String> productId,
   Value<double> qty,
   Value<int> unitPriceCents,
+  Value<int> unitCostCents,
   Value<int> taxRateBps,
   Value<int> lineSubtotalCents,
   Value<int> lineTaxCents,
+  Value<int> lineCostCents,
   Value<int> lineTotalCents,
   Value<int> rowid,
 });
@@ -19456,6 +19552,9 @@ class $$SaleItemsTableFilterComposer
       column: $table.unitPriceCents,
       builder: (column) => ColumnFilters(column));
 
+  ColumnFilters<int> get unitCostCents => $composableBuilder(
+      column: $table.unitCostCents, builder: (column) => ColumnFilters(column));
+
   ColumnFilters<int> get taxRateBps => $composableBuilder(
       column: $table.taxRateBps, builder: (column) => ColumnFilters(column));
 
@@ -19465,6 +19564,9 @@ class $$SaleItemsTableFilterComposer
 
   ColumnFilters<int> get lineTaxCents => $composableBuilder(
       column: $table.lineTaxCents, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get lineCostCents => $composableBuilder(
+      column: $table.lineCostCents, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<int> get lineTotalCents => $composableBuilder(
       column: $table.lineTotalCents,
@@ -19530,6 +19632,10 @@ class $$SaleItemsTableOrderingComposer
       column: $table.unitPriceCents,
       builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<int> get unitCostCents => $composableBuilder(
+      column: $table.unitCostCents,
+      builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<int> get taxRateBps => $composableBuilder(
       column: $table.taxRateBps, builder: (column) => ColumnOrderings(column));
 
@@ -19539,6 +19645,10 @@ class $$SaleItemsTableOrderingComposer
 
   ColumnOrderings<int> get lineTaxCents => $composableBuilder(
       column: $table.lineTaxCents,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get lineCostCents => $composableBuilder(
+      column: $table.lineCostCents,
       builder: (column) => ColumnOrderings(column));
 
   ColumnOrderings<int> get lineTotalCents => $composableBuilder(
@@ -19604,6 +19714,9 @@ class $$SaleItemsTableAnnotationComposer
   GeneratedColumn<int> get unitPriceCents => $composableBuilder(
       column: $table.unitPriceCents, builder: (column) => column);
 
+  GeneratedColumn<int> get unitCostCents => $composableBuilder(
+      column: $table.unitCostCents, builder: (column) => column);
+
   GeneratedColumn<int> get taxRateBps => $composableBuilder(
       column: $table.taxRateBps, builder: (column) => column);
 
@@ -19612,6 +19725,9 @@ class $$SaleItemsTableAnnotationComposer
 
   GeneratedColumn<int> get lineTaxCents => $composableBuilder(
       column: $table.lineTaxCents, builder: (column) => column);
+
+  GeneratedColumn<int> get lineCostCents => $composableBuilder(
+      column: $table.lineCostCents, builder: (column) => column);
 
   GeneratedColumn<int> get lineTotalCents => $composableBuilder(
       column: $table.lineTotalCents, builder: (column) => column);
@@ -19685,9 +19801,11 @@ class $$SaleItemsTableTableManager extends RootTableManager<
             Value<String> productId = const Value.absent(),
             Value<double> qty = const Value.absent(),
             Value<int> unitPriceCents = const Value.absent(),
+            Value<int> unitCostCents = const Value.absent(),
             Value<int> taxRateBps = const Value.absent(),
             Value<int> lineSubtotalCents = const Value.absent(),
             Value<int> lineTaxCents = const Value.absent(),
+            Value<int> lineCostCents = const Value.absent(),
             Value<int> lineTotalCents = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
@@ -19697,9 +19815,11 @@ class $$SaleItemsTableTableManager extends RootTableManager<
             productId: productId,
             qty: qty,
             unitPriceCents: unitPriceCents,
+            unitCostCents: unitCostCents,
             taxRateBps: taxRateBps,
             lineSubtotalCents: lineSubtotalCents,
             lineTaxCents: lineTaxCents,
+            lineCostCents: lineCostCents,
             lineTotalCents: lineTotalCents,
             rowid: rowid,
           ),
@@ -19709,9 +19829,11 @@ class $$SaleItemsTableTableManager extends RootTableManager<
             required String productId,
             required double qty,
             required int unitPriceCents,
+            Value<int> unitCostCents = const Value.absent(),
             required int taxRateBps,
             required int lineSubtotalCents,
             required int lineTaxCents,
+            Value<int> lineCostCents = const Value.absent(),
             required int lineTotalCents,
             Value<int> rowid = const Value.absent(),
           }) =>
@@ -19721,9 +19843,11 @@ class $$SaleItemsTableTableManager extends RootTableManager<
             productId: productId,
             qty: qty,
             unitPriceCents: unitPriceCents,
+            unitCostCents: unitCostCents,
             taxRateBps: taxRateBps,
             lineSubtotalCents: lineSubtotalCents,
             lineTaxCents: lineTaxCents,
+            lineCostCents: lineCostCents,
             lineTotalCents: lineTotalCents,
             rowid: rowid,
           ),

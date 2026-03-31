@@ -6,8 +6,33 @@ import 'package:uuid/uuid.dart';
 import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_models.dart';
 import '../../../core/licensing/license_service.dart';
+import '../../../core/security/app_permissions.dart';
 import '../../../core/utils/app_result.dart';
 import '../domain/sale_models.dart';
+
+class ArchivedSaleView {
+  const ArchivedSaleView({
+    required this.id,
+    required this.folio,
+    required this.createdAt,
+    required this.archivedAt,
+    required this.totalCents,
+    required this.warehouseName,
+    required this.cashierName,
+    required this.channel,
+    this.customerName,
+  });
+
+  final String id;
+  final String folio;
+  final DateTime createdAt;
+  final DateTime archivedAt;
+  final int totalCents;
+  final String warehouseName;
+  final String cashierName;
+  final String channel;
+  final String? customerName;
+}
 
 class SaleService {
   SaleService(
@@ -110,9 +135,13 @@ class SaleService {
             );
           }
           if (tpvSession.userId != input.cashierId) {
-            throw const _SaleException(
-              'El turno abierto pertenece a otro usuario.',
-            );
+            final bool cashierIsAdmin =
+                await _userHasAdminRole(input.cashierId);
+            if (!cashierIsAdmin) {
+              throw const _SaleException(
+                'El turno abierto pertenece a otro usuario.',
+              );
+            }
           }
         } else {
           saleTerminalId = null;
@@ -195,6 +224,8 @@ class SaleService {
 
           final int lineSubtotal = (item.unitPriceCents * item.qty).round();
           final int lineTax = (lineSubtotal * item.taxRateBps / 10000).round();
+          final int unitCostCents = product.costPriceCents;
+          final int lineCostCents = (item.qty * unitCostCents).round();
           final int lineTotal = lineSubtotal + lineTax;
 
           subtotalCents += lineSubtotal;
@@ -206,6 +237,8 @@ class SaleService {
               productName: product.name,
               currentQty: currentQty,
               nextQty: nextQty,
+              unitCostCents: unitCostCents,
+              lineCostCents: lineCostCents,
               lineSubtotalCents: lineSubtotal,
               lineTaxCents: lineTax,
               lineTotalCents: lineTotal,
@@ -259,9 +292,11 @@ class SaleService {
                   productId: line.item.productId,
                   qty: line.item.qty,
                   unitPriceCents: line.item.unitPriceCents,
+                  unitCostCents: Value(line.unitCostCents),
                   taxRateBps: line.item.taxRateBps,
                   lineSubtotalCents: line.lineSubtotalCents,
                   lineTaxCents: line.lineTaxCents,
+                  lineCostCents: Value(line.lineCostCents),
                   lineTotalCents: line.lineTotalCents,
                 ),
               );
@@ -339,6 +374,795 @@ class SaleService {
         'No se pudo registrar la venta: $e',
       );
     }
+  }
+
+  Future<void> updateSale(UpdateSaleInput input) async {
+    await _licenseService.requireWriteAccess();
+    final String safeSaleId = input.saleId.trim();
+    final String safeUserId = input.userId.trim();
+    if (safeSaleId.isEmpty) {
+      throw const _SaleException('Venta inválida.');
+    }
+    if (safeUserId.isEmpty) {
+      throw const _SaleException('Usuario inválido.');
+    }
+    if (input.items.isEmpty) {
+      throw const _SaleException(
+        'La venta debe tener al menos un producto.',
+      );
+    }
+    if (input.payments.any((PaymentInput p) => p.amountCents < 0)) {
+      throw const _SaleException(
+        'Los montos de pago no pueden ser negativos.',
+      );
+    }
+
+    final bool isConsignmentSale = input.isConsignmentSale ||
+        input.payments.any((PaymentInput p) => _isConsignmentMethod(p.method));
+    if (!isConsignmentSale && input.payments.isEmpty) {
+      throw const _SaleException(
+        'La venta debe tener al menos un pago.',
+      );
+    }
+    if (isConsignmentSale && input.payments.isNotEmpty) {
+      throw const _SaleException(
+        'La venta en consignacion se registra sin pagos iniciales.',
+      );
+    }
+
+    await _db.transaction(() async {
+      final Sale? sale = await (_db.select(_db.sales)
+            ..where((Sales tbl) => tbl.id.equals(safeSaleId)))
+          .getSingleOrNull();
+      if (sale == null) {
+        throw const _SaleException('La venta no existe.');
+      }
+      final String status = sale.status.trim().toLowerCase();
+      if (status != 'posted') {
+        throw const _SaleException(
+          'Solo se pueden editar ventas publicadas.',
+        );
+      }
+
+      final String? cleanCustomerId = input.customerId == null
+          ? sale.customerId
+          : _normalizeOptional(input.customerId);
+      if (isConsignmentSale && cleanCustomerId == null) {
+        throw const _SaleException(
+          'La venta en consignacion requiere un cliente seleccionado.',
+        );
+      }
+      if (cleanCustomerId != null) {
+        final Customer? customer = await (_db.select(_db.customers)
+              ..where((Customers tbl) => tbl.id.equals(cleanCustomerId)))
+            .getSingleOrNull();
+        if (customer == null || !customer.isActive) {
+          throw const _SaleException('El cliente seleccionado no es valido.');
+        }
+      }
+
+      String? terminalCurrencyCode;
+      final bool isDirectSale = (sale.terminalId ?? '').trim().isEmpty;
+      if (!isDirectSale) {
+        final PosTerminal? terminal = await (_db.select(_db.posTerminals)
+              ..where((PosTerminals tbl) => tbl.id.equals(sale.terminalId!)))
+            .getSingleOrNull();
+        if (terminal == null) {
+          throw const _SaleException('El TPV asociado no existe.');
+        }
+        terminalCurrencyCode = _normalizeCurrencyCode(terminal.currencyCode);
+        if (terminal.warehouseId != sale.warehouseId) {
+          throw const _SaleException(
+            'La venta tiene un TPV que no corresponde a su almacén.',
+          );
+        }
+      }
+
+      final List<SaleItem> previousLines = await (_db.select(_db.saleItems)
+            ..where((SaleItems tbl) => tbl.saleId.equals(safeSaleId)))
+          .get();
+      final Map<String, double> previousQtyByProduct = <String, double>{};
+      for (final SaleItem line in previousLines) {
+        previousQtyByProduct[line.productId] =
+            (previousQtyByProduct[line.productId] ?? 0) + line.qty;
+      }
+
+      final List<_SaleEditProcessedLine> processedLines =
+          <_SaleEditProcessedLine>[];
+      final Map<String, double> nextQtyByProduct = <String, double>{};
+      int subtotalCents = 0;
+      int taxCents = 0;
+      for (final SaleItemInput item in input.items) {
+        if (item.qty <= 0) {
+          throw const _SaleException(
+            'Todas las cantidades deben ser mayores que 0.',
+          );
+        }
+        if (item.unitPriceCents < 0) {
+          throw const _SaleException(
+            'El precio unitario no puede ser negativo.',
+          );
+        }
+
+        final Product? product = await (_db.select(_db.products)
+              ..where((Products tbl) => tbl.id.equals(item.productId)))
+            .getSingleOrNull();
+        if (product == null) {
+          throw _SaleException('Producto invalido: ${item.productId}.');
+        }
+        if (!isDirectSale &&
+            terminalCurrencyCode != null &&
+            terminalCurrencyCode.isNotEmpty) {
+          final String productCurrencyCode =
+              _normalizeCurrencyCode(product.currencyCode);
+          if (productCurrencyCode != terminalCurrencyCode) {
+            throw _SaleException(
+              'El producto ${product.name} esta en $productCurrencyCode y este TPV opera en $terminalCurrencyCode.',
+            );
+          }
+        }
+
+        final int lineSubtotal = (item.unitPriceCents * item.qty).round();
+        final int lineTax = (lineSubtotal * item.taxRateBps / 10000).round();
+        final int unitCostCents = product.costPriceCents;
+        final int lineCostCents = (item.qty * unitCostCents).round();
+        final int lineTotal = lineSubtotal + lineTax;
+        subtotalCents += lineSubtotal;
+        taxCents += lineTax;
+        nextQtyByProduct[item.productId] =
+            (nextQtyByProduct[item.productId] ?? 0) + item.qty;
+        processedLines.add(
+          _SaleEditProcessedLine(
+            item: item,
+            unitCostCents: unitCostCents,
+            lineCostCents: lineCostCents,
+            lineSubtotalCents: lineSubtotal,
+            lineTaxCents: lineTax,
+            lineTotalCents: lineTotal,
+          ),
+        );
+      }
+
+      final int existingDiscountCents =
+          ((sale.subtotalCents + sale.taxCents - sale.totalCents)
+                  .clamp(0, 1 << 30) as num)
+              .toInt();
+      final int grossTotalCents = subtotalCents + taxCents;
+      if (existingDiscountCents > grossTotalCents) {
+        throw const _SaleException(
+          'El descuento existente supera el nuevo total bruto. Ajusta la venta.',
+        );
+      }
+      final int totalCents = grossTotalCents - existingDiscountCents;
+      final int totalPayments = input.payments.fold<int>(
+        0,
+        (int sum, PaymentInput payment) => sum + payment.amountCents,
+      );
+      if (!isConsignmentSale && totalPayments != totalCents) {
+        throw _SaleException(
+          'El total de pagos ($totalPayments) no coincide con el total de la venta ($totalCents).',
+        );
+      }
+      if (isConsignmentSale && totalPayments != 0) {
+        throw const _SaleException(
+          'La venta en consignacion se registra sin pagos iniciales.',
+        );
+      }
+
+      final Set<String> stockProductIds = <String>{
+        ...previousQtyByProduct.keys,
+        ...nextQtyByProduct.keys,
+      };
+      final DateTime now = DateTime.now();
+      for (final String productId in stockProductIds) {
+        final double oldQtyInSale = previousQtyByProduct[productId] ?? 0;
+        final double nextQtyInSale = nextQtyByProduct[productId] ?? 0;
+        final double delta = oldQtyInSale - nextQtyInSale;
+        if (delta.abs() <= 0.000001) {
+          continue;
+        }
+        final StockBalance? balance = await (_db.select(_db.stockBalances)
+              ..where(
+                (StockBalances tbl) =>
+                    tbl.productId.equals(productId) &
+                    tbl.warehouseId.equals(sale.warehouseId),
+              ))
+            .getSingleOrNull();
+        final double currentStock = balance?.qty ?? 0;
+        final double nextStock = currentStock + delta;
+        if (!input.allowNegativeStock && nextStock < 0) {
+          throw _SaleException(
+            'Stock insuficiente para actualizar la venta. Producto: $productId.',
+          );
+        }
+        await _upsertStock(
+          productId: productId,
+          warehouseId: sale.warehouseId,
+          qty: nextStock,
+          now: now,
+        );
+      }
+
+      final String movementSource = isConsignmentSale
+          ? (isDirectSale ? 'direct_consignment' : 'pos_consignment')
+          : (isDirectSale ? 'direct_sale' : 'pos');
+      final String movementRefType = isConsignmentSale
+          ? (isDirectSale ? 'consignment_sale_direct' : 'consignment_sale_pos')
+          : (isDirectSale ? 'sale_direct' : 'sale_pos');
+      final String movementReasonCode =
+          isConsignmentSale ? 'consignment_sale' : 'sale';
+      final String movementNotePrefix = isConsignmentSale
+          ? (isDirectSale ? 'Consignacion directa' : 'Consignacion POS')
+          : (isDirectSale ? 'Venta directa' : 'Venta POS');
+
+      await _db.customStatement(
+        '''
+        DELETE FROM stock_movements
+        WHERE ref_id = ?
+          AND LOWER(COALESCE(ref_type, '')) IN (
+            'sale',
+            'sale_pos',
+            'sale_direct',
+            'consignment_sale',
+            'consignment_sale_pos',
+            'consignment_sale_direct'
+          )
+        ''',
+        <Object?>[safeSaleId],
+      );
+
+      await (_db.delete(_db.saleItems)
+            ..where((SaleItems tbl) => tbl.saleId.equals(safeSaleId)))
+          .go();
+      await (_db.delete(_db.payments)
+            ..where((Payments tbl) => tbl.saleId.equals(safeSaleId)))
+          .go();
+
+      for (final _SaleEditProcessedLine line in processedLines) {
+        await _db.into(_db.saleItems).insert(
+              SaleItemsCompanion.insert(
+                id: _uuid.v4(),
+                saleId: safeSaleId,
+                productId: line.item.productId,
+                qty: line.item.qty,
+                unitPriceCents: line.item.unitPriceCents,
+                unitCostCents: Value(line.unitCostCents),
+                taxRateBps: line.item.taxRateBps,
+                lineSubtotalCents: line.lineSubtotalCents,
+                lineTaxCents: line.lineTaxCents,
+                lineCostCents: Value(line.lineCostCents),
+                lineTotalCents: line.lineTotalCents,
+              ),
+            );
+        await _db.into(_db.stockMovements).insert(
+              StockMovementsCompanion.insert(
+                id: _uuid.v4(),
+                productId: line.item.productId,
+                warehouseId: sale.warehouseId,
+                type: 'out',
+                qty: line.item.qty,
+                reasonCode: Value(movementReasonCode),
+                movementSource: Value(movementSource),
+                refType: Value(movementRefType),
+                refId: Value(safeSaleId),
+                note: Value('$movementNotePrefix ${sale.folio}'),
+                createdBy: safeUserId,
+              ),
+            );
+      }
+
+      for (final PaymentInput payment in input.payments) {
+        await _db.into(_db.payments).insert(
+              PaymentsCompanion.insert(
+                id: _uuid.v4(),
+                saleId: safeSaleId,
+                method: payment.method,
+                amountCents: payment.amountCents,
+                transactionId: Value(_normalizeOptional(payment.transactionId)),
+                sourceCurrencyCode: Value(payment.sourceCurrencyCode),
+                sourceAmountCents: Value(payment.sourceAmountCents),
+              ),
+            );
+      }
+
+      await (_db.update(_db.sales)
+            ..where((Sales tbl) => tbl.id.equals(safeSaleId)))
+          .write(
+        SalesCompanion(
+          customerId: Value(cleanCustomerId),
+          subtotalCents: Value(subtotalCents),
+          taxCents: Value(taxCents),
+          totalCents: Value(totalCents),
+          status: const Value('posted'),
+        ),
+      );
+
+      await _db.into(_db.auditLogs).insert(
+            AuditLogsCompanion.insert(
+              id: _uuid.v4(),
+              userId: Value(safeUserId),
+              action: 'SALE_EDITED',
+              entity: 'sale',
+              entityId: safeSaleId,
+              payloadJson: jsonEncode(<String, Object?>{
+                'folio': sale.folio,
+                'isConsignmentSale': isConsignmentSale,
+                'oldSubtotalCents': sale.subtotalCents,
+                'oldTaxCents': sale.taxCents,
+                'oldTotalCents': sale.totalCents,
+                'newSubtotalCents': subtotalCents,
+                'newTaxCents': taxCents,
+                'newTotalCents': totalCents,
+                'oldItemsCount': previousLines.length,
+                'newItemsCount': processedLines.length,
+                'newPaymentsCount': input.payments.length,
+              }),
+            ),
+          );
+    });
+  }
+
+  Future<List<ArchivedSaleView>> listArchivedSales({
+    String? search,
+    int limit = 250,
+  }) async {
+    final String cleanedSearch = (search ?? '').trim().toLowerCase();
+    final int safeLimit = limit < 1 ? 1 : limit;
+    final StringBuffer sql = StringBuffer(
+      '''
+      SELECT
+        s.id AS sale_id,
+        s.folio AS folio,
+        s.created_at AS created_at,
+        s.total_cents AS total_cents,
+        s.terminal_id AS terminal_id,
+        COALESCE(w.name, 'Sin almacén') AS warehouse_name,
+        COALESCE(
+          NULLIF(TRIM(MIN(e.name)), ''),
+          COALESCE(u.username, 'Sin usuario')
+        ) AS cashier_name,
+        c.full_name AS customer_name,
+        COALESCE(MAX(sm.voided_at), s.created_at) AS archived_at
+      FROM sales s
+      LEFT JOIN warehouses w ON w.id = s.warehouse_id
+      LEFT JOIN users u ON u.id = s.cashier_id
+      LEFT JOIN customers c ON c.id = s.customer_id
+      LEFT JOIN pos_session_employees se ON se.session_id = s.terminal_session_id
+      LEFT JOIN employees e ON e.id = se.employee_id
+      LEFT JOIN stock_movements sm
+        ON sm.ref_id = s.id
+       AND LOWER(COALESCE(sm.ref_type, '')) IN (
+         'sale',
+         'sale_pos',
+         'sale_direct',
+         'consignment_sale',
+         'consignment_sale_pos',
+         'consignment_sale_direct'
+       )
+      WHERE LOWER(COALESCE(s.status, '')) = 'archived'
+      ''',
+    );
+    final List<Variable<Object>> variables = <Variable<Object>>[];
+    if (cleanedSearch.isNotEmpty) {
+      final String pattern = '%$cleanedSearch%';
+      sql.write(
+        '''
+        AND (
+          LOWER(COALESCE(s.folio, '')) LIKE ?
+          OR LOWER(COALESCE(c.full_name, '')) LIKE ?
+          OR LOWER(COALESCE(u.username, '')) LIKE ?
+        )
+        ''',
+      );
+      variables.addAll(<Variable<Object>>[
+        Variable<String>(pattern),
+        Variable<String>(pattern),
+        Variable<String>(pattern),
+      ]);
+    }
+    sql.write(
+      '''
+      GROUP BY
+        s.id,
+        s.folio,
+        s.created_at,
+        s.total_cents,
+        s.terminal_id,
+        s.cashier_id,
+        w.name,
+        u.username,
+        c.full_name
+      ORDER BY archived_at DESC, s.created_at DESC
+      LIMIT ?
+      ''',
+    );
+    variables.add(Variable<int>(safeLimit));
+
+    final List<QueryRow> rows = await _db
+        .customSelect(
+          sql.toString(),
+          variables: variables,
+        )
+        .get();
+
+    return rows.map((QueryRow row) {
+      final String terminalId =
+          (row.readNullable<String>('terminal_id') ?? '').trim();
+      return ArchivedSaleView(
+        id: (row.readNullable<String>('sale_id') ?? '').trim(),
+        folio: (row.readNullable<String>('folio') ?? '-').trim(),
+        createdAt: row.readNullable<DateTime>('created_at') ?? DateTime.now(),
+        archivedAt: row.readNullable<DateTime>('archived_at') ?? DateTime.now(),
+        totalCents: (row.data['total_cents'] as num?)?.toInt() ?? 0,
+        warehouseName:
+            (row.readNullable<String>('warehouse_name') ?? 'Sin almacén')
+                .trim(),
+        cashierName:
+            (row.readNullable<String>('cashier_name') ?? 'Sin usuario').trim(),
+        customerName:
+            _normalizeOptional(row.readNullable<String>('customer_name')),
+        channel: terminalId.isEmpty ? 'directa' : 'pos',
+      );
+    }).toList(growable: false);
+  }
+
+  Future<void> archiveSale({
+    required String saleId,
+    required String userId,
+    String? note,
+  }) async {
+    await _licenseService.requireWriteAccess();
+    final String safeSaleId = saleId.trim();
+    final String safeUserId = userId.trim();
+    if (safeSaleId.isEmpty) {
+      throw const _SaleException('Venta inválida.');
+    }
+    if (safeUserId.isEmpty) {
+      throw const _SaleException('Usuario inválido.');
+    }
+
+    await _db.transaction(() async {
+      final Sale? sale = await (_db.select(_db.sales)
+            ..where((Sales tbl) => tbl.id.equals(safeSaleId)))
+          .getSingleOrNull();
+      if (sale == null) {
+        throw const _SaleException('La venta no existe.');
+      }
+      final String status = sale.status.trim().toLowerCase();
+      if (status == 'archived') {
+        return;
+      }
+      if (status != 'posted') {
+        throw _SaleException(
+          'Solo se pueden archivar ventas publicadas. Estado actual: ${sale.status}.',
+        );
+      }
+
+      final DateTime now = DateTime.now();
+      final List<_SaleMovementDelta> activeMovementDeltas =
+          await _loadSaleMovementDeltas(
+        saleId: safeSaleId,
+        isVoided: false,
+      );
+      if (activeMovementDeltas.isNotEmpty) {
+        for (final _SaleMovementDelta delta in activeMovementDeltas) {
+          final StockBalance? balance = await (_db.select(_db.stockBalances)
+                ..where(
+                  (StockBalances tbl) =>
+                      tbl.productId.equals(delta.productId) &
+                      tbl.warehouseId.equals(delta.warehouseId),
+                ))
+              .getSingleOrNull();
+          final double currentQty = balance?.qty ?? 0;
+          final double nextQty = currentQty - delta.signedDelta;
+          await _upsertStock(
+            productId: delta.productId,
+            warehouseId: delta.warehouseId,
+            qty: nextQty,
+            now: now,
+          );
+        }
+      } else {
+        final List<SaleItem> lines = await (_db.select(_db.saleItems)
+              ..where((SaleItems tbl) => tbl.saleId.equals(safeSaleId)))
+            .get();
+        for (final SaleItem line in lines) {
+          final StockBalance? balance = await (_db.select(_db.stockBalances)
+                ..where(
+                  (StockBalances tbl) =>
+                      tbl.productId.equals(line.productId) &
+                      tbl.warehouseId.equals(sale.warehouseId),
+                ))
+              .getSingleOrNull();
+          final double currentQty = balance?.qty ?? 0;
+          final double nextQty = currentQty + line.qty;
+          await _upsertStock(
+            productId: line.productId,
+            warehouseId: sale.warehouseId,
+            qty: nextQty,
+            now: now,
+          );
+        }
+      }
+
+      final String? safeNote = _normalizeOptional(note);
+      await _db.customStatement(
+        '''
+        UPDATE stock_movements
+        SET
+          is_voided = 1,
+          voided_at = ?,
+          voided_by = ?,
+          void_note = COALESCE(?, void_note)
+        WHERE ref_id = ?
+          AND LOWER(COALESCE(ref_type, '')) IN (
+            'sale',
+            'sale_pos',
+            'sale_direct',
+            'consignment_sale',
+            'consignment_sale_pos',
+            'consignment_sale_direct'
+          )
+          AND COALESCE(is_voided, 0) = 0
+        ''',
+        <Object?>[now, safeUserId, safeNote, safeSaleId],
+      );
+
+      await (_db.update(_db.sales)
+            ..where((Sales tbl) => tbl.id.equals(sale.id)))
+          .write(
+        const SalesCompanion(
+          status: Value('archived'),
+        ),
+      );
+
+      await _db.into(_db.auditLogs).insert(
+            AuditLogsCompanion.insert(
+              id: _uuid.v4(),
+              userId: Value(safeUserId),
+              action: 'SALE_ARCHIVED',
+              entity: 'sale',
+              entityId: safeSaleId,
+              payloadJson: jsonEncode(<String, Object?>{
+                'folio': sale.folio,
+                'note': safeNote,
+              }),
+            ),
+          );
+    });
+  }
+
+  Future<void> restoreArchivedSale({
+    required String saleId,
+    required String userId,
+    bool allowNegativeResult = false,
+  }) async {
+    await _licenseService.requireWriteAccess();
+    final String safeSaleId = saleId.trim();
+    final String safeUserId = userId.trim();
+    if (safeSaleId.isEmpty) {
+      throw const _SaleException('Venta inválida.');
+    }
+    if (safeUserId.isEmpty) {
+      throw const _SaleException('Usuario inválido.');
+    }
+
+    await _db.transaction(() async {
+      final Sale? sale = await (_db.select(_db.sales)
+            ..where((Sales tbl) => tbl.id.equals(safeSaleId)))
+          .getSingleOrNull();
+      if (sale == null) {
+        throw const _SaleException('La venta no existe.');
+      }
+      final String status = sale.status.trim().toLowerCase();
+      if (status == 'posted') {
+        return;
+      }
+      if (status != 'archived') {
+        throw _SaleException(
+          'Solo se pueden restaurar ventas archivadas. Estado actual: ${sale.status}.',
+        );
+      }
+
+      final DateTime now = DateTime.now();
+      final List<_SaleMovementDelta> voidedMovementDeltas =
+          await _loadSaleMovementDeltas(
+        saleId: safeSaleId,
+        isVoided: true,
+      );
+      if (voidedMovementDeltas.isNotEmpty) {
+        for (final _SaleMovementDelta delta in voidedMovementDeltas) {
+          final StockBalance? balance = await (_db.select(_db.stockBalances)
+                ..where(
+                  (StockBalances tbl) =>
+                      tbl.productId.equals(delta.productId) &
+                      tbl.warehouseId.equals(delta.warehouseId),
+                ))
+              .getSingleOrNull();
+          final double currentQty = balance?.qty ?? 0;
+          final double nextQty = currentQty + delta.signedDelta;
+          if (!allowNegativeResult && nextQty < 0) {
+            throw _SaleException(
+              'No hay stock suficiente para restaurar la venta "${sale.folio}".',
+            );
+          }
+          await _upsertStock(
+            productId: delta.productId,
+            warehouseId: delta.warehouseId,
+            qty: nextQty,
+            now: now,
+          );
+        }
+      } else {
+        final List<SaleItem> lines = await (_db.select(_db.saleItems)
+              ..where((SaleItems tbl) => tbl.saleId.equals(safeSaleId)))
+            .get();
+        for (final SaleItem line in lines) {
+          final StockBalance? balance = await (_db.select(_db.stockBalances)
+                ..where(
+                  (StockBalances tbl) =>
+                      tbl.productId.equals(line.productId) &
+                      tbl.warehouseId.equals(sale.warehouseId),
+                ))
+              .getSingleOrNull();
+          final double currentQty = balance?.qty ?? 0;
+          final double nextQty = currentQty - line.qty;
+          if (!allowNegativeResult && nextQty < 0) {
+            throw _SaleException(
+              'No hay stock suficiente para restaurar la venta "${sale.folio}".',
+            );
+          }
+          await _upsertStock(
+            productId: line.productId,
+            warehouseId: sale.warehouseId,
+            qty: nextQty,
+            now: now,
+          );
+        }
+      }
+
+      await _db.customStatement(
+        '''
+        UPDATE stock_movements
+        SET
+          is_voided = 0,
+          voided_at = NULL,
+          voided_by = NULL,
+          void_note = NULL
+        WHERE ref_id = ?
+          AND LOWER(COALESCE(ref_type, '')) IN (
+            'sale',
+            'sale_pos',
+            'sale_direct',
+            'consignment_sale',
+            'consignment_sale_pos',
+            'consignment_sale_direct'
+          )
+          AND COALESCE(is_voided, 0) = 1
+        ''',
+        <Object?>[safeSaleId],
+      );
+
+      await (_db.update(_db.sales)
+            ..where((Sales tbl) => tbl.id.equals(sale.id)))
+          .write(
+        const SalesCompanion(
+          status: Value('posted'),
+        ),
+      );
+
+      await _db.into(_db.auditLogs).insert(
+            AuditLogsCompanion.insert(
+              id: _uuid.v4(),
+              userId: Value(safeUserId),
+              action: 'SALE_RESTORED',
+              entity: 'sale',
+              entityId: safeSaleId,
+              payloadJson: jsonEncode(<String, Object?>{
+                'folio': sale.folio,
+                'allowNegativeResult': allowNegativeResult,
+              }),
+            ),
+          );
+    });
+  }
+
+  Future<void> permanentlyDeleteArchivedSale({
+    required String saleId,
+    required String userId,
+  }) async {
+    await _licenseService.requireWriteAccess();
+    final String safeSaleId = saleId.trim();
+    final String safeUserId = userId.trim();
+    if (safeSaleId.isEmpty) {
+      throw const _SaleException('Venta inválida.');
+    }
+    if (safeUserId.isEmpty) {
+      throw const _SaleException('Usuario inválido.');
+    }
+
+    await _db.transaction(() async {
+      final Sale? sale = await (_db.select(_db.sales)
+            ..where((Sales tbl) => tbl.id.equals(safeSaleId)))
+          .getSingleOrNull();
+      if (sale == null) {
+        return;
+      }
+      final String status = sale.status.trim().toLowerCase();
+      if (status != 'archived') {
+        throw const _SaleException(
+          'Solo se puede eliminar definitivamente una venta archivada.',
+        );
+      }
+
+      final QueryRow? movementCheck = await _db.customSelect(
+        '''
+        SELECT
+          CAST(COUNT(*) AS INTEGER) AS total
+        FROM stock_movements sm
+        WHERE sm.ref_id = ?
+          AND LOWER(COALESCE(sm.ref_type, '')) IN (
+            'sale',
+            'sale_pos',
+            'sale_direct',
+            'consignment_sale',
+            'consignment_sale_pos',
+            'consignment_sale_direct'
+          )
+          AND COALESCE(sm.is_voided, 0) = 0
+        LIMIT 1
+        ''',
+        variables: <Variable<Object>>[
+          Variable<String>(safeSaleId),
+        ],
+      ).getSingleOrNull();
+      final int activeMovements =
+          (movementCheck?.data['total'] as num?)?.toInt() ?? 0;
+      if (activeMovements > 0) {
+        throw const _SaleException(
+          'La venta aún tiene movimientos activos. Archívala primero.',
+        );
+      }
+
+      final String archivedFolio = sale.folio;
+      await _db.customStatement(
+        '''
+        DELETE FROM stock_movements
+        WHERE ref_id = ?
+          AND LOWER(COALESCE(ref_type, '')) IN (
+            'sale',
+            'sale_pos',
+            'sale_direct',
+            'consignment_sale',
+            'consignment_sale_pos',
+            'consignment_sale_direct'
+          )
+        ''',
+        <Object?>[safeSaleId],
+      );
+      await (_db.delete(_db.payments)
+            ..where((Payments tbl) => tbl.saleId.equals(safeSaleId)))
+          .go();
+      await (_db.delete(_db.saleItems)
+            ..where((SaleItems tbl) => tbl.saleId.equals(safeSaleId)))
+          .go();
+      await (_db.delete(_db.sales)
+            ..where((Sales tbl) => tbl.id.equals(safeSaleId)))
+          .go();
+
+      await _db.into(_db.auditLogs).insert(
+            AuditLogsCompanion.insert(
+              id: _uuid.v4(),
+              userId: Value(safeUserId),
+              action: 'SALE_PURGED',
+              entity: 'sale',
+              entityId: safeSaleId,
+              payloadJson: jsonEncode(<String, Object?>{
+                'folio': archivedFolio,
+              }),
+            ),
+          );
+    });
   }
 
   String _normalizeCurrencyCode(String? value) {
@@ -419,6 +1243,27 @@ class SaleService {
     );
   }
 
+  Future<bool> _userHasAdminRole(String userId) async {
+    final String safeUserId = userId.trim();
+    if (safeUserId.isEmpty) {
+      return false;
+    }
+    final User? user = await (_db.select(_db.users)
+          ..where((Users tbl) => tbl.id.equals(safeUserId)))
+        .getSingleOrNull();
+    if (user != null && user.role.trim().toLowerCase() == 'admin') {
+      return true;
+    }
+    final UserRole? role = await (_db.select(_db.userRoles)
+          ..where(
+            (UserRoles tbl) =>
+                tbl.userId.equals(safeUserId) &
+                tbl.roleId.equals(AppRoleIds.admin),
+          ))
+        .getSingleOrNull();
+    return role != null;
+  }
+
   Future<void> _upsertStock({
     required String productId,
     required String warehouseId,
@@ -458,6 +1303,58 @@ class SaleService {
       ),
     );
   }
+
+  Future<List<_SaleMovementDelta>> _loadSaleMovementDeltas({
+    required String saleId,
+    required bool isVoided,
+  }) async {
+    final List<QueryRow> rows = await _db.customSelect(
+      '''
+      SELECT
+        sm.product_id AS product_id,
+        sm.warehouse_id AS warehouse_id,
+        COALESCE(
+          SUM(
+            CASE
+              WHEN LOWER(COALESCE(sm.type, '')) = 'in' THEN ABS(COALESCE(sm.qty, 0))
+              WHEN LOWER(COALESCE(sm.type, '')) = 'out' THEN -ABS(COALESCE(sm.qty, 0))
+              WHEN LOWER(COALESCE(sm.type, '')) = 'adjust' THEN COALESCE(sm.qty, 0)
+              ELSE COALESCE(sm.qty, 0)
+            END
+          ),
+          0
+        ) AS signed_delta
+      FROM stock_movements sm
+      WHERE sm.ref_id = ?
+        AND LOWER(COALESCE(sm.ref_type, '')) IN (
+          'sale',
+          'sale_pos',
+          'sale_direct',
+          'consignment_sale',
+          'consignment_sale_pos',
+          'consignment_sale_direct'
+        )
+        AND COALESCE(sm.is_voided, 0) = ?
+      GROUP BY sm.product_id, sm.warehouse_id
+      ''',
+      variables: <Variable<Object>>[
+        Variable<String>(saleId),
+        Variable<int>(isVoided ? 1 : 0),
+      ],
+    ).get();
+
+    return rows.map((QueryRow row) {
+      return _SaleMovementDelta(
+        productId: (row.readNullable<String>('product_id') ?? '').trim(),
+        warehouseId: (row.readNullable<String>('warehouse_id') ?? '').trim(),
+        signedDelta: (row.data['signed_delta'] as num?)?.toDouble() ?? 0,
+      );
+    }).where((row) {
+      return row.productId.isNotEmpty &&
+          row.warehouseId.isNotEmpty &&
+          row.signedDelta.abs() > 0.000001;
+    }).toList(growable: false);
+  }
 }
 
 class _ProcessedLine {
@@ -466,6 +1363,8 @@ class _ProcessedLine {
     required this.productName,
     required this.currentQty,
     required this.nextQty,
+    required this.unitCostCents,
+    required this.lineCostCents,
     required this.lineSubtotalCents,
     required this.lineTaxCents,
     required this.lineTotalCents,
@@ -475,9 +1374,41 @@ class _ProcessedLine {
   final String productName;
   final double currentQty;
   final double nextQty;
+  final int unitCostCents;
+  final int lineCostCents;
   final int lineSubtotalCents;
   final int lineTaxCents;
   final int lineTotalCents;
+}
+
+class _SaleEditProcessedLine {
+  const _SaleEditProcessedLine({
+    required this.item,
+    required this.unitCostCents,
+    required this.lineCostCents,
+    required this.lineSubtotalCents,
+    required this.lineTaxCents,
+    required this.lineTotalCents,
+  });
+
+  final SaleItemInput item;
+  final int unitCostCents;
+  final int lineCostCents;
+  final int lineSubtotalCents;
+  final int lineTaxCents;
+  final int lineTotalCents;
+}
+
+class _SaleMovementDelta {
+  const _SaleMovementDelta({
+    required this.productId,
+    required this.warehouseId,
+    required this.signedDelta,
+  });
+
+  final String productId;
+  final String warehouseId;
+  final double signedDelta;
 }
 
 class _SaleException implements Exception {

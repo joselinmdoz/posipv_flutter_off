@@ -18,6 +18,7 @@ import '../../configuracion/presentation/configuracion_providers.dart';
 import '../../inventario/presentation/inventario_providers.dart';
 import '../../productos/presentation/productos_providers.dart';
 import '../../reportes/data/reportes_local_datasource.dart';
+import '../../reportes/presentation/widgets/analytics_sales_list_page.dart';
 import '../../reportes/presentation/reportes_providers.dart';
 import '../../tpv/data/tpv_local_datasource.dart';
 import '../../tpv/presentation/tpv_providers.dart';
@@ -273,6 +274,13 @@ class _HomePageState extends ConsumerState<HomePage> {
     final String displayName = (_currentEmployee?.name ?? '').trim().isNotEmpty
         ? _currentEmployee!.name
         : (session?.username ?? 'Usuario');
+    final VoidCallback? openRecentActivityTap =
+        _buildRecentActivityAction(session);
+    final VoidCallback? openSalesMetricsTap = _buildSalesMetricsAction(session);
+    final VoidCallback? openOrdersMetricsTap =
+        _buildOrdersMetricsAction(session);
+    final VoidCallback? openLowStockMetricsTap =
+        _buildLowStockMetricsAction(session);
 
     return AppScaffold(
       title: _businessName,
@@ -281,7 +289,7 @@ class _HomePageState extends ConsumerState<HomePage> {
       useDefaultActions: false,
       appBarActions: [
         IconButton(
-          onPressed: () {},
+          onPressed: openRecentActivityTap,
           icon: const Badge(
             backgroundColor: Colors.red,
             child: Icon(Icons.notifications_none_rounded),
@@ -325,7 +333,10 @@ class _HomePageState extends ConsumerState<HomePage> {
                 currencySymbol: _currencySymbol,
                 onNewSaleTap: () => context.go('/tpv'),
                 onAddStockTap: () => context.go('/inventario-movimientos'),
-                onViewAllActivityTap: _buildRecentActivityAction(session),
+                onViewAllActivityTap: openRecentActivityTap,
+                onSalesTap: openSalesMetricsTap,
+                onOrdersTap: openOrdersMetricsTap,
+                onLowStockTap: openLowStockMetricsTap,
               ),
             ],
           ],
@@ -339,12 +350,62 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   VoidCallback? _buildRecentActivityAction(UserSession? session) {
-    if (SessionAccess.canAccessRoute(session, '/reportes')) {
-      return () => context.go('/reportes');
+    if (SessionAccess.canAccessRoute(session, '/home-actividad-reciente')) {
+      return () => context.push('/home-actividad-reciente');
+    }
+    return null;
+  }
+
+  VoidCallback? _buildSalesMetricsAction(UserSession? session) {
+    if (_canOpenGeneralReports(session)) {
+      return () => _openTodaySalesList(title: 'Ventas de hoy');
     }
     if (SessionAccess.canAccessRoute(session, '/ipv-reportes')) {
       return () => context.go('/ipv-reportes');
     }
     return null;
+  }
+
+  VoidCallback? _buildOrdersMetricsAction(UserSession? session) {
+    if (_canOpenGeneralReports(session)) {
+      return () => _openTodaySalesList(title: 'Órdenes de hoy');
+    }
+    if (SessionAccess.canAccessRoute(session, '/ipv-reportes')) {
+      return () => context.go('/ipv-reportes');
+    }
+    return null;
+  }
+
+  VoidCallback? _buildLowStockMetricsAction(UserSession? session) {
+    if (SessionAccess.canAccessRoute(session, '/inventario')) {
+      return () => context.go('/inventario');
+    }
+    if (SessionAccess.canAccessRoute(session, '/productos')) {
+      return () => context.go('/productos');
+    }
+    return null;
+  }
+
+  bool _canOpenGeneralReports(UserSession? session) {
+    if (!SessionAccess.canAccessRoute(session, '/reportes')) {
+      return false;
+    }
+    final license = ref.read(currentLicenseStatusProvider);
+    return license.canAccessGeneralReports;
+  }
+
+  Future<void> _openTodaySalesList({required String title}) async {
+    final DateTime now = DateTime.now();
+    final DateTime day = DateTime(now.year, now.month, now.day);
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => AnalyticsSalesListPage(
+          fromDate: day,
+          toDate: day,
+          currencySymbol: _currencySymbol,
+          title: title,
+        ),
+      ),
+    );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../auth/presentation/auth_providers.dart';
 import '../../../core/licensing/license_providers.dart';
 import '../../../shared/widgets/app_add_action_button.dart';
 import '../../../shared/widgets/app_scaffold.dart';
@@ -110,6 +111,58 @@ class _TpvEmployeesPageState extends ConsumerState<TpvEmployeesPage> {
     }
   }
 
+  Future<void> _deleteEmployee(TpvEmployee employee) async {
+    final session = ref.read(currentSessionProvider);
+    if (session == null) {
+      _show('Debes iniciar sesión.');
+      return;
+    }
+    if (employee.isActive) {
+      _show('Primero desactiva el empleado.');
+      return;
+    }
+
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Eliminar empleado'),
+          content: Text(
+            'Se eliminará definitivamente a "${employee.name}".\n\n'
+            'Esta acción no se puede deshacer.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFB91C1C),
+              ),
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Eliminar'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirm != true) {
+      return;
+    }
+
+    try {
+      await ref.read(tpvLocalDataSourceProvider).permanentlyDeleteEmployee(
+            employeeId: employee.id,
+            userId: session.userId,
+          );
+      await _load();
+      _show('Empleado eliminado definitivamente.');
+    } catch (e) {
+      _show('No se pudo eliminar el empleado: $e');
+    }
+  }
+
   void _show(String message) {
     if (!mounted) {
       return;
@@ -188,18 +241,7 @@ class _TpvEmployeesPageState extends ConsumerState<TpvEmployeesPage> {
         onPressed: _goBack,
         icon: const Icon(Icons.arrow_back_rounded),
       ),
-      appBarActions: <Widget>[
-        IconButton(
-          tooltip: 'Buscar',
-          onPressed: () {},
-          icon: const Icon(Icons.search_rounded),
-        ),
-        IconButton(
-          tooltip: 'Filtrar',
-          onPressed: () {},
-          icon: const Icon(Icons.filter_list_rounded, color: Color(0xFF1152D4)),
-        ),
-      ],
+      appBarActions: const <Widget>[],
       floatingActionButton: license.canWrite
           ? AppAddActionButton(
               currentRoute: '/tpv-empleados',
@@ -302,7 +344,7 @@ class _TpvEmployeesPageState extends ConsumerState<TpvEmployeesPage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Container(
+          SizedBox(
             width: 64,
             height: 64,
             child: TpvEmployeeAvatar(
@@ -379,6 +421,19 @@ class _TpvEmployeesPageState extends ConsumerState<TpvEmployeesPage> {
                           ? theme.colorScheme.onSurfaceVariant
                           : const Color(0xFF1152D4),
                       size: 20)),
+              IconButton(
+                tooltip: isActive
+                    ? 'Desactiva para eliminar'
+                    : 'Eliminar definitivamente',
+                onPressed: isActive
+                    ? () => _show('Primero desactiva el empleado.')
+                    : () => _deleteEmployee(employee),
+                icon: const Icon(
+                  Icons.delete_forever_rounded,
+                  color: Color(0xFFB91C1C),
+                  size: 20,
+                ),
+              ),
             ],
           ),
         ],

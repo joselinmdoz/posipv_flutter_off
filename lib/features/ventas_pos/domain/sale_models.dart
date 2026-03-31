@@ -56,6 +56,26 @@ class CreateSaleInput {
   final bool isConsignmentSale;
 }
 
+class UpdateSaleInput {
+  const UpdateSaleInput({
+    required this.saleId,
+    required this.items,
+    required this.payments,
+    required this.userId,
+    this.customerId,
+    this.allowNegativeStock = false,
+    this.isConsignmentSale = false,
+  });
+
+  final String saleId;
+  final List<SaleItemInput> items;
+  final List<PaymentInput> payments;
+  final String userId;
+  final String? customerId;
+  final bool allowNegativeStock;
+  final bool isConsignmentSale;
+}
+
 class CreateSaleResult {
   const CreateSaleResult({
     required this.saleId,

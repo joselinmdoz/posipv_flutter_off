@@ -8,6 +8,9 @@ class HomeMetricCards extends StatelessWidget {
   final int ordersCount; // Usualmente hoy.salesCount
   final int lowStockCount; // Obtenido del insight
   final String Function(int) moneyFormatter;
+  final VoidCallback? onSalesTap;
+  final VoidCallback? onOrdersTap;
+  final VoidCallback? onLowStockTap;
 
   const HomeMetricCards({
     super.key,
@@ -16,22 +19,59 @@ class HomeMetricCards extends StatelessWidget {
     required this.ordersCount,
     required this.lowStockCount,
     required this.moneyFormatter,
+    this.onSalesTap,
+    this.onOrdersTap,
+    this.onLowStockTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        _buildHeroCard(context),
+        _wrapWithTap(
+          onTap: onSalesTap,
+          borderRadius: 20,
+          child: _buildHeroCard(context),
+        ),
         const SizedBox(height: 16),
         Row(
           children: [
-            Expanded(child: _buildOrdersCard(context)),
+            Expanded(
+              child: _wrapWithTap(
+                onTap: onOrdersTap,
+                borderRadius: 20,
+                child: _buildOrdersCard(context),
+              ),
+            ),
             const SizedBox(width: 16),
-            Expanded(child: _buildStockCard(context)),
+            Expanded(
+              child: _wrapWithTap(
+                onTap: onLowStockTap,
+                borderRadius: 20,
+                child: _buildStockCard(context),
+              ),
+            ),
           ],
         ),
       ],
+    );
+  }
+
+  Widget _wrapWithTap({
+    required Widget child,
+    required double borderRadius,
+    VoidCallback? onTap,
+  }) {
+    if (onTap == null) {
+      return child;
+    }
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(borderRadius),
+        child: child,
+      ),
     );
   }
 

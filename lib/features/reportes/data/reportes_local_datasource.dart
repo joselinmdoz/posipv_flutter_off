@@ -149,6 +149,7 @@ class SalesAnalyticsSaleLineStat {
     required this.sku,
     required this.qty,
     required this.unitPriceCents,
+    required this.taxRateBps,
     required this.lineTotalCents,
   });
 
@@ -157,6 +158,7 @@ class SalesAnalyticsSaleLineStat {
   final String sku;
   final double qty;
   final int unitPriceCents;
+  final int taxRateBps;
   final int lineTotalCents;
 }
 
@@ -176,6 +178,44 @@ class SalesAnalyticsSalePaymentStat {
   final String? sourceCurrencyCode;
   final int? sourceAmountCents;
   final DateTime createdAt;
+}
+
+class SalesPaymentReportRow {
+  const SalesPaymentReportRow({
+    required this.paymentId,
+    required this.saleId,
+    required this.folio,
+    required this.saleCreatedAt,
+    required this.paymentCreatedAt,
+    required this.warehouseName,
+    required this.attendantName,
+    required this.customerName,
+    required this.terminalName,
+    required this.channel,
+    required this.methodKey,
+    required this.amountCents,
+    required this.saleTotalCents,
+    required this.transactionId,
+    required this.sourceCurrencyCode,
+    required this.sourceAmountCents,
+  });
+
+  final String paymentId;
+  final String saleId;
+  final String folio;
+  final DateTime saleCreatedAt;
+  final DateTime paymentCreatedAt;
+  final String warehouseName;
+  final String attendantName;
+  final String? customerName;
+  final String? terminalName;
+  final String channel;
+  final String methodKey;
+  final int amountCents;
+  final int saleTotalCents;
+  final String? transactionId;
+  final String? sourceCurrencyCode;
+  final int? sourceAmountCents;
 }
 
 class SalesAnalyticsSaleDetailStat {
@@ -731,6 +771,9 @@ class ReportesLocalDataSource {
             (
               SELECT COUNT(*)
               FROM sale_items si
+              INNER JOIN products p_si
+                ON p_si.id = si.product_id
+               AND p_si.is_active = 1
               WHERE si.sale_id = s.id
             ),
             0
@@ -869,6 +912,9 @@ class ReportesLocalDataSource {
             (
               SELECT COUNT(*)
               FROM sale_items si
+              INNER JOIN products p_si
+                ON p_si.id = si.product_id
+               AND p_si.is_active = 1
               WHERE si.sale_id = s.id
             ),
             0
@@ -913,13 +959,16 @@ class ReportesLocalDataSource {
       '''
       SELECT
         si.product_id AS product_id,
-        COALESCE(p.name, si.product_id, 'Producto') AS product_name,
+        COALESCE(p.name, 'Producto') AS product_name,
         COALESCE(p.sku, '-') AS sku,
         COALESCE(si.qty, 0) AS qty,
         COALESCE(si.unit_price_cents, 0) AS unit_price_cents,
+        COALESCE(si.tax_rate_bps, 0) AS tax_rate_bps,
         COALESCE(si.line_total_cents, 0) AS line_total_cents
       FROM sale_items si
-      LEFT JOIN products p ON p.id = si.product_id
+      INNER JOIN products p
+        ON p.id = si.product_id
+       AND p.is_active = 1
       WHERE si.sale_id = ?
       ORDER BY product_name ASC
       ''',
@@ -932,6 +981,7 @@ class ReportesLocalDataSource {
         sku: _readTextCell(row, 'sku', fallback: '-'),
         qty: (row.data['qty'] as num?)?.toDouble() ?? 0,
         unitPriceCents: (row.data['unit_price_cents'] as num?)?.toInt() ?? 0,
+        taxRateBps: (row.data['tax_rate_bps'] as num?)?.toInt() ?? 0,
         lineTotalCents: (row.data['line_total_cents'] as num?)?.toInt() ?? 0,
       );
     }).toList(growable: false);
@@ -971,6 +1021,215 @@ class ReportesLocalDataSource {
       taxCents: (header.data['tax_cents'] as num?)?.toInt() ?? 0,
       totalCents: (header.data['total_cents'] as num?)?.toInt() ?? 0,
     );
+  }
+
+  Future<List<SalesPaymentReportRow>> listSalesPaymentsReport({
+    required DateTime fromDate,
+    required DateTime toDate,
+    String? paymentMethodKey,
+    int limit = 2000,
+    int offset = 0,
+  }) async {
+    final DateTime from = _startOfDay(fromDate);
+    DateTime toExclusive = _startOfDay(toDate).add(const Duration(days: 1));
+    if (!toExclusive.isAfter(from)) {
+      toExclusive = from.add(const Duration(days: 1));
+    }
+    final String? normalizedMethod =
+        _normalizePaymentMethodKey(paymentMethodKey);
+    final int safeLimit = limit < 1 ? 1 : limit;
+    final int safeOffset = offset < 0 ? 0 : offset;
+    final StringBuffer sql = StringBuffer(
+      '''
+      SELECT
+        p.id AS payment_id,
+        p.sale_id AS sale_id,
+        p.method AS method_key,
+        p.amount_cents AS amount_cents,
+        p.transaction_id AS transaction_id,
+        p.source_currency_code AS source_currency_code,
+        p.source_amount_cents AS source_amount_cents,
+        p.created_at AS payment_created_at,
+        s.folio AS folio,
+        s.created_at AS sale_created_at,
+        s.total_cents AS sale_total_cents,
+        s.terminal_id AS terminal_id,
+        COALESCE(w.name, 'Sin almacén') AS warehouse_name,
+        COALESCE(
+          NULLIF(TRIM(MIN(e.name)), ''),
+          COALESCE(u.username, 'Sin usuario')
+        ) AS attendant_name,
+        c.full_name AS customer_name,
+        t.name AS terminal_name
+      FROM payments p
+      INNER JOIN sales s ON s.id = p.sale_id
+      LEFT JOIN warehouses w ON w.id = s.warehouse_id
+      LEFT JOIN users u ON u.id = s.cashier_id
+      LEFT JOIN customers c ON c.id = s.customer_id
+      LEFT JOIN pos_terminals t ON t.id = s.terminal_id
+      LEFT JOIN pos_session_employees se ON se.session_id = s.terminal_session_id
+      LEFT JOIN employees e ON e.id = se.employee_id
+      WHERE s.status = 'posted'
+        AND p.created_at >= ?
+        AND p.created_at < ?
+      ''',
+    );
+    final List<Variable<Object>> variables = <Variable<Object>>[
+      Variable<DateTime>(from),
+      Variable<DateTime>(toExclusive),
+    ];
+    if (normalizedMethod != null) {
+      sql.write(
+        '''
+        AND LOWER(COALESCE(NULLIF(TRIM(p.method), ''), 'unknown')) = ?
+        ''',
+      );
+      variables.add(Variable<String>(normalizedMethod));
+    }
+    sql.write(
+      '''
+      GROUP BY
+        p.id,
+        p.sale_id,
+        p.method,
+        p.amount_cents,
+        p.transaction_id,
+        p.source_currency_code,
+        p.source_amount_cents,
+        p.created_at,
+        s.folio,
+        s.created_at,
+        s.total_cents,
+        s.terminal_id,
+        s.cashier_id,
+        w.name,
+        u.username,
+        c.full_name,
+        t.name
+      ORDER BY p.created_at DESC, p.id DESC
+      LIMIT ?
+      OFFSET ?
+      ''',
+    );
+    variables.add(Variable<int>(safeLimit));
+    variables.add(Variable<int>(safeOffset));
+
+    final List<QueryRow> rows = await _db
+        .customSelect(
+          sql.toString(),
+          variables: variables,
+        )
+        .get();
+
+    return rows.map((QueryRow row) {
+      final String terminalId =
+          (row.readNullable<String>('terminal_id') ?? '').trim();
+      return SalesPaymentReportRow(
+        paymentId: _readTextCell(row, 'payment_id', fallback: '-'),
+        saleId: _readTextCell(row, 'sale_id', fallback: '-'),
+        folio: _readTextCell(row, 'folio', fallback: '-'),
+        saleCreatedAt:
+            row.readNullable<DateTime>('sale_created_at') ?? DateTime.now(),
+        paymentCreatedAt:
+            row.readNullable<DateTime>('payment_created_at') ?? DateTime.now(),
+        warehouseName: _readTextCell(
+          row,
+          'warehouse_name',
+          fallback: 'Sin almacén',
+        ),
+        attendantName: _readTextCell(
+          row,
+          'attendant_name',
+          fallback: 'Sin usuario',
+        ),
+        customerName: _nullableTextCell(row, 'customer_name'),
+        terminalName: _nullableTextCell(row, 'terminal_name'),
+        channel: terminalId.isEmpty ? 'directa' : 'pos',
+        methodKey: _readTextCell(row, 'method_key', fallback: 'unknown'),
+        amountCents: (row.data['amount_cents'] as num?)?.toInt() ?? 0,
+        saleTotalCents: (row.data['sale_total_cents'] as num?)?.toInt() ?? 0,
+        transactionId: _nullableTextCell(row, 'transaction_id'),
+        sourceCurrencyCode: _nullableTextCell(row, 'source_currency_code'),
+        sourceAmountCents: (row.data['source_amount_cents'] as num?)?.toInt(),
+      );
+    }).toList(growable: false);
+  }
+
+  Future<int> countSalesPaymentsReport({
+    required DateTime fromDate,
+    required DateTime toDate,
+    String? paymentMethodKey,
+  }) async {
+    final DateTime from = _startOfDay(fromDate);
+    DateTime toExclusive = _startOfDay(toDate).add(const Duration(days: 1));
+    if (!toExclusive.isAfter(from)) {
+      toExclusive = from.add(const Duration(days: 1));
+    }
+    final String? normalizedMethod =
+        _normalizePaymentMethodKey(paymentMethodKey);
+    final StringBuffer sql = StringBuffer(
+      '''
+      SELECT CAST(COUNT(*) AS INTEGER) AS total_count
+      FROM payments p
+      INNER JOIN sales s ON s.id = p.sale_id
+      WHERE s.status = 'posted'
+        AND p.created_at >= ?
+        AND p.created_at < ?
+      ''',
+    );
+    final List<Variable<Object>> variables = <Variable<Object>>[
+      Variable<DateTime>(from),
+      Variable<DateTime>(toExclusive),
+    ];
+    if (normalizedMethod != null) {
+      sql.write(
+        '''
+        AND LOWER(COALESCE(NULLIF(TRIM(p.method), ''), 'unknown')) = ?
+        ''',
+      );
+      variables.add(Variable<String>(normalizedMethod));
+    }
+    final List<QueryRow> rows = await _db
+        .customSelect(
+          sql.toString(),
+          variables: variables,
+        )
+        .get();
+    if (rows.isEmpty) {
+      return 0;
+    }
+    return (rows.first.data['total_count'] as num?)?.toInt() ?? 0;
+  }
+
+  Future<List<String>> listPaymentMethodKeysForRange({
+    required DateTime fromDate,
+    required DateTime toDate,
+  }) async {
+    final DateTime from = _startOfDay(fromDate);
+    DateTime toExclusive = _startOfDay(toDate).add(const Duration(days: 1));
+    if (!toExclusive.isAfter(from)) {
+      toExclusive = from.add(const Duration(days: 1));
+    }
+    final List<QueryRow> rows = await _db.customSelect(
+      '''
+      SELECT DISTINCT
+        LOWER(COALESCE(NULLIF(TRIM(p.method), ''), 'unknown')) AS method_key
+      FROM payments p
+      INNER JOIN sales s ON s.id = p.sale_id
+      WHERE s.status = 'posted'
+        AND p.created_at >= ?
+        AND p.created_at < ?
+      ORDER BY method_key ASC
+      ''',
+      variables: <Variable<Object>>[
+        Variable<DateTime>(from),
+        Variable<DateTime>(toExclusive),
+      ],
+    ).get();
+    return rows
+        .map((QueryRow row) => _readTextCell(row, 'method_key', fallback: ''))
+        .where((String key) => key.isNotEmpty)
+        .toList(growable: false);
   }
 
   Future<List<Sale>> _postedSalesSince(DateTime from) {
@@ -1091,8 +1350,9 @@ class ReportesLocalDataSource {
       FROM sale_items si
       INNER JOIN sales s
         ON s.id = si.sale_id
-      LEFT JOIN products p
+      INNER JOIN products p
         ON p.id = si.product_id
+       AND p.is_active = 1
       WHERE s.status = 'posted'
         AND s.created_at >= ?
       GROUP BY si.product_id, p.name, p.sku
@@ -1134,8 +1394,9 @@ class ReportesLocalDataSource {
       FROM sale_items si
       INNER JOIN sales s
         ON s.id = si.sale_id
-      LEFT JOIN products p
+      INNER JOIN products p
         ON p.id = si.product_id
+       AND p.is_active = 1
       WHERE s.status = 'posted'
         AND s.created_at >= ?
         AND s.created_at < ?
@@ -1167,6 +1428,9 @@ class ReportesLocalDataSource {
         FROM sale_items si
         INNER JOIN sales s
           ON s.id = si.sale_id
+        INNER JOIN products p
+          ON p.id = si.product_id
+         AND p.is_active = 1
         WHERE s.status = 'posted'
           AND s.created_at >= ?
           AND s.created_at < ?
@@ -1214,6 +1478,9 @@ class ReportesLocalDataSource {
       SELECT COALESCE(SUM(si.qty), 0) AS qty
       FROM sale_items si
       INNER JOIN sales s ON s.id = si.sale_id
+      INNER JOIN products p
+        ON p.id = si.product_id
+       AND p.is_active = 1
       WHERE s.status = 'posted'
         AND s.created_at >= ?
         AND s.created_at < ?
@@ -1235,12 +1502,16 @@ class ReportesLocalDataSource {
       SELECT
         COALESCE(SUM(si.line_total_cents), 0) AS revenue_cents,
         COALESCE(
-          SUM(CAST(ROUND(COALESCE(si.qty, 0) * COALESCE(p.cost_price_cents, 0)) AS INTEGER)),
+          SUM(
+            COALESCE(
+              si.line_cost_cents,
+              CAST(ROUND(COALESCE(si.qty, 0) * COALESCE(si.unit_cost_cents, 0)) AS INTEGER)
+            )
+          ),
           0
         ) AS cost_cents
       FROM sale_items si
       INNER JOIN sales s ON s.id = si.sale_id
-      LEFT JOIN products p ON p.id = si.product_id
       WHERE s.status = 'posted'
         AND s.created_at >= ?
         AND s.created_at < ?
@@ -1667,9 +1938,18 @@ class ReportesLocalDataSource {
         r.opening_source AS opening_source,
         t.name AS terminal_name,
         t.currency_symbol AS currency_symbol,
-        COUNT(l.product_id) AS line_count,
+        COUNT(p.id) AS line_count,
         COALESCE(
-          SUM(CAST(ROUND(COALESCE(l.sales_qty, 0) * COALESCE(l.sale_price_cents, 0)) AS INTEGER)),
+          SUM(
+            CASE
+              WHEN p.id IS NOT NULL
+                THEN COALESCE(
+                  l.total_amount_cents,
+                  CAST(ROUND(COALESCE(l.sales_qty, 0) * COALESCE(l.sale_price_cents, 0)) AS INTEGER)
+                )
+              ELSE 0
+            END
+          ),
           0
         ) AS total_amount_cents
       FROM ipv_reports r
@@ -1677,6 +1957,9 @@ class ReportesLocalDataSource {
         ON t.id = r.terminal_id
       LEFT JOIN ipv_report_lines l
         ON l.report_id = r.id
+      LEFT JOIN products p
+        ON p.id = l.product_id
+       AND p.is_active = 1
       WHERE 1 = 1
       ''',
     );
@@ -1780,9 +2063,18 @@ class ReportesLocalDataSource {
         r.opening_source AS opening_source,
         t.name AS terminal_name,
         t.currency_symbol AS currency_symbol,
-        COUNT(l.product_id) AS line_count,
+        COUNT(p.id) AS line_count,
         COALESCE(
-          SUM(CAST(ROUND(COALESCE(l.sales_qty, 0) * COALESCE(l.sale_price_cents, 0)) AS INTEGER)),
+          SUM(
+            CASE
+              WHEN p.id IS NOT NULL
+                THEN COALESCE(
+                  l.total_amount_cents,
+                  CAST(ROUND(COALESCE(l.sales_qty, 0) * COALESCE(l.sale_price_cents, 0)) AS INTEGER)
+                )
+              ELSE 0
+            END
+          ),
           0
         ) AS total_amount_cents
       FROM ipv_reports r
@@ -1790,6 +2082,9 @@ class ReportesLocalDataSource {
         ON t.id = r.terminal_id
       LEFT JOIN ipv_report_lines l
         ON l.report_id = r.id
+      LEFT JOIN products p
+        ON p.id = l.product_id
+       AND p.is_active = 1
       WHERE r.session_id = ?
       ''',
     );
@@ -1885,8 +2180,14 @@ class ReportesLocalDataSource {
         COALESCE(final_qty, 0) AS final_qty,
         COALESCE(sale_price_cents, 0) AS sale_price_cents,
         COALESCE(total_amount_cents, 0) AS total_amount_cents
-      FROM ipv_report_lines
-      WHERE report_id = ?
+      FROM ipv_report_lines l
+      WHERE l.report_id = ?
+        AND EXISTS (
+          SELECT 1
+          FROM products p
+          WHERE p.id = l.product_id
+            AND p.is_active = 1
+        )
       ''',
       variables: <Variable<Object>>[Variable<String>(id)],
     ).get();
@@ -2036,7 +2337,10 @@ class ReportesLocalDataSource {
     for (final String productId in byProduct.keys) {
       final _IpvAgg agg = byProduct[productId]!;
       final _IpvProductSnapshot? product = productById[productId];
-      final int salePriceCents = agg.salePriceCents ?? product?.priceCents ?? 0;
+      if (product == null) {
+        continue;
+      }
+      final int salePriceCents = agg.salePriceCents ?? product.priceCents;
       final double finalQty =
           agg.startQty + agg.entriesQty - agg.outputsQty - agg.salesQty;
       final int amountCents = (agg.salesQty * salePriceCents).round();
@@ -2044,8 +2348,8 @@ class ReportesLocalDataSource {
       lines.add(
         IpvReportLineStat(
           productId: productId,
-          productName: product?.name ?? 'Producto',
-          sku: product?.sku ?? '-',
+          productName: product.name,
+          sku: product.sku,
           startQty: agg.startQty,
           entriesQty: agg.entriesQty,
           outputsQty: agg.outputsQty,
@@ -2561,7 +2865,7 @@ class ReportesLocalDataSource {
       totalSalesQty += row.salesQty;
       totalEntriesQty += row.entriesQty;
       totalOutputsQty += row.outputsQty;
-      totalSalesAmountCents += (row.salesQty * row.salePriceCents).round();
+      totalSalesAmountCents += row.totalAmountCents;
     }
     return _IpvExecutiveSummary(
       totalSalesQty: totalSalesQty,
@@ -2695,6 +2999,7 @@ class ReportesLocalDataSource {
         COALESCE(price_cents, 0) AS price_cents
       FROM products
       WHERE id IN (${List<String>.filled(productIds.length, '?').join(', ')})
+        AND is_active = 1
       ''',
       variables: productIds
           .map((String productId) => Variable<String>(productId))
@@ -3112,6 +3417,10 @@ class ReportesLocalDataSource {
       default:
         return method;
     }
+  }
+
+  String paymentMethodLabel(String method) {
+    return _paymentMethodLabel(method);
   }
 
   String? _normalizeChannelFilter(String? channel) {

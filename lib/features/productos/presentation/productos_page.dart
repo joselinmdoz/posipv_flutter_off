@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -244,6 +245,7 @@ class ProductFormPage extends ConsumerStatefulWidget {
 
 class _ProductFormPageState extends ConsumerState<ProductFormPage> {
   final ImagePicker _imagePicker = ImagePicker();
+  Timer? _priceCheckDebounce;
 
   late final TextEditingController _nameCtrl;
   late final TextEditingController _codeCtrl;
@@ -279,8 +281,13 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
   bool _saving = false;
   bool _loadingCatalogs = true;
   bool _syncingPriceFields = false;
+  bool _checkingPriceEdition = false;
+  String? _priceEditionBlockReason;
+  int _priceCheckToken = 0;
 
   bool get _isEditing => widget.product != null;
+  bool get _isPriceEditionBlocked =>
+      (_priceEditionBlockReason ?? '').trim().isNotEmpty;
   bool get _canManageProducts {
     final session = ref.read(currentSessionProvider);
     return session?.hasPermission(AppPermissionKeys.productsManage) ?? false;
@@ -321,6 +328,7 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
 
   @override
   void dispose() {
+    _priceCheckDebounce?.cancel();
     _nameCtrl.dispose();
     _codeCtrl.dispose();
     _barcodeCtrl.dispose();
@@ -576,6 +584,28 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
 
     final ProductosLocalDataSource ds =
         ref.read(productosLocalDataSourceProvider);
+
+    if (_isEditing) {
+      try {
+        final ProductPriceEditionCheck check =
+            await ds.checkPriceEditionAllowed(
+          productId: widget.product!.id,
+          nextSalePriceCents: saleCents,
+          nextCostPriceCents: costCents,
+        );
+        if (!check.allowed) {
+          if (mounted) {
+            setState(() => _priceEditionBlockReason = check.blockReason);
+          }
+          _show(check.blockReason ?? 'No se puede modificar el precio.');
+          return;
+        }
+      } catch (e) {
+        _show('No se pudo validar el cambio de precio: $e');
+        return;
+      }
+    }
+
     final String? excludeProductId = _isEditing ? widget.product!.id : null;
 
     final bool codeTaken = await ds.isCodeTaken(
@@ -699,14 +729,66 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
 
   void _onCostChanged(String _) {
     _recalculateSaleFromMargin();
+    _schedulePriceEditionValidation();
   }
 
   void _onProfitChanged(String _) {
     _recalculateSaleFromMargin();
+    _schedulePriceEditionValidation();
   }
 
   void _onSaleChanged(String _) {
     _recalculateMarginFromSale();
+    _schedulePriceEditionValidation();
+  }
+
+  void _schedulePriceEditionValidation() {
+    if (!_isEditing) {
+      return;
+    }
+
+    final int? nextCost = _moneyTextToCents(_costCtrl.text);
+    final int? nextSale = _moneyTextToCents(_saleCtrl.text);
+    if (nextCost == null || nextSale == null) {
+      _priceCheckDebounce?.cancel();
+      if (_checkingPriceEdition || _priceEditionBlockReason != null) {
+        setState(() {
+          _checkingPriceEdition = false;
+          _priceEditionBlockReason = null;
+        });
+      }
+      return;
+    }
+
+    _priceCheckDebounce?.cancel();
+    _priceCheckDebounce = Timer(const Duration(milliseconds: 300), () async {
+      if (!mounted) {
+        return;
+      }
+      final int token = ++_priceCheckToken;
+      setState(() => _checkingPriceEdition = true);
+      try {
+        final ProductPriceEditionCheck check = await ref
+            .read(productosLocalDataSourceProvider)
+            .checkPriceEditionAllowed(
+              productId: widget.product!.id,
+              nextSalePriceCents: nextSale,
+              nextCostPriceCents: nextCost,
+            );
+        if (!mounted || token != _priceCheckToken) {
+          return;
+        }
+        setState(() {
+          _checkingPriceEdition = false;
+          _priceEditionBlockReason = check.allowed ? null : check.blockReason;
+        });
+      } catch (_) {
+        if (!mounted || token != _priceCheckToken) {
+          return;
+        }
+        setState(() => _checkingPriceEdition = false);
+      }
+    });
   }
 
   void _recalculateSaleFromMargin() {
@@ -1330,7 +1412,84 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
             emphasize: true,
           ),
         ),
+        if (_isEditing) ...<Widget>[
+          const SizedBox(height: 10),
+          _buildPriceEditionNotice(),
+        ],
       ],
+    );
+  }
+
+  Widget _buildPriceEditionNotice() {
+    if (_checkingPriceEdition) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF7ED),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFF59E0B)),
+        ),
+        child: const Row(
+          children: <Widget>[
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Validando restricción de precios con turnos TPV abiertos...',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF92400E),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final String reason = (_priceEditionBlockReason ?? '').trim();
+    if (reason.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF1F2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFF43F5E)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Padding(
+            padding: EdgeInsets.only(top: 1),
+            child: Icon(
+              Icons.warning_amber_rounded,
+              size: 18,
+              color: Color(0xFFBE123C),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              reason,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF9F1239),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1365,13 +1524,6 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
           onPressed: _saving ? null : () => Navigator.maybePop(context),
           icon: const Icon(Icons.arrow_back_rounded),
         ),
-        actions: <Widget>[
-          IconButton(
-            tooltip: 'Opciones',
-            onPressed: () {},
-            icon: const Icon(Icons.more_vert_rounded),
-          ),
-        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
           child: Container(
@@ -1526,7 +1678,8 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
                   Expanded(
                     flex: _isEditing ? 2 : 1,
                     child: FilledButton.icon(
-                      onPressed: _saving ? null : _save,
+                      onPressed:
+                          (_saving || _isPriceEditionBlocked) ? null : _save,
                       icon: const Icon(Icons.save_rounded),
                       label: Text(
                         _saving

@@ -141,10 +141,6 @@ class _ClientesPageState extends ConsumerState<ClientesPage> {
         },
       ),
       appBarActions: <Widget>[
-        IconButton(
-          onPressed: () {},
-          icon: const Icon(Icons.search_rounded),
-        ),
         Container(
           width: 32,
           height: 32,

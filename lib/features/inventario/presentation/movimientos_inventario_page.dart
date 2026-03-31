@@ -143,7 +143,7 @@ class _MovimientosInventarioPageState
         .toList(growable: false);
   }
 
-  Future<void> _openMovementForm() async {
+  Future<void> _openMovementForm({InventoryMovementView? movement}) async {
     final UserSession? session = ref.read(currentSessionProvider);
     if (session == null) {
       _show('Debes iniciar sesion.');
@@ -156,8 +156,11 @@ class _MovimientosInventarioPageState
 
     final InventarioLocalDataSource ds =
         ref.read(inventarioLocalDataSourceProvider);
+    final bool isEdit = movement != null;
     final String selectedWarehouseId =
-        _selectedWarehouseId ?? _warehouses.first.id;
+        (movement?.warehouseId ?? '').trim().isEmpty
+            ? (_selectedWarehouseId ?? _warehouses.first.id)
+            : movement!.warehouseId;
 
     final List<InventoryView> adjustRows = await ds.listInventoryPage(
       warehouseId: selectedWarehouseId,
@@ -166,6 +169,16 @@ class _MovimientosInventarioPageState
     );
     if (adjustRows.isEmpty) {
       _show('No hay productos activos en este almacén.');
+      return;
+    }
+
+    if (isEdit &&
+        !adjustRows.any(
+          (InventoryView row) => row.productId == movement.productId,
+        )) {
+      _show(
+        'No se puede editar este movimiento porque su producto ya no está activo en el almacén.',
+      );
       return;
     }
 
@@ -191,6 +204,8 @@ class _MovimientosInventarioPageState
           entryReasons: entryReasons,
           outputReasons: outputReasons,
           currencySymbol: config.currencySymbol,
+          title: isEdit ? 'Editar Movimiento' : 'Movimiento de Inventario',
+          confirmLabel: isEdit ? 'Guardar cambios' : 'Aplicar',
           warehouseOptions: _warehouses
               .map(
                 (Warehouse row) => InventoryMovementWarehouseOption(
@@ -200,6 +215,11 @@ class _MovimientosInventarioPageState
               )
               .toList(),
           initialWarehouseId: selectedWarehouseId,
+          initialProductId: movement?.productId,
+          initialIsEntry: movement?.movementType == 'in',
+          initialReasonCode: movement?.reasonCode,
+          initialQty: movement?.qty,
+          initialNote: movement?.note,
           loadAdjustRowsForWarehouse: (String warehouseId) {
             return ds.listInventoryPage(
               warehouseId: warehouseId,
@@ -228,30 +248,51 @@ class _MovimientosInventarioPageState
         ((result['warehouseId'] as String?) ?? selectedWarehouseId).trim();
     final double currentQty = (result['currentStock'] as double?) ?? 0;
 
-    if (!isEntry && qty > currentQty) {
+    if (!isEdit && !isEntry && qty > currentQty) {
       _show('La salida supera el stock disponible.');
       return;
     }
 
     try {
-      await ds.createManualMovement(
-        productId: safeProductId,
-        warehouseId: safeWarehouseId,
-        type: isEntry ? 'in' : 'out',
-        qty: qty,
-        reasonCode: safeReasonCode,
-        userId: session.userId,
-        note: note.isEmpty
-            ? (isEntry
-                ? 'Entrada manual inventario'
-                : 'Salida manual inventario')
-            : note,
-      );
+      if (isEdit) {
+        await ds.updateManualMovement(
+          movementId: movement.id,
+          productId: safeProductId,
+          warehouseId: safeWarehouseId,
+          type: isEntry ? 'in' : 'out',
+          qty: qty,
+          reasonCode: safeReasonCode,
+          userId: session.userId,
+          note: note.isEmpty
+              ? (isEntry
+                  ? 'Entrada manual inventario'
+                  : 'Salida manual inventario')
+              : note,
+        );
+      } else {
+        await ds.createManualMovement(
+          productId: safeProductId,
+          warehouseId: safeWarehouseId,
+          type: isEntry ? 'in' : 'out',
+          qty: qty,
+          reasonCode: safeReasonCode,
+          userId: session.userId,
+          note: note.isEmpty
+              ? (isEntry
+                  ? 'Entrada manual inventario'
+                  : 'Salida manual inventario')
+              : note,
+        );
+      }
       ref.read(inventoryRefreshSignalProvider.notifier).state += 1;
       await _reloadMovements();
-      _show('Movimiento registrado.');
+      _show(isEdit ? 'Movimiento actualizado.' : 'Movimiento registrado.');
     } catch (e) {
-      _show('No se pudo registrar movimiento: $e');
+      _show(
+        isEdit
+            ? 'No se pudo actualizar movimiento: $e'
+            : 'No se pudo registrar movimiento: $e',
+      );
     }
   }
 
@@ -779,6 +820,26 @@ class _MovimientosInventarioPageState
     return source == 'manual' && !isSaleRef && movement.reasonCode != 'sale';
   }
 
+  bool _canEditMovement(InventoryMovementView movement) {
+    final String source = movement.movementSource.trim().toLowerCase();
+    final String refType = (movement.refType ?? '').trim().toLowerCase();
+    final bool isSaleRef = refType == 'sale' ||
+        refType == 'sale_pos' ||
+        refType == 'sale_direct' ||
+        refType == 'consignment_sale' ||
+        refType == 'consignment_sale_pos' ||
+        refType == 'consignment_sale_direct';
+    return source == 'manual' && !isSaleRef && movement.reasonCode != 'sale';
+  }
+
+  Future<void> _editMovement(InventoryMovementView movement) async {
+    if (!_canEditMovement(movement)) {
+      _show('Solo se pueden editar movimientos manuales.');
+      return;
+    }
+    await _openMovementForm(movement: movement);
+  }
+
   Future<void> _archiveMovement(InventoryMovementView movement) async {
     final session = ref.read(currentSessionProvider);
     if (session == null) {
@@ -795,12 +856,10 @@ class _MovimientosInventarioPageState
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title:
-              Text(isAdmin ? 'Eliminar movimiento' : 'Dar de baja movimiento'),
+          title: const Text('Archivar movimiento'),
           content: Text(
-            isAdmin
-                ? 'Se eliminará el movimiento de "${movement.productName}" y se revertirá su impacto en stock.\n\nEsta acción puede desajustar inventario, ventas y reportes.'
-                : 'Se ocultara el movimiento de "${movement.productName}" y se revertira su impacto en stock.',
+            'Se archivará el movimiento de "${movement.productName}" y se revertirá su impacto en stock.\n\n'
+            'Para eliminarlo definitivamente, usa la vista de Archivados.',
           ),
           actions: <Widget>[
             TextButton(
@@ -809,7 +868,7 @@ class _MovimientosInventarioPageState
             ),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: Text(isAdmin ? 'Eliminar' : 'Confirmar'),
+              child: const Text('Archivar'),
             ),
           ],
         );
@@ -823,26 +882,21 @@ class _MovimientosInventarioPageState
       await ref.read(inventarioLocalDataSourceProvider).archiveManualMovement(
             movementId: movement.id,
             userId: session.userId,
-            note: isAdmin
-                ? 'Movimiento eliminado por admin ${session.username}'
-                : 'Movimiento archivado por ${session.username}',
+            note: 'Movimiento archivado por ${session.username}',
             allowAnyMovement: isAdmin,
             allowNegativeResult: isAdmin,
           );
       ref.read(inventoryRefreshSignalProvider.notifier).state += 1;
       await _reloadMovements();
-      _show(isAdmin ? 'Movimiento eliminado.' : 'Movimiento archivado.');
+      _show('Movimiento archivado.');
     } catch (e) {
-      _show(
-        isAdmin
-            ? 'No se pudo eliminar el movimiento: $e'
-            : 'No se pudo archivar el movimiento: $e',
-      );
+      _show('No se pudo archivar el movimiento: $e');
     }
   }
 
   List<Widget> _buildGroupedMovementWidgets(
     List<_MovementDateGroup> groups, {
+    required bool canEdit,
     required bool canArchive,
   }) {
     final List<Widget> widgets = <Widget>[];
@@ -866,6 +920,9 @@ class _MovimientosInventarioPageState
           InventoryMovementCard(
             movement: movement,
             timeLabel: _formatTimeShort(movement.createdAt),
+            onEdit: canEdit && _canEditMovement(movement)
+                ? () => _editMovement(movement)
+                : null,
             onArchive: canArchive && _canArchiveMovement(movement)
                 ? () => _archiveMovement(movement)
                 : null,
@@ -995,6 +1052,7 @@ class _MovimientosInventarioPageState
                   else
                     ..._buildGroupedMovementWidgets(
                       groups,
+                      canEdit: license.canWrite,
                       canArchive: license.canWrite,
                     ),
                 ],

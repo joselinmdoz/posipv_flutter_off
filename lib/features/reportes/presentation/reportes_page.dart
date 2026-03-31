@@ -16,6 +16,11 @@ import 'widgets/analytics_top_customer_tile.dart';
 import 'widgets/analytics_top_product_tile.dart';
 import 'widgets/analytics_sales_list_page.dart';
 
+enum _ReportViewType {
+  salesAnalytics,
+  paymentsDetail,
+}
+
 class ReportesPage extends ConsumerStatefulWidget {
   const ReportesPage({super.key});
 
@@ -24,12 +29,23 @@ class ReportesPage extends ConsumerStatefulWidget {
 }
 
 class _ReportesPageState extends ConsumerState<ReportesPage> {
+  static const String _allPaymentMethodsToken = '__all__';
+  static const List<int> _paymentPageSizes = <int>[25, 50, 100];
+
   SalesAnalyticsSnapshot? _analytics;
+  List<SalesPaymentReportRow> _paymentReportRows = <SalesPaymentReportRow>[];
+  List<String> _paymentMethodKeys = <String>[];
+  String? _selectedPaymentMethodKey;
+  int _paymentCurrentPage = 1;
+  int _paymentPageSize = _paymentPageSizes.first;
+  int _paymentTotalCount = 0;
+  bool _loadingPaymentPage = false;
   String _currencySymbol = AppConfig.defaultCurrencySymbol;
   bool _loading = true;
   bool _exportingAnalytics = false;
   late DateTimeRange _range;
   SalesAnalyticsGranularity _granularity = SalesAnalyticsGranularity.month;
+  _ReportViewType _selectedReport = _ReportViewType.salesAnalytics;
   bool _showAllTopProducts = false;
 
   @override
@@ -40,8 +56,15 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
       if (!mounted) {
         return;
       }
-      _loadAnalytics();
+      _loadCurrentReport();
     });
+  }
+
+  Future<void> _loadCurrentReport({bool showLoader = true}) {
+    if (_selectedReport == _ReportViewType.salesAnalytics) {
+      return _loadAnalytics(showLoader: showLoader);
+    }
+    return _loadPaymentsReport(showLoader: showLoader);
   }
 
   Future<void> _loadAnalytics({bool showLoader = true}) async {
@@ -106,6 +129,111 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
     }
   }
 
+  Future<void> _loadPaymentsReport({
+    bool showLoader = true,
+    bool refreshMethodKeys = true,
+  }) async {
+    final license = ref.read(currentLicenseStatusProvider);
+    if (!license.canAccessGeneralReports) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _loading = false;
+        _paymentReportRows = <SalesPaymentReportRow>[];
+        _paymentTotalCount = 0;
+        _loadingPaymentPage = false;
+      });
+      return;
+    }
+    if (showLoader && mounted) {
+      setState(() => _loading = true);
+    } else if (mounted) {
+      setState(() => _loadingPaymentPage = true);
+    }
+
+    final ReportesLocalDataSource reportesDs =
+        ref.read(reportesLocalDataSourceProvider);
+    final ConfiguracionLocalDataSource configDs =
+        ref.read(configuracionLocalDataSourceProvider);
+
+    String currencySymbol = _currencySymbol;
+    List<SalesPaymentReportRow> rows = <SalesPaymentReportRow>[];
+    List<String> methodKeys = _paymentMethodKeys;
+    int totalCount = 0;
+    int effectivePage = _paymentCurrentPage < 1 ? 1 : _paymentCurrentPage;
+    String? effectiveMethod = _selectedPaymentMethodKey;
+    String? warningMessage;
+
+    try {
+      currencySymbol = (await configDs.loadConfig()).currencySymbol;
+    } catch (e) {
+      warningMessage = 'Configuracion: $e';
+    }
+
+    try {
+      if (refreshMethodKeys) {
+        methodKeys = await reportesDs.listPaymentMethodKeysForRange(
+          fromDate: _range.start,
+          toDate: _range.end,
+        );
+      }
+
+      final Set<String> methodSet = methodKeys.toSet();
+      if (effectiveMethod != null && !methodSet.contains(effectiveMethod)) {
+        effectiveMethod = null;
+      }
+
+      totalCount = await reportesDs.countSalesPaymentsReport(
+        fromDate: _range.start,
+        toDate: _range.end,
+        paymentMethodKey: effectiveMethod,
+      );
+
+      final int totalPages = totalCount == 0
+          ? 1
+          : ((totalCount + _paymentPageSize - 1) ~/ _paymentPageSize);
+      if (effectivePage > totalPages) {
+        effectivePage = totalPages;
+      }
+
+      if (totalCount > 0) {
+        rows = await reportesDs.listSalesPaymentsReport(
+          fromDate: _range.start,
+          toDate: _range.end,
+          paymentMethodKey: effectiveMethod,
+          limit: _paymentPageSize,
+          offset: (effectivePage - 1) * _paymentPageSize,
+        );
+      }
+    } catch (e) {
+      final String message = 'Reporte de pagos: $e';
+      warningMessage =
+          warningMessage == null ? message : '$warningMessage\n$message';
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _currencySymbol = currencySymbol;
+      _paymentMethodKeys = methodKeys;
+      _paymentReportRows = rows;
+      _paymentTotalCount = totalCount;
+      _paymentCurrentPage = effectivePage;
+      _selectedPaymentMethodKey = effectiveMethod;
+      _loading = false;
+      _loadingPaymentPage = false;
+    });
+
+    if (warningMessage != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Cargado con advertencias:\n$warningMessage')),
+      );
+    }
+  }
+
   DateTimeRange _rangeForGranularity(
     SalesAnalyticsGranularity granularity,
     DateTime now,
@@ -153,8 +281,9 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
         end: DateTime(picked.end.year, picked.end.month, picked.end.day),
       );
       _showAllTopProducts = false;
+      _paymentCurrentPage = 1;
     });
-    await _loadAnalytics(showLoader: true);
+    await _loadCurrentReport(showLoader: true);
   }
 
   Future<void> _setGranularity(SalesAnalyticsGranularity value) async {
@@ -236,6 +365,32 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
     return '${_formatDate(range.start)} - ${_formatDate(range.end)}';
   }
 
+  String _formatCompactRange(DateTimeRange range) {
+    final DateTime start = range.start;
+    final DateTime end = range.end;
+    const List<String> months = <String>[
+      'Ene',
+      'Feb',
+      'Mar',
+      'Abr',
+      'May',
+      'Jun',
+      'Jul',
+      'Ago',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dic',
+    ];
+    if (start.year == end.year && start.month == end.month) {
+      return '${months[start.month - 1]} ${start.year}';
+    }
+    if (start.year == end.year) {
+      return '${months[start.month - 1]}-${months[end.month - 1]} ${start.year}';
+    }
+    return '${months[start.month - 1]} ${start.year} - ${months[end.month - 1]} ${end.year}';
+  }
+
   String _formatDate(DateTime date) {
     const List<String> months = <String>[
       'Ene',
@@ -253,6 +408,16 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
     ];
     final String day = date.day.toString().padLeft(2, '0');
     return '$day ${months[date.month - 1]}, ${date.year}';
+  }
+
+  String _formatDateTime(DateTime value) {
+    final DateTime local = value.toLocal();
+    final String day = local.day.toString().padLeft(2, '0');
+    final String month = local.month.toString().padLeft(2, '0');
+    final String year = local.year.toString();
+    final String hour = local.hour.toString().padLeft(2, '0');
+    final String minute = local.minute.toString().padLeft(2, '0');
+    return '$day/$month/$year $hour:$minute';
   }
 
   String _formatUnits(double qty) {
@@ -273,6 +438,96 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
       default:
         return 'General';
     }
+  }
+
+  String _paymentMethodLabel(String method) {
+    switch (method.trim().toLowerCase()) {
+      case 'cash':
+        return 'Efectivo';
+      case 'card':
+        return 'Tarjeta';
+      case 'transfer':
+        return 'Transferencia';
+      case 'wallet':
+        return 'Billetera';
+      case 'consignment':
+        return 'Consignación';
+      default:
+        final String clean = method.trim();
+        return clean.isEmpty ? 'Método' : clean;
+    }
+  }
+
+  String _reportTypeLabel(_ReportViewType type) {
+    switch (type) {
+      case _ReportViewType.salesAnalytics:
+        return 'Analítica de ventas';
+      case _ReportViewType.paymentsDetail:
+        return 'Detalle de pagos';
+    }
+  }
+
+  Future<void> _changeReportType(_ReportViewType next) async {
+    if (_selectedReport == next) {
+      return;
+    }
+    setState(() {
+      _selectedReport = next;
+      _paymentCurrentPage = 1;
+    });
+    await _loadCurrentReport(showLoader: true);
+  }
+
+  Future<void> _changePaymentMethodFilter(String? value) async {
+    final String? next =
+        value == null || value == _allPaymentMethodsToken ? null : value;
+    if (_selectedPaymentMethodKey == next) {
+      return;
+    }
+    setState(() {
+      _selectedPaymentMethodKey = next;
+      _paymentCurrentPage = 1;
+    });
+    await _loadPaymentsReport(
+      showLoader: true,
+      refreshMethodKeys: false,
+    );
+  }
+
+  int _paymentTotalPages() {
+    if (_paymentTotalCount <= 0) {
+      return 1;
+    }
+    return (_paymentTotalCount + _paymentPageSize - 1) ~/ _paymentPageSize;
+  }
+
+  Future<void> _goToPaymentPage(int page) async {
+    final int maxPages = _paymentTotalPages();
+    final int nextPage = page < 1 ? 1 : (page > maxPages ? maxPages : page);
+    if (_loadingPaymentPage || nextPage == _paymentCurrentPage) {
+      return;
+    }
+    setState(() {
+      _paymentCurrentPage = nextPage;
+    });
+    await _loadPaymentsReport(
+      showLoader: false,
+      refreshMethodKeys: false,
+    );
+  }
+
+  Future<void> _changePaymentPageSize(int? value) async {
+    if (value == null || value == _paymentPageSize) {
+      return;
+    }
+    setState(() {
+      _paymentPageSize = value;
+      _paymentCurrentPage = 1;
+    });
+    await _loadPaymentsReport(
+      showLoader: true,
+      refreshMethodKeys: false,
+    );
   }
 
   String _formatShortDate(DateTime? value) {
@@ -320,16 +575,276 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
     );
   }
 
+  List<Widget> _buildPaymentsReportSections(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final String selectorValue =
+        _selectedPaymentMethodKey ?? _allPaymentMethodsToken;
+    final int totalPages = _paymentTotalPages();
+    final int safePage = _paymentCurrentPage < 1
+        ? 1
+        : (_paymentCurrentPage > totalPages ? totalPages : _paymentCurrentPage);
+    final int startRow =
+        _paymentTotalCount == 0 ? 0 : ((safePage - 1) * _paymentPageSize) + 1;
+    final int endRow =
+        _paymentTotalCount == 0 ? 0 : startRow + _paymentReportRows.length - 1;
+    final bool canGoPrev = safePage > 1 && !_loadingPaymentPage;
+    final bool canGoNext = safePage < totalPages && !_loadingPaymentPage;
+    final List<DropdownMenuItem<String>> items = <DropdownMenuItem<String>>[
+      const DropdownMenuItem<String>(
+        value: _allPaymentMethodsToken,
+        child: Text('Todos los métodos'),
+      ),
+      ..._paymentMethodKeys.map(
+        (String key) => DropdownMenuItem<String>(
+          value: key,
+          child: Text(_paymentMethodLabel(key)),
+        ),
+      ),
+    ];
+    final List<DropdownMenuItem<int>> pageSizeItems = _paymentPageSizes
+        .map(
+          (int size) => DropdownMenuItem<int>(
+            value: size,
+            child: Text('$size filas'),
+          ),
+        )
+        .toList(growable: false);
+
+    Widget pager() {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF0F172A) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isDark ? const Color(0xFF263244) : const Color(0xFFD8E0EC),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: <Widget>[
+                Text(
+                  'Mostrando $startRow-$endRow de $_paymentTotalCount pagos',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark
+                        ? const Color(0xFF94A3B8)
+                        : const Color(0xFF64748B),
+                  ),
+                ),
+                SizedBox(
+                  width: 135,
+                  child: DropdownButtonFormField<int>(
+                    key: ValueKey<int>(_paymentPageSize),
+                    initialValue: _paymentPageSize,
+                    isDense: true,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    ),
+                    items: pageSizeItems,
+                    onChanged:
+                        _loadingPaymentPage ? null : _changePaymentPageSize,
+                  ),
+                ),
+                FilledButton.tonalIcon(
+                  onPressed:
+                      canGoPrev ? () => _goToPaymentPage(safePage - 1) : null,
+                  icon: const Icon(Icons.chevron_left_rounded),
+                  label: const Text('Anterior'),
+                ),
+                FilledButton.tonalIcon(
+                  onPressed:
+                      canGoNext ? () => _goToPaymentPage(safePage + 1) : null,
+                  icon: const Icon(Icons.chevron_right_rounded),
+                  label: const Text('Siguiente'),
+                ),
+                Text(
+                  'Página $safePage de $totalPages',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: isDark
+                        ? const Color(0xFFCBD5E1)
+                        : const Color(0xFF334155),
+                  ),
+                ),
+              ],
+            ),
+            if (_loadingPaymentPage) ...<Widget>[
+              const SizedBox(height: 8),
+              const LinearProgressIndicator(minHeight: 2),
+            ],
+          ],
+        ),
+      );
+    }
+
+    final List<Widget> sections = <Widget>[
+      Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF0F172A) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isDark ? const Color(0xFF263244) : const Color(0xFFD8E0EC),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              'MÉTODO DE PAGO',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.8,
+                color:
+                    isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+              ),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              key: ValueKey<String>(
+                'payment-method-$selectorValue-${_paymentMethodKeys.join('|')}',
+              ),
+              initialValue: selectorValue,
+              items: items,
+              decoration: const InputDecoration(
+                isDense: true,
+                border: OutlineInputBorder(),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+              onChanged: (String? value) => _changePaymentMethodFilter(value),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 12),
+      pager(),
+      const SizedBox(height: 12),
+    ];
+
+    if (_paymentReportRows.isEmpty) {
+      sections.add(
+        const Card(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('No hay pagos para el filtro seleccionado.'),
+          ),
+        ),
+      );
+      return sections;
+    }
+
+    sections.addAll(
+      _paymentReportRows.map((SalesPaymentReportRow row) {
+        final String methodLabel = _paymentMethodLabel(row.methodKey);
+        final String amountLabel = _money(row.amountCents);
+        final String saleTotalLabel = _money(row.saleTotalCents);
+        final String channelLabel = row.channel == 'pos' ? 'POS' : 'DIRECTA';
+        final String sourceAmount = (row.sourceCurrencyCode ?? '')
+                .trim()
+                .isEmpty
+            ? ''
+            : '${row.sourceCurrencyCode} ${((row.sourceAmountCents ?? 0) / 100).toStringAsFixed(2)}';
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF0F172A) : Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color:
+                    isDark ? const Color(0xFF263244) : const Color(0xFFD8E0EC),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        '$methodLabel • ${row.folio}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      amountLabel,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Pago: ${_formatDateTime(row.paymentCreatedAt)}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark
+                        ? const Color(0xFF94A3B8)
+                        : const Color(0xFF64748B),
+                  ),
+                ),
+                Text(
+                  'Venta: ${_formatDateTime(row.saleCreatedAt)} • Total venta: $saleTotalLabel',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark
+                        ? const Color(0xFF94A3B8)
+                        : const Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text('Dependiente: ${row.attendantName}'),
+                Text('Almacén: ${row.warehouseName}'),
+                Text('Canal: $channelLabel'),
+                Text('Cliente: ${row.customerName ?? 'Sin cliente'}'),
+                if ((row.terminalName ?? '').trim().isNotEmpty)
+                  Text('TPV: ${row.terminalName}'),
+                if ((row.transactionId ?? '').trim().isNotEmpty)
+                  Text('Código: ${row.transactionId}'),
+                if (sourceAmount.isNotEmpty)
+                  Text('Monto origen: $sourceAmount'),
+              ],
+            ),
+          ),
+        );
+      }),
+    );
+
+    sections
+      ..add(const SizedBox(height: 2))
+      ..add(pager());
+
+    return sections;
+  }
+
   @override
   Widget build(BuildContext context) {
     final license = ref.watch(currentLicenseStatusProvider);
     final SalesAnalyticsSnapshot? analytics = _analytics;
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
 
     if (!license.canAccessGeneralReports) {
       return AppScaffold(
-        title: 'Analítica de Ventas',
+        title: 'Reportes',
         currentRoute: '/reportes',
-        onRefresh: _loadAnalytics,
+        onRefresh: _loadCurrentReport,
         useDefaultActions: false,
         showDrawer: false,
         appBarLeading: IconButton(
@@ -337,19 +852,7 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
           onPressed: _onBackPressed,
           icon: const Icon(Icons.arrow_back_rounded),
         ),
-        appBarActions: <Widget>[
-          IconButton(
-            tooltip: 'Descargar',
-            onPressed: _exportingAnalytics ? null : _exportAnalytics,
-            icon: _exportingAnalytics
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.download_rounded),
-          ),
-        ],
+        appBarActions: const <Widget>[],
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(20),
@@ -405,9 +908,11 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
             : topProducts.take(3).toList(growable: false);
 
     return AppScaffold(
-      title: 'Analítica de Ventas',
+      title: _selectedReport == _ReportViewType.salesAnalytics
+          ? 'Análisis'
+          : 'Reportes',
       currentRoute: '/reportes',
-      onRefresh: _loadAnalytics,
+      onRefresh: _loadCurrentReport,
       useDefaultActions: false,
       showDrawer: false,
       appBarLeading: IconButton(
@@ -415,224 +920,364 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
         onPressed: _onBackPressed,
         icon: const Icon(Icons.arrow_back_rounded),
       ),
-      appBarActions: <Widget>[
-        IconButton(
-          tooltip: 'Descargar',
-          onPressed: _exportingAnalytics ? null : _exportAnalytics,
-          icon: _exportingAnalytics
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.download_rounded),
-        ),
-      ],
-      body: _loading && analytics == null
+      appBarActions: _selectedReport == _ReportViewType.salesAnalytics
+          ? <Widget>[
+              IconButton(
+                tooltip: 'Descargar',
+                onPressed: _exportingAnalytics ? null : _exportAnalytics,
+                icon: _exportingAnalytics
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.download_rounded),
+              ),
+            ]
+          : const <Widget>[],
+      body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
-              onRefresh: _loadAnalytics,
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
-                children: <Widget>[
-                  if (_loading)
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 8),
-                      child: LinearProgressIndicator(minHeight: 2),
-                    ),
-                  _AnalyticsDateRangeCard(
-                    value: _formatDateRange(_range),
-                    onTap: _pickDateRange,
-                  ),
-                  const SizedBox(height: 12),
-                  AnalyticsPeriodTabs(
-                    selected: _granularity,
-                    onSelected: _setGranularity,
-                  ),
-                  const SizedBox(height: 14),
-                  if (analytics == null)
-                    const Card(
-                      child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child:
-                            Text('No hay datos disponibles para el periodo.'),
-                      ),
-                    )
-                  else ...<Widget>[
-                    LayoutBuilder(
-                      builder: (BuildContext context, BoxConstraints c) {
-                        const double spacing = 10;
-                        final int columns = _kpiColumnsForWidth(c.maxWidth);
-                        final List<Widget> cards = <Widget>[
-                          TotalSalesKpiWidget(
-                            totalSales: analytics.ordersCount,
-                            onTap: () => _openSalesList(
-                              title: 'Total de ventas',
-                            ),
-                          ),
-                          SalesAmountKpiWidget(
-                            totalAmountCents: analytics.totalRevenueCents,
-                            moneyFormatter: _money,
-                            onTap: () => _openSalesList(
-                              title: 'Importe total de ventas',
-                            ),
-                          ),
-                          ProfitKpiWidget(
-                            totalProfitCents: analytics.totalProfitCents,
-                            moneyFormatter: _money,
-                          ),
-                          SoldProductsKpiWidget(
-                            totalProductsSold: analytics.itemsSoldQty,
-                            onTap: () => _openSalesList(
-                              title: 'Productos vendidos',
-                            ),
-                          ),
-                        ];
-                        return GridView.builder(
-                          itemCount: cards.length,
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: columns,
-                            mainAxisSpacing: spacing,
-                            crossAxisSpacing: spacing,
-                            childAspectRatio: c.maxWidth < 420 ? 1.25 : 1.45,
-                          ),
-                          itemBuilder: (_, int index) => cards[index],
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 14),
-                    AnalyticsSalesChannelCard(
-                      currencySymbol: _currencySymbol,
-                      posOrdersCount: analytics.posOrdersCount,
-                      posRevenueCents: analytics.posRevenueCents,
-                      directOrdersCount: analytics.directOrdersCount,
-                      directRevenueCents: analytics.directRevenueCents,
-                      onPosTap: () => _openSalesList(
-                        title: 'Ventas canal POS',
-                        channel: 'pos',
-                      ),
-                      onDirectTap: () => _openSalesList(
-                        title: 'Ventas canal directa',
-                        channel: 'directa',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    AnalyticsBreakdownCard(
-                      title: 'Métodos de Pago',
-                      currencySymbol: _currencySymbol,
-                      totalBaseCents: analytics.totalRevenueCents,
-                      items: analytics.paymentMethods,
-                      emptyLabel: 'No hay pagos registrados en el rango.',
-                      onItemTap: (SalesBreakdownStat row) {
-                        _openSalesList(
-                          title: 'Ventas por ${row.label}',
-                          paymentMethodKey: row.key,
-                        );
+              onRefresh: _loadCurrentReport,
+              child: ColoredBox(
+                color:
+                    isDark ? const Color(0xFF0B1220) : const Color(0xFFF7F9FB),
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
+                  children: <Widget>[
+                    _ReportSelectorCard(
+                      selected: _selectedReport,
+                      valueLabel: _reportTypeLabel(_selectedReport),
+                      onChanged: (_ReportViewType? value) {
+                        if (value == null) {
+                          return;
+                        }
+                        _changeReportType(value);
                       },
                     ),
                     const SizedBox(height: 12),
-                    AnalyticsBreakdownCard(
-                      title: 'Ventas por Dependiente',
-                      currencySymbol: _currencySymbol,
-                      totalBaseCents: analytics.totalRevenueCents,
-                      items: analytics.byCashier,
-                      onItemTap: (SalesBreakdownStat row) {
-                        _openSalesList(
-                          title: 'Ventas de ${row.label}',
-                          dependentKey: row.key,
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    AnalyticsBreakdownCard(
-                      title: 'Ventas por Almacén',
-                      currencySymbol: _currencySymbol,
-                      totalBaseCents: analytics.totalRevenueCents,
-                      items: analytics.byWarehouse,
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Clientes Destacados',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    if (analytics.topCustomers.isEmpty)
-                      const Card(
-                        child: Padding(
-                          padding: EdgeInsets.all(14),
-                          child: Text('Sin clientes asociados en este rango.'),
-                        ),
-                      )
-                    else
-                      ...analytics.topCustomers.map(
-                        (AnalyticsTopCustomerStat customer) => Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: AnalyticsTopCustomerTile(
-                            customer: customer,
-                            currencySymbol: _currencySymbol,
-                            typeLabel:
-                                _customerTypeLabel(customer.customerType),
-                            lastSaleLabel:
-                                _formatShortDate(customer.lastSaleAt),
-                          ),
-                        ),
-                      ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: <Widget>[
-                        const Expanded(
-                          child: Text(
-                            'Productos Destacados',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w800,
+                    if (_selectedReport ==
+                        _ReportViewType.salesAnalytics) ...<Widget>[
+                      Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: AnalyticsPeriodTabs(
+                                selected: _granularity,
+                                onSelected: _setGranularity,
+                              ),
                             ),
                           ),
-                        ),
-                        if (canExpandTopProducts)
-                          TextButton(
-                            onPressed: () {
-                              setState(() {
-                                _showAllTopProducts = !_showAllTopProducts;
-                              });
-                            },
+                          const SizedBox(width: 8),
+                          _AnalyticsDateRangeCard(
+                            value: _formatCompactRange(_range),
+                            onTap: _pickDateRange,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      if (analytics == null)
+                        const Card(
+                          child: Padding(
+                            padding: EdgeInsets.all(16),
                             child: Text(
-                                _showAllTopProducts ? 'Ver menos' : 'Ver todo'),
+                                'No hay datos disponibles para el periodo.'),
+                          ),
+                        )
+                      else ...<Widget>[
+                        LayoutBuilder(
+                          builder: (BuildContext context, BoxConstraints c) {
+                            const double spacing = 10;
+                            final int columns = _kpiColumnsForWidth(c.maxWidth);
+                            final List<Widget> cards = <Widget>[
+                              TotalSalesKpiWidget(
+                                totalSales: analytics.ordersCount,
+                                onTap: () => _openSalesList(
+                                  title: 'Total de ventas',
+                                ),
+                              ),
+                              SalesAmountKpiWidget(
+                                totalAmountCents: analytics.totalRevenueCents,
+                                moneyFormatter: _money,
+                                deltaPercent:
+                                    analytics.totalRevenueDeltaPercent,
+                                deltaText: _formatDelta(
+                                    analytics.totalRevenueDeltaPercent),
+                                onTap: () => _openSalesList(
+                                  title: 'Importe total de ventas',
+                                ),
+                              ),
+                              ProfitKpiWidget(
+                                totalProfitCents: analytics.totalProfitCents,
+                                moneyFormatter: _money,
+                              ),
+                              SoldProductsKpiWidget(
+                                totalProductsSold: analytics.itemsSoldQty,
+                                onTap: () => _openSalesList(
+                                  title: 'Productos vendidos',
+                                ),
+                              ),
+                            ];
+                            return GridView.builder(
+                              itemCount: cards.length,
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              gridDelegate:
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: columns,
+                                mainAxisSpacing: spacing,
+                                crossAxisSpacing: spacing,
+                                childAspectRatio:
+                                    c.maxWidth < 420 ? 1.18 : 1.33,
+                              ),
+                              itemBuilder: (_, int index) => cards[index],
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 14),
+                        Row(
+                          children: <Widget>[
+                            Expanded(
+                              child: Text(
+                                'CANALES DE VENTA',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.9,
+                                  color: isDark
+                                      ? const Color(0xFFCBD5E1)
+                                      : const Color(0xFF1E293B),
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () => _openSalesList(
+                                title: 'Ventas del período',
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  Text('Detalles'),
+                                  SizedBox(width: 4),
+                                  Icon(Icons.arrow_forward_rounded, size: 16),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        AnalyticsSalesChannelCard(
+                          currencySymbol: _currencySymbol,
+                          posOrdersCount: analytics.posOrdersCount,
+                          posRevenueCents: analytics.posRevenueCents,
+                          directOrdersCount: analytics.directOrdersCount,
+                          directRevenueCents: analytics.directRevenueCents,
+                          onPosTap: () => _openSalesList(
+                            title: 'Ventas canal POS',
+                            channel: 'pos',
+                          ),
+                          onDirectTap: () => _openSalesList(
+                            title: 'Ventas canal directa',
+                            channel: 'directa',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        AnalyticsBreakdownCard(
+                          title: 'Métodos de Pago',
+                          currencySymbol: _currencySymbol,
+                          totalBaseCents: analytics.totalRevenueCents,
+                          items: analytics.paymentMethods,
+                          emptyLabel: 'No hay pagos registrados en el rango.',
+                          onItemTap: (SalesBreakdownStat row) {
+                            _openSalesList(
+                              title: 'Ventas por ${row.label}',
+                              paymentMethodKey: row.key,
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        AnalyticsBreakdownCard(
+                          title: 'Ventas por Dependiente',
+                          currencySymbol: _currencySymbol,
+                          totalBaseCents: analytics.totalRevenueCents,
+                          items: analytics.byCashier,
+                          onItemTap: (SalesBreakdownStat row) {
+                            _openSalesList(
+                              title: 'Ventas de ${row.label}',
+                              dependentKey: row.key,
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        AnalyticsBreakdownCard(
+                          title: 'Ventas por Almacén',
+                          currencySymbol: _currencySymbol,
+                          totalBaseCents: analytics.totalRevenueCents,
+                          items: analytics.byWarehouse,
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Clientes Destacados',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        if (analytics.topCustomers.isEmpty)
+                          const Card(
+                            child: Padding(
+                              padding: EdgeInsets.all(14),
+                              child:
+                                  Text('Sin clientes asociados en este rango.'),
+                            ),
+                          )
+                        else
+                          ...analytics.topCustomers.map(
+                            (AnalyticsTopCustomerStat customer) => Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: AnalyticsTopCustomerTile(
+                                customer: customer,
+                                currencySymbol: _currencySymbol,
+                                typeLabel:
+                                    _customerTypeLabel(customer.customerType),
+                                lastSaleLabel:
+                                    _formatShortDate(customer.lastSaleAt),
+                              ),
+                            ),
+                          ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: <Widget>[
+                            const Expanded(
+                              child: Text(
+                                'Productos Destacados',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            if (canExpandTopProducts)
+                              TextButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _showAllTopProducts = !_showAllTopProducts;
+                                  });
+                                },
+                                child: Text(_showAllTopProducts
+                                    ? 'Ver menos'
+                                    : 'Ver todo'),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        if (visibleTopProducts.isEmpty)
+                          const Card(
+                            child: Padding(
+                              padding: EdgeInsets.all(14),
+                              child:
+                                  Text('Sin productos vendidos en el rango.'),
+                            ),
+                          )
+                        else
+                          ...visibleTopProducts.map(
+                            (AnalyticsTopProductStat product) => Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: AnalyticsTopProductTile(
+                                name: product.productName,
+                                subtitle: _formatUnits(product.qty),
+                                amount: _money(product.totalCents),
+                                deltaPercent: product.deltaPercent,
+                                deltaText: _formatDelta(product.deltaPercent),
+                                imagePath: product.imagePath,
+                              ),
+                            ),
                           ),
                       ],
-                    ),
-                    const SizedBox(height: 8),
-                    if (visibleTopProducts.isEmpty)
-                      const Card(
-                        child: Padding(
-                          padding: EdgeInsets.all(14),
-                          child: Text('Sin productos vendidos en el rango.'),
-                        ),
-                      )
-                    else
-                      ...visibleTopProducts.map(
-                        (AnalyticsTopProductStat product) => Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: AnalyticsTopProductTile(
-                            name: product.productName,
-                            subtitle: _formatUnits(product.qty),
-                            amount: _money(product.totalCents),
-                            deltaPercent: product.deltaPercent,
-                            deltaText: _formatDelta(product.deltaPercent),
-                            imagePath: product.imagePath,
-                          ),
-                        ),
+                    ] else ...<Widget>[
+                      _AnalyticsDateRangeCard(
+                        value: _formatDateRange(_range),
+                        onTap: _pickDateRange,
+                        compact: false,
                       ),
+                      const SizedBox(height: 12),
+                      ..._buildPaymentsReportSections(context),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
+    );
+  }
+}
+
+class _ReportSelectorCard extends StatelessWidget {
+  const _ReportSelectorCard({
+    required this.selected,
+    required this.valueLabel,
+    required this.onChanged,
+  });
+
+  final _ReportViewType selected;
+  final String valueLabel;
+  final ValueChanged<_ReportViewType?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF111827) : Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isDark ? const Color(0xFF263244) : const Color(0xFFE2E8F0),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            'Tipo de reporte',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+            ),
+          ),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<_ReportViewType>(
+            initialValue: selected,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              isDense: true,
+              border: OutlineInputBorder(),
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+            items: const <DropdownMenuItem<_ReportViewType>>[
+              DropdownMenuItem<_ReportViewType>(
+                value: _ReportViewType.salesAnalytics,
+                child: Text('Analítica de ventas'),
+              ),
+              DropdownMenuItem<_ReportViewType>(
+                value: _ReportViewType.paymentsDetail,
+                child: Text('Detalle de pagos'),
+              ),
+            ],
+            onChanged: onChanged,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            valueLabel,
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -641,10 +1286,12 @@ class _AnalyticsDateRangeCard extends StatelessWidget {
   const _AnalyticsDateRangeCard({
     required this.value,
     required this.onTap,
+    this.compact = true,
   });
 
   final String value;
   final VoidCallback onTap;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -653,49 +1300,63 @@ class _AnalyticsDateRangeCard extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Ink(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF0F172A) : Colors.white,
-            borderRadius: BorderRadius.circular(16),
+            color: isDark ? const Color(0xFF111827) : Colors.white,
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: isDark ? const Color(0xFF263244) : const Color(0xFFD8E0EC),
+              color: isDark ? const Color(0xFF263244) : const Color(0xFFE2E8F0),
             ),
-          ),
-          child: Row(
-            children: <Widget>[
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      'SELECCIONAR PERÍODO',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.8,
-                        color: isDark
-                            ? const Color(0xFF94A3B8)
-                            : const Color(0xFF64748B),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      value,
-                      style: TextStyle(
-                        fontSize: 31 / 2,
-                        fontWeight: FontWeight.w700,
-                        color: isDark ? Colors.white : const Color(0xFF0F172A),
-                      ),
+            boxShadow: isDark
+                ? null
+                : const <BoxShadow>[
+                    BoxShadow(
+                      color: Color(0x0F0F172A),
+                      blurRadius: 6,
+                      offset: Offset(0, 2),
                     ),
                   ],
-                ),
-              ),
+          ),
+          child: Row(
+            mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
+            children: <Widget>[
               const Icon(
-                Icons.calendar_today_rounded,
+                Icons.event_rounded,
+                size: 16,
                 color: Color(0xFF1152D4),
+              ),
+              const SizedBox(width: 6),
+              if (compact)
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: isDark ? Colors.white : const Color(0xFF0F172A),
+                  ),
+                )
+              else
+                Expanded(
+                  child: Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white : const Color(0xFF0F172A),
+                    ),
+                  ),
+                ),
+              const SizedBox(width: 4),
+              Icon(
+                Icons.expand_more_rounded,
+                size: 16,
+                color:
+                    isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
               ),
             ],
           ),

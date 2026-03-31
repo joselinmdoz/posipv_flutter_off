@@ -31,7 +31,7 @@ class TpvPage extends ConsumerStatefulWidget {
 class _TpvPageState extends ConsumerState<TpvPage> {
   List<TpvTerminalView> _terminals = <TpvTerminalView>[];
   bool _loading = true;
-  bool _showingIpvSheet = false;
+  final bool _showingIpvSheet = false;
   String _selectedFilter = 'all';
   final TextEditingController _searchCtrl = TextEditingController();
 
@@ -103,13 +103,6 @@ class _TpvPageState extends ConsumerState<TpvPage> {
     }
   }
 
-  Future<void> _openEmployeesManager({bool create = false}) async {
-    await context.push(create ? '/tpv-empleados?new=1' : '/tpv-empleados');
-    if (mounted) {
-      await _load();
-    }
-  }
-
   Future<void> _openSession(TpvTerminalView terminal) async {
     final UserSession? userSession = ref.read(currentSessionProvider);
     if (userSession == null) {
@@ -167,329 +160,6 @@ class _TpvPageState extends ConsumerState<TpvPage> {
       context.go('/ventas-pos');
     } catch (e) {
       _show('No se pudo abrir turno: $e');
-    }
-  }
-
-  Future<void> _closeSession(TpvTerminalView terminal) async {
-    final TpvSessionWithUser? open = terminal.openSession;
-    if (open == null) {
-      _show('No hay una sesion abierta en este TPV.');
-      return;
-    }
-
-    final UserSession? userSession = ref.read(currentSessionProvider);
-    if (userSession == null) {
-      _show('Debes iniciar sesion.');
-      return;
-    }
-
-    final bool isAdmin = userSession.isAdmin;
-    if (!isAdmin && open.user.id != userSession.userId) {
-      _show('Solo el usuario que abrio el turno puede cerrarlo.');
-      return;
-    }
-
-    final TpvLocalDataSource tpvDs = ref.read(tpvLocalDataSourceProvider);
-    final TpvTerminalConfig config =
-        tpvDs.configFromTerminal(terminal.terminal);
-    Map<String, int> expectedByMethod = <String, int>{};
-    try {
-      expectedByMethod =
-          await tpvDs.getSessionExpectedPaymentsByMethod(open.session.id);
-    } catch (_) {
-      expectedByMethod = <String, int>{};
-    }
-    if (!mounted) {
-      return;
-    }
-    final Map<String, int> expectedConfigured = <String, int>{
-      for (final String method in config.paymentMethods)
-        method: expectedByMethod[method] ?? 0,
-    };
-    final int expectedCashFromSalesCents = expectedConfigured['cash'] ?? 0;
-    final int expectedCashCents =
-        open.session.openingFloatCents + expectedCashFromSalesCents;
-
-    String closeNoteText = '';
-    final Map<int, String> countTexts = <int, String>{
-      for (final int cents in config.cashDenominationsCents) cents: '',
-    };
-    int totalCents = 0;
-    int cashDifferenceCents = -expectedCashCents;
-    bool cashMatchesExpected = expectedCashCents == 0;
-
-    void recalculate() {
-      int total = 0;
-      for (final MapEntry<int, String> entry in countTexts.entries) {
-        final int qty = int.tryParse(entry.value.trim()) ?? 0;
-        if (qty > 0) {
-          total += qty * entry.key;
-        }
-      }
-      totalCents = total;
-      cashDifferenceCents = totalCents - expectedCashCents;
-      cashMatchesExpected = cashDifferenceCents == 0;
-    }
-
-    recalculate();
-
-    final bool? confirm = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setStateDialog) {
-            void updateDialog(void Function() fn) {
-              if (!context.mounted) {
-                return;
-              }
-              setStateDialog(fn);
-            }
-
-            return AlertDialog(
-              insetPadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              title: Text('Cerrar turno en ${terminal.terminal.name}'),
-              content: SizedBox(
-                width: 420,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.sizeOf(context).height * 0.62,
-                  ),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        const Text(
-                          'Montos esperados por metodo',
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 8),
-                        ...config.paymentMethods.map((String method) {
-                          final int cents = expectedConfigured[method] ?? 0;
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: Row(
-                              children: <Widget>[
-                                Expanded(
-                                  child: Text(
-                                    _paymentMethodLabel(method),
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                Text(
-                                  _formatCentsWithSymbol(
-                                    cents,
-                                    config.currencySymbol,
-                                  ),
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
-                        const SizedBox(height: 8),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFE8EEF9),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              Text(
-                                'Fondo inicial efectivo: ${_formatCentsWithSymbol(open.session.openingFloatCents, config.currencySymbol)}',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w600),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                'Esperado en efectivo: ${_formatCentsWithSymbol(expectedCashCents, config.currencySymbol)}',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w800),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        const Text(
-                          'Desglose por denominacion',
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 8),
-                        ...config.cashDenominationsCents.map((int cents) {
-                          final String label =
-                              '${config.currencySymbol}${(cents / 100).toStringAsFixed(cents % 100 == 0 ? 0 : 2)}';
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Row(
-                              children: <Widget>[
-                                SizedBox(
-                                  width: 120,
-                                  child: Text(
-                                    label,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: TextFormField(
-                                    initialValue: countTexts[cents] ?? '',
-                                    keyboardType: TextInputType.number,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Cantidad',
-                                      hintText: '0',
-                                    ),
-                                    onChanged: (String value) {
-                                      countTexts[cents] = value;
-                                      updateDialog(recalculate);
-                                    },
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
-                        const SizedBox(height: 10),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFEDE7FA),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            'Total contado: ${config.currencySymbol}${(totalCents / 100).toStringAsFixed(2)}',
-                            style: const TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: cashMatchesExpected
-                                ? const Color(0xFFE3F5EE)
-                                : const Color(0xFFFCE9EE),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              Text(
-                                cashMatchesExpected
-                                    ? 'Coincidencia efectivo: SI'
-                                    : 'Coincidencia efectivo: NO',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  color: cashMatchesExpected
-                                      ? const Color(0xFF148A65)
-                                      : const Color(0xFFB13B5A),
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                'Diferencia: ${cashDifferenceCents > 0 ? '+' : cashDifferenceCents < 0 ? '-' : ''}${_formatCentsWithSymbol(cashDifferenceCents.abs(), config.currencySymbol)}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        TextFormField(
-                          initialValue: closeNoteText,
-                          decoration: const InputDecoration(
-                            labelText: 'Nota (opcional)',
-                          ),
-                          onChanged: (String value) => closeNoteText = value,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: () {
-                    FocusScope.of(context).unfocus();
-                    Navigator.of(context).pop(false);
-                  },
-                  child: const Text('Cancelar'),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    FocusScope.of(context).unfocus();
-                    Navigator.of(context).pop(true);
-                  },
-                  child: const Text('Cerrar'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-    if (confirm != true) {
-      return;
-    }
-
-    final Map<int, int> breakdown = <int, int>{};
-    for (final MapEntry<int, String> entry in countTexts.entries) {
-      final int qty = int.tryParse(entry.value.trim()) ?? 0;
-      if (qty > 0) {
-        breakdown[entry.key] = qty;
-      }
-    }
-    final String closeNote = closeNoteText;
-
-    if (breakdown.isEmpty) {
-      _show('Debes ingresar al menos una denominacion para cerrar el turno.');
-      return;
-    }
-
-    try {
-      await ref.read(tpvLocalDataSourceProvider).closeSession(
-            sessionId: open.session.id,
-            closingCashCents: totalCents,
-            note: closeNote,
-            closedByUserId: userSession.userId,
-            cashCountByDenomination: breakdown,
-          );
-      await _load();
-      ref.invalidate(tpvTerminalsProvider);
-      if (userSession.activeTerminalId == terminal.terminal.id) {
-        final UserSession nextSession =
-            userSession.copyWith(activeTerminalId: null);
-        ref.read(currentSessionProvider.notifier).state = nextSession;
-        unawaited(
-          ref.read(localAuthServiceProvider).persistSession(
-                session: nextSession,
-                rememberOnDevice: true,
-              ),
-        );
-      }
-      _show('Turno cerrado.');
-    } catch (e) {
-      _show('No se pudo cerrar turno: $e');
     }
   }
 
@@ -603,27 +273,6 @@ class _TpvPageState extends ConsumerState<TpvPage> {
     context.go('/ventas-pos');
   }
 
-  String _formatCentsWithSymbol(int cents, String symbol) {
-    return '$symbol${(cents / 100).toStringAsFixed(2)}';
-  }
-
-  String _paymentMethodLabel(String method) {
-    switch (method) {
-      case 'cash':
-        return 'Efectivo';
-      case 'card':
-        return 'Tarjeta';
-      case 'transfer':
-        return 'Transferencia';
-      case 'wallet':
-        return 'Billetera';
-      case 'consignment':
-        return 'Consignación';
-      default:
-        return method;
-    }
-  }
-
   void _show(String message) {
     if (!mounted) {
       return;
@@ -722,11 +371,6 @@ class _TpvPageState extends ConsumerState<TpvPage> {
           onPressed: _openManualSync,
           icon: const Icon(Icons.sync_alt_rounded),
           tooltip: 'Sincronización manual',
-        ),
-        IconButton(
-          onPressed: () {},
-          icon: const Icon(Icons.more_vert_rounded),
-          tooltip: 'Opciones',
         ),
       ],
       floatingActionButton: license.canWrite && canManageTerminals
@@ -867,8 +511,6 @@ class _TpvPageState extends ConsumerState<TpvPage> {
                                         : null,
                                     onGoToPos: () => _goToPos(terminal),
                                     onOpenSession: () => _openSession(terminal),
-                                    onCloseSession: () =>
-                                        _closeSession(terminal),
                                     onHistory: () => _openHistory(terminal),
                                     onIpv: () =>
                                         _openCurrentSessionIpv(terminal),

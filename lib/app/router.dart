@@ -22,6 +22,7 @@ import '../features/auth/presentation/role_permissions_management_page.dart';
 import '../features/clientes/presentation/clientes_page.dart';
 import '../features/consignaciones/presentation/consignaciones_page.dart';
 import '../features/home/presentation/home_page.dart';
+import '../features/home/presentation/home_recent_activity_page.dart';
 import '../features/inventario/presentation/inventario_page.dart';
 import '../features/inventario/presentation/movimientos_inventario_page.dart';
 import '../features/licencia/presentation/licencia_page.dart';
@@ -220,6 +221,10 @@ final Provider<GoRouter> appRouterProvider = Provider<GoRouter>((Ref ref) {
       GoRoute(
         path: '/sync-manual',
         builder: (context, state) => const ManualSyncPage(),
+      ),
+      GoRoute(
+        path: '/home-actividad-reciente',
+        builder: (context, state) => const HomeRecentActivityPage(),
       ),
     ],
   );

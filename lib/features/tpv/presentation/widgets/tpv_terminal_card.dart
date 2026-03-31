@@ -6,7 +6,6 @@ import '../../data/tpv_local_datasource.dart';
 class TpvTerminalCard extends StatelessWidget {
   final TpvTerminalView terminal;
   final VoidCallback onOpenSession;
-  final VoidCallback onCloseSession;
   final VoidCallback onGoToPos;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
@@ -18,7 +17,6 @@ class TpvTerminalCard extends StatelessWidget {
     super.key,
     required this.terminal,
     required this.onOpenSession,
-    required this.onCloseSession,
     required this.onGoToPos,
     this.onEdit,
     this.onDelete,
@@ -192,7 +190,6 @@ class TpvTerminalCard extends StatelessWidget {
                 Row(
                   children: [
                     Expanded(
-                      flex: 2,
                       child: FilledButton(
                         onPressed: isOpen ? onGoToPos : onOpenSession,
                         style: FilledButton.styleFrom(
@@ -221,28 +218,6 @@ class TpvTerminalCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (isOpen) ...[
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: onCloseSession,
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            side: BorderSide(
-                                color: isDark
-                                    ? const Color(0xFF334155)
-                                    : const Color(0xFFE2E8F0)),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16)),
-                          ),
-                          child: const Text(
-                            'Cerrar',
-                            style: TextStyle(
-                                fontWeight: FontWeight.w700, fontSize: 15),
-                          ),
-                        ),
-                      ),
-                    ],
                   ],
                 ),
                 if (isOpen) ...[

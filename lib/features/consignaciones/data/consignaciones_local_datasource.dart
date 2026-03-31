@@ -417,7 +417,9 @@ class ConsignacionesLocalDataSource {
         COALESCE(si.unit_price_cents, 0) AS unit_price_cents,
         COALESCE(si.line_total_cents, 0) AS line_total_cents
       FROM sale_items si
-      LEFT JOIN products p ON p.id = si.product_id
+      INNER JOIN products p
+        ON p.id = si.product_id
+       AND p.is_active = 1
       WHERE si.sale_id = ?
       ORDER BY product_name ASC
       ''',

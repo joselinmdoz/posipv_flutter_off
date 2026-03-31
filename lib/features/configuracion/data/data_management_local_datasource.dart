@@ -315,8 +315,9 @@ class DataManagementLocalDataSource {
               );
               continue;
             }
-            await _db.customStatement(
-              'INSERT INTO $table SELECT * FROM $backupAlias.$table;',
+            await _restoreTableWithColumnMapping(
+              backupAlias: backupAlias,
+              tableName: table,
             );
           }
         } finally {
@@ -354,6 +355,109 @@ class DataManagementLocalDataSource {
         .map((QueryRow row) => (row.readNullable<String>('name') ?? '').trim())
         .where((String name) => name.isNotEmpty)
         .toSet();
+  }
+
+  Future<List<_TableColumnInfo>> _loadTargetTableColumns({
+    required String tableName,
+  }) async {
+    final List<QueryRow> rows =
+        await _db.customSelect('PRAGMA table_info($tableName)').get();
+    final List<_TableColumnInfo> out = <_TableColumnInfo>[];
+    for (final QueryRow row in rows) {
+      final String name = (row.readNullable<String>('name') ?? '').trim();
+      if (name.isEmpty) {
+        continue;
+      }
+      out.add(
+        _TableColumnInfo(
+          name: name,
+          declaredType: (row.readNullable<String>('type') ?? '').trim(),
+          isNotNull: (row.data['notnull'] as num?)?.toInt() == 1,
+          defaultSql: row.readNullable<String>('dflt_value'),
+        ),
+      );
+    }
+    return out;
+  }
+
+  Future<void> _restoreTableWithColumnMapping({
+    required String backupAlias,
+    required String tableName,
+  }) async {
+    final List<_TableColumnInfo> targetColumns = await _loadTargetTableColumns(
+      tableName: tableName,
+    );
+    if (targetColumns.isEmpty) {
+      throw Exception(
+        'No se pudieron leer columnas de la tabla "$tableName".',
+      );
+    }
+
+    final Set<String> backupColumns = await _loadBackupTableColumns(
+      backupAlias: backupAlias,
+      tableName: tableName,
+    );
+    final List<String> insertColumns = <String>[];
+    final List<String> selectExpressions = <String>[];
+
+    for (final _TableColumnInfo column in targetColumns) {
+      insertColumns.add(_quoteIdent(column.name));
+      if (backupColumns.contains(column.name)) {
+        final String source = _quoteIdent(column.name);
+        if (column.isNotNull) {
+          final String fallback = _fallbackSqlForNotNullColumn(column);
+          selectExpressions.add('COALESCE($source, $fallback)');
+        } else {
+          selectExpressions.add(source);
+        }
+        continue;
+      }
+
+      if (!column.isNotNull) {
+        selectExpressions.add('NULL');
+        continue;
+      }
+
+      final String fallback = _fallbackSqlForNotNullColumn(column);
+      selectExpressions.add(fallback);
+    }
+
+    await _db.customStatement(
+      '''
+      INSERT INTO ${_quoteIdent(tableName)} (${insertColumns.join(', ')})
+      SELECT ${selectExpressions.join(', ')}
+      FROM $backupAlias.${_quoteIdent(tableName)}
+      ''',
+    );
+  }
+
+  String _quoteIdent(String value) {
+    return '"${value.replaceAll('"', '""')}"';
+  }
+
+  String _fallbackSqlForNotNullColumn(_TableColumnInfo column) {
+    final String defaultSql = (column.defaultSql ?? '').trim();
+    if (defaultSql.isNotEmpty) {
+      return defaultSql;
+    }
+
+    final String name = column.name.trim().toLowerCase();
+    if (name.endsWith('_at') ||
+        name.contains('date') ||
+        name.contains('time')) {
+      return 'CURRENT_TIMESTAMP';
+    }
+
+    final String type = column.declaredType.toUpperCase();
+    if (type.contains('INT') || type.contains('BOOL')) {
+      return '0';
+    }
+    if (type.contains('REAL') ||
+        type.contains('FLOA') ||
+        type.contains('DOUB')) {
+      return '0';
+    }
+    return "''";
   }
 
   Future<void> _restoreStockMovementsWithSanitization({
@@ -1191,4 +1295,18 @@ class DataManagementLocalDataSource {
     }
     return '${text.substring(0, max - 1)}…';
   }
+}
+
+class _TableColumnInfo {
+  const _TableColumnInfo({
+    required this.name,
+    required this.declaredType,
+    required this.isNotNull,
+    required this.defaultSql,
+  });
+
+  final String name;
+  final String declaredType;
+  final bool isNotNull;
+  final String? defaultSql;
 }

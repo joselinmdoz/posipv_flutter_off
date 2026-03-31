@@ -342,18 +342,7 @@ class _AlmacenesPageState extends ConsumerState<AlmacenesPage> {
       currentRoute: '/almacenes',
       onRefresh: _loadWarehouses,
       useDefaultActions: false,
-      appBarActions: <Widget>[
-        IconButton(
-          onPressed: () {},
-          icon: const Icon(Icons.print_rounded),
-          tooltip: 'Imprimir',
-        ),
-        IconButton(
-          onPressed: () {},
-          icon: const Icon(Icons.more_vert_rounded),
-          tooltip: 'Opciones',
-        ),
-      ],
+      appBarActions: const <Widget>[],
       floatingActionButton: license.canWrite && canManageWarehouses
           ? AppAddActionButton(
               currentRoute: '/almacenes',

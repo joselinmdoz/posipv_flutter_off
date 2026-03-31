@@ -1,28 +1,28 @@
 import 'package:flutter/material.dart';
 
-import '../../../inventario/data/inventario_local_datasource.dart';
+import '../../../ventas_pos/data/sale_service.dart';
 
-class ArchivedMovementCard extends StatelessWidget {
-  const ArchivedMovementCard({
+class ArchivedSaleCard extends StatelessWidget {
+  const ArchivedSaleCard({
     super.key,
-    required this.movement,
+    required this.sale,
     required this.createdAtLabel,
-    required this.voidedAtLabel,
+    required this.archivedAtLabel,
+    required this.totalLabel,
     this.onRestore,
     this.onDeletePermanently,
   });
 
-  final InventoryArchivedMovementView movement;
+  final ArchivedSaleView sale;
   final String createdAtLabel;
-  final String voidedAtLabel;
+  final String archivedAtLabel;
+  final String totalLabel;
   final VoidCallback? onRestore;
   final VoidCallback? onDeletePermanently;
 
   @override
   Widget build(BuildContext context) {
-    final bool isIn = movement.movementType == 'in';
-    final Color accent =
-        isIn ? const Color(0xFF059669) : const Color(0xFFB91C1C);
+    final bool isPos = sale.channel.trim().toLowerCase() == 'pos';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -44,9 +44,7 @@ class ArchivedMovementCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
                       Text(
-                        movement.productName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                        sale.folio,
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
@@ -55,8 +53,10 @@ class ArchivedMovementCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'SKU: ${movement.sku} • Almacén ${movement.warehouseName}',
-                        maxLines: 2,
+                        sale.customerName == null
+                            ? 'Cliente: Sin cliente'
+                            : 'Cliente: ${sale.customerName}',
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 13,
@@ -67,12 +67,24 @@ class ArchivedMovementCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  '${isIn ? '+' : '-'}${movement.qty.toStringAsFixed(2)}',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: accent,
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isPos
+                        ? const Color(0xFFE0EBFF)
+                        : const Color(0xFFDCFCE7),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    isPos ? 'POS' : 'DIRECTA',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: isPos
+                          ? const Color(0xFF1152D4)
+                          : const Color(0xFF047857),
+                    ),
                   ),
                 ),
               ],
@@ -82,9 +94,9 @@ class ArchivedMovementCard extends StatelessWidget {
               spacing: 8,
               runSpacing: 6,
               children: <Widget>[
-                _chip('Motivo: ${movement.reasonLabel}'),
-                _chip('Creado por: ${movement.createdByUsername}'),
-                _chip('Archivado por: ${movement.voidedByUsername}'),
+                _chip('Dependiente: ${sale.cashierName}'),
+                _chip('Almacén: ${sale.warehouseName}'),
+                _chip('Total: $totalLabel'),
               ],
             ),
             const SizedBox(height: 8),
@@ -92,7 +104,7 @@ class ArchivedMovementCard extends StatelessWidget {
               children: <Widget>[
                 Expanded(
                   child: Text(
-                    'Creado: $createdAtLabel',
+                    'Venta: $createdAtLabel',
                     style: const TextStyle(
                       fontSize: 12,
                       color: Color(0xFF6B7280),
@@ -102,7 +114,7 @@ class ArchivedMovementCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Archivado: $voidedAtLabel',
+                    'Archivada: $archivedAtLabel',
                     textAlign: TextAlign.end,
                     style: const TextStyle(
                       fontSize: 12,
@@ -112,25 +124,6 @@ class ArchivedMovementCard extends StatelessWidget {
                 ),
               ],
             ),
-            if ((movement.voidNote ?? '').trim().isNotEmpty) ...<Widget>[
-              const SizedBox(height: 8),
-              Container(
-                width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  movement.voidNote!.trim(),
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF475569),
-                  ),
-                ),
-              ),
-            ],
             if (onRestore != null) ...<Widget>[
               const SizedBox(height: 8),
               Align(
@@ -138,7 +131,7 @@ class ArchivedMovementCard extends StatelessWidget {
                 child: TextButton.icon(
                   onPressed: onRestore,
                   icon: const Icon(Icons.undo_rounded, size: 18),
-                  label: const Text('Revertir archivado'),
+                  label: const Text('Restaurar venta'),
                 ),
               ),
             ],

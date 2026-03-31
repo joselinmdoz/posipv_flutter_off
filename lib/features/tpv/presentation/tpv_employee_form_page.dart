@@ -1,11 +1,10 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../data/tpv_local_datasource.dart';
 import 'tpv_providers.dart';
+import 'widgets/tpv_form_widgets.dart';
 
 class TpvEmployeeFormPage extends ConsumerStatefulWidget {
   const TpvEmployeeFormPage({super.key, this.employee});
@@ -62,69 +61,46 @@ class _TpvEmployeeFormPageState extends ConsumerState<TpvEmployeeFormPage> {
 
   Future<void> _loadUsers() async {
     try {
-      final List<TpvUserOption> options =
+      final options =
           await ref.read(tpvLocalDataSourceProvider).listActiveUserOptions();
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       setState(() {
         _userOptions = options;
         if (_selectedUserId != null &&
-            options.every((TpvUserOption row) => row.id != _selectedUserId)) {
+            options.every((row) => row.id != _selectedUserId)) {
           _selectedUserId = null;
         }
         _loadingUsers = false;
       });
     } catch (_) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _userOptions = <TpvUserOption>[];
-        _selectedUserId = null;
-        _loadingUsers = false;
-      });
+      if (mounted) setState(() => _loadingUsers = false);
     }
   }
 
   Future<void> _pickImage() async {
-    final _EmployeeImageAction? action =
-        await showModalBottomSheet<_EmployeeImageAction>(
+    final action = await showModalBottomSheet<_EmployeeImageAction>(
       context: context,
-      builder: (BuildContext context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              ListTile(
-                leading: const Icon(Icons.photo_library_outlined),
-                title: const Text('Galería'),
-                onTap: () => Navigator.of(context)
-                    .pop(_EmployeeImageAction.gallery),
-              ),
-              ListTile(
-                leading: const Icon(Icons.photo_camera_outlined),
-                title: const Text('Cámara'),
-                onTap: () => Navigator.of(context)
-                    .pop(_EmployeeImageAction.camera),
-              ),
-              if ((_imagePath ?? '').isNotEmpty)
-                ListTile(
-                  leading: const Icon(Icons.delete_outline_rounded),
-                  title: const Text('Quitar imagen'),
-                  onTap: () => Navigator.of(context)
-                      .pop(_EmployeeImageAction.remove),
-                ),
-            ],
-          ),
-        );
-      },
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+              leading: const Icon(Icons.photo_library_rounded),
+              title: const Text('Galería'),
+              onTap: () => Navigator.pop(ctx, _EmployeeImageAction.gallery)),
+          ListTile(
+              leading: const Icon(Icons.camera_alt_rounded),
+              title: const Text('Cámara'),
+              onTap: () => Navigator.pop(ctx, _EmployeeImageAction.camera)),
+          if ((_imagePath ?? '').isNotEmpty)
+            ListTile(
+                leading: const Icon(Icons.delete_rounded),
+                title: const Text('Quitar'),
+                onTap: () => Navigator.pop(ctx, _EmployeeImageAction.remove)),
+        ],
+      ),
     );
 
-    if (action == null) {
-      return;
-    }
-
+    if (action == null) return;
     if (action == _EmployeeImageAction.remove) {
       setState(() => _imagePath = null);
       return;
@@ -135,27 +111,20 @@ class _TpvEmployeeFormPageState extends ConsumerState<TpvEmployeeFormPage> {
           ? ImageSource.camera
           : ImageSource.gallery,
       imageQuality: 85,
-      maxWidth: 1400,
     );
-
-    if (file == null || !mounted) {
-      return;
-    }
-
-    setState(() => _imagePath = file.path);
+    if (file != null) setState(() => _imagePath = file.path);
   }
 
   Future<void> _save() async {
     final String name = _nameCtrl.text.trim();
     if (name.isEmpty) {
-      _show('El nombre completo es obligatorio.');
+      _show('Nombre completo obligatorio');
       return;
     }
 
     setState(() => _saving = true);
-
     try {
-      final TpvLocalDataSource ds = ref.read(tpvLocalDataSourceProvider);
+      final ds = ref.read(tpvLocalDataSourceProvider);
       if (_isEditing) {
         await ds.updateEmployee(
           employeeId: widget.employee!.id,
@@ -178,190 +147,154 @@ class _TpvEmployeeFormPageState extends ConsumerState<TpvEmployeeFormPage> {
           associatedUserId: _selectedUserId,
         );
       }
-
-      if (!mounted) {
-        return;
-      }
-      Navigator.of(context).pop('saved');
+      if (mounted) Navigator.pop(context, 'saved');
     } catch (e) {
-      if (mounted) {
-        setState(() => _saving = false);
-      }
-      _show('No se pudo guardar registro: $e');
+      if (mounted) setState(() => _saving = false);
+      _show('Error: $e');
     }
   }
 
-  void _show(String message) {
-    if (!mounted) {
-      return;
-    }
+  void _show(String msg) {
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
-      ..showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  Widget _buildTextField({
-    required String label,
-    required String hintText,
-    required TextEditingController controller,
-    int minLines = 1,
-    int maxLines = 1,
-    TextInputType? keyboardType,
-  }) {
-    final ThemeData theme = Theme.of(context);
-    final bool isDark = theme.brightness == Brightness.dark;
-    
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 8),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155), // slate-300 : text-slate-700
-            ),
-          ),
-        ),
-        TextField(
-          controller: controller,
-          minLines: minLines,
-          maxLines: maxLines,
-          keyboardType: keyboardType,
-          textInputAction: maxLines == 1 ? TextInputAction.next : TextInputAction.newline,
-          style: TextStyle(
-            color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF1E293B),
-            fontSize: 15,
-          ),
-          decoration: InputDecoration(
-            hintText: hintText,
-            hintStyle: TextStyle(
-              color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8), // slate-500 : slate-400
-              fontSize: 15,
-            ),
-            filled: true,
-            fillColor: theme.cardColor,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 14,
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(
-                color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-              ),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(
-                color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-              ),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(
-                color: Color(0xFF1152D4),
-                width: 2,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSexOption(String label, String value) {
-    final bool selected = _selectedSex == value;
-    final ThemeData theme = Theme.of(context);
-    final bool isDark = theme.brightness == Brightness.dark;
-
-    return Expanded(
-      child: GestureDetector(
-        onTap: _saving ? null : () => setState(() => _selectedSex = value),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-          decoration: BoxDecoration(
-            color: selected
-                ? const Color(0xFF1152D4)
-                : theme.cardColor,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: selected
-                  ? const Color(0xFF1152D4)
-                  : isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-            ),
-            boxShadow: selected
-                ? <BoxShadow>[
-                    BoxShadow(
-                      color: const Color(0xFF1152D4).withValues(alpha: 0.1),
-                      blurRadius: 2,
-                      offset: const Offset(0, 1),
-                    )
-                  ]
-                : null,
-          ),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: selected
-                  ? Colors.white
-                  : isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
-            ),
-          ),
-        ),
-      ),
-    );
+      ..showSnackBar(SnackBar(content: Text(msg)));
   }
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final bool isDark = theme.brightness == Brightness.dark;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryColor = const Color(0xFF1152D4);
+    final cardBg = isDark ? const Color(0xFF1A202E) : Colors.white;
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC), // slate-900 : slate-50
+      backgroundColor:
+          isDark ? const Color(0xFF101622) : const Color(0xFFF1F5F9),
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: theme.appBarTheme.backgroundColor ?? theme.cardColor,
-        centerTitle: false,
-        titleSpacing: 0,
-        title: Text(
-          _isEditing ? 'Editar Empleado' : 'Registro de Empleado',
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            fontSize: 18,
-            letterSpacing: -0.5,
-            color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
-          ),
-        ),
+        backgroundColor: Colors.transparent,
         leading: IconButton(
-          onPressed: _saving ? null : () => Navigator.of(context).pop(),
-          icon: Icon(
-            Icons.arrow_back_rounded,
-            color: const Color(0xFF1152D4),
-          ),
+          onPressed: () => Navigator.pop(context),
+          icon: Icon(Icons.arrow_back_ios_new_rounded,
+              size: 20, color: primaryColor),
         ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(
-            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9), // slate-800 : slate-100
-            height: 1,
-          ),
-        ),
+        title: Text(
+            _isEditing ? 'Configuración de Empleado' : 'Registro de Empleado',
+            style: const TextStyle(
+                fontWeight: FontWeight.w900, fontFamily: 'Manrope')),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(24, 48, 24, 48),
+        padding: const EdgeInsets.all(24),
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 896), // max-w-4xl
-            child: SizedBox(
-               width: double.infinity,
-               child: _buildForm(theme, isDark),
+            constraints: const BoxConstraints(maxWidth: 600),
+            child: Column(
+              children: [
+                // Header Profile Photo
+                TpvEmployeePhotoPicker(
+                  imagePath: _imagePath,
+                  onPick: _pickImage,
+                  isDark: isDark,
+                  disabled: _saving,
+                ),
+                const SizedBox(height: 40),
+
+                // Form Card
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: cardBg,
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 20,
+                          offset: const Offset(0, 10))
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const _SectionTitle(title: 'DATOS PERSONALES'),
+                      const SizedBox(height: 16),
+                      TpvFormTextField(
+                          label: 'Nombre Completo',
+                          hintText: 'Ej. Juan Pérez',
+                          controller: _nameCtrl,
+                          icon: Icons.person_outline_rounded,
+                          isDark: isDark),
+                      const SizedBox(height: 16),
+                      TpvFormTextField(
+                          label: 'ID / Cédula',
+                          hintText: '000-000000-0000X',
+                          controller: _identityCtrl,
+                          icon: Icons.badge_outlined,
+                          isDark: isDark),
+                      const SizedBox(height: 16),
+                      const _Label(label: 'Género'),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          _buildChoice('MASCULINO', 'M', isDark),
+                          const SizedBox(width: 8),
+                          _buildChoice('FEMENINO', 'F', isDark),
+                          const SizedBox(width: 8),
+                          _buildChoice('OTRO', 'X', isDark),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                      const _SectionTitle(title: 'PROCESO & ACCESO'),
+                      const SizedBox(height: 16),
+                      _buildUserDropdown(isDark),
+                      const SizedBox(height: 16),
+                      TpvFormTextField(
+                          label: 'Dirección',
+                          hintText: 'Domicilio o residencia...',
+                          controller: _addressCtrl,
+                          icon: Icons.map_outlined,
+                          minLines: 3,
+                          maxLines: 5,
+                          isDark: isDark),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 40),
+
+                // Save Button
+                Container(
+                  width: double.infinity,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    gradient: LinearGradient(
+                        colors: [primaryColor, const Color(0xFF003CA7)]),
+                    boxShadow: [
+                      BoxShadow(
+                          color: primaryColor.withValues(alpha: 0.3),
+                          blurRadius: 12,
+                          offset: const Offset(0, 6))
+                    ],
+                  ),
+                  child: ElevatedButton(
+                    onPressed: _saving ? null : _save,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      shadowColor: Colors.transparent,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                    ),
+                    child: _saving
+                        ? const CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2)
+                        : const Text('GUARDAR REGISTRO',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1.5)),
+                  ),
+                ),
+                const SizedBox(height: 48),
+              ],
             ),
           ),
         ),
@@ -369,327 +302,91 @@ class _TpvEmployeeFormPageState extends ConsumerState<TpvEmployeeFormPage> {
     );
   }
 
-  Widget _buildForm(ThemeData theme, bool isDark) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final double width = constraints.maxWidth;
-        // Si la pantalla es lo suficientemente amplia, se divide en 2 columnas,
-        // parecido al grid-cols-1 md:grid-cols-12 del HTML.
-        if (width >= 768) {
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Photo Sidebar (md:col-span-4)
-              Expanded(
-                flex: 4,
-                child: _buildPhotoSidebar(theme, isDark),
-              ),
-              const SizedBox(width: 40),
-              // Fields Container (md:col-span-8)
-              Expanded(
-                flex: 8,
-                child: _buildFieldsContainer(theme, isDark),
-              ),
-            ],
-          );
-        } else {
-          // Mobile view
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              _buildPhotoSidebar(theme, isDark),
-              const SizedBox(height: 32),
-              _buildFieldsContainer(theme, isDark),
-            ],
-          );
-        }
-      },
-    );
-  }
-
-  Widget _buildPhotoSidebar(ThemeData theme, bool isDark) {
-    return Column(
-      children: [
-        GestureDetector(
-          onTap: _saving ? null : _pickImage,
-          child: Container(
-            width: 192,
-            height: 192,
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC), // slate-800 : slate-50
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0), // slate-700 : slate-200
-              ),
-              boxShadow: const <BoxShadow>[
-                BoxShadow(
-                  color: Color(0x0A000000), // shadow-sm
-                  blurRadius: 2,
-                  offset: Offset(0, 1),
-                ),
-              ],
-            ),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Center(
-                  child: _imagePath != null && _imagePath!.isNotEmpty
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(15),
-                          child: Image.file(
-                            File(_imagePath!),
-                            width: double.infinity,
-                            height: double.infinity,
-                            fit: BoxFit.cover,
-                          ),
-                        )
-                      : Icon(
-                          Icons.person_rounded,
-                          size: 64,
-                          color: isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1), // slate-600 : slate-300
-                        ),
-                ),
-                Positioned(
-                  bottom: -8,
-                  right: -8,
-                  child: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1152D4),
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: <BoxShadow>[
-                        BoxShadow(
-                          color: const Color(0xFF1152D4).withValues(alpha: 0.3),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4), // shadow-lg
-                        ),
-                      ],
-                    ),
-                    child: const Icon(
-                      Icons.add_a_photo_rounded,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+  Widget _buildChoice(String label, String value, bool isDark) {
+    final bool isSelected = _selectedSex == value;
+    return Expanded(
+      child: InkWell(
+        onTap: () => setState(() => _selectedSex = value),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? const Color(0xFF1152D4)
+                : (isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9)),
+            borderRadius: BorderRadius.circular(12),
           ),
-        ),
-        const SizedBox(height: 24),
-        Text(
-          'FORMATO JPG O PNG',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: isDark ? const Color(0xFF64748B) : const Color(0xFF64748B), // slate-500
-            letterSpacing: 0.8,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFieldsContainer(ThemeData theme, bool isDark) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildTextField(
-          label: 'Nombre Completo',
-          hintText: 'Ej. Alejandro Valenzuela',
-          controller: _nameCtrl,
-        ),
-        const SizedBox(height: 24),
-        // Grid 2 columns for ID and Phone equivalent
-        LayoutBuilder(
-          builder: (context, constraints) {
-            // Using MediaQuery or just the constraints to break into row
-            if (constraints.maxWidth >= 400) {
-              return Row(
-                children: [
-                  Expanded(
-                    child: _buildTextField(
-                      label: 'Número de Identidad',
-                      hintText: '000-000000-0000X',
-                      controller: _identityCtrl,
-                    ),
-                  ),
-                  const SizedBox(width: 24),
-                  // Using "Usuario asociado" instead of Phone to keep functionality
-                  Expanded(
-                    child: _buildUserDropdown(theme, isDark),
-                  ),
-                ],
-              );
-            } else {
-              return Column(
-                children: [
-                  _buildTextField(
-                    label: 'Número de Identidad',
-                    hintText: '000-000000-0000X',
-                    controller: _identityCtrl,
-                  ),
-                  const SizedBox(height: 24),
-                  _buildUserDropdown(theme, isDark),
-                ],
-              );
-            }
-          },
-        ),
-        const SizedBox(height: 24),
-        Text(
-          'Sexo',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-            color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            _buildSexOption('Masculino', 'M'),
-            const SizedBox(width: 12),
-            _buildSexOption('Femenino', 'F'),
-            const SizedBox(width: 12),
-            _buildSexOption('Otro', 'X'),
-          ],
-        ),
-        const SizedBox(height: 28),
-        _buildTextField(
-          label: 'Dirección Domiciliaria',
-          hintText: 'Calle, Número, Ciudad...',
-          controller: _addressCtrl,
-          minLines: 3,
-          maxLines: 4,
-        ),
-        const SizedBox(height: 32),
-        SizedBox(
-          width: double.infinity,
-          height: 56,
-          child: FilledButton.icon(
-            onPressed: _saving ? null : _save,
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF1152D4),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              elevation: 4,
-              shadowColor: const Color(0xFF1152D4).withValues(alpha: 0.4),
-            ),
-            icon: const Icon(Icons.save_rounded),
-            label: Text(
-              _saving ? 'Guardando...' : 'Guardar Registro',
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildUserDropdown(ThemeData theme, bool isDark) {
-    if (_loadingUsers) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 8),
-            child: Text(
-              'Usuario Asociado',
+          child: Text(label,
+              textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155),
-              ),
-            ),
-          ),
-          Container(
-            height: 52,
-            decoration: BoxDecoration(
-              color: theme.cardColor,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-              ),
-            ),
-            child: const Center(
-              child: SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-    
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  color: isSelected ? Colors.white : Colors.grey)),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUserDropdown(bool isDark) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 8),
-          child: Text(
-            'Usuario Asociado',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155),
-            ),
-          ),
-        ),
+        const _Label(label: 'Usuario de Sistema (Login)'),
+        const SizedBox(height: 8),
         DropdownButtonFormField<String?>(
-          value: _selectedUserId,
+          initialValue: _selectedUserId,
           isExpanded: true,
           decoration: InputDecoration(
             filled: true,
-            fillColor: theme.cardColor,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 14,
-            ),
+            fillColor:
+                isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+            contentPadding: const EdgeInsets.all(16),
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(
-                color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-              ),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(
-                color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-              ),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(
-                color: Color(0xFF1152D4),
-                width: 2,
-              ),
-            ),
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide.none),
+            prefixIcon: const Icon(Icons.lock_person_outlined,
+                size: 20, color: Color(0xFF1152D4)),
           ),
           items: [
             const DropdownMenuItem(
-                value: null, child: Text('Sin usuario (vacio)')),
-            ..._userOptions.map(
-              (TpvUserOption user) => DropdownMenuItem(
-                value: user.id,
-                child: Text(user.username),
-              ),
-            )
+                value: null, child: Text('Asignar más tarde (Sin usuario)')),
+            ..._userOptions.map((user) =>
+                DropdownMenuItem(value: user.id, child: Text(user.username))),
           ],
-          onChanged: _saving
-              ? null
-              : (String? v) => setState(() => _selectedUserId = v),
+          onChanged:
+              _loadingUsers ? null : (v) => setState(() => _selectedUserId = v),
         ),
       ],
     );
   }
 }
+
+class _SectionTitle extends StatelessWidget {
+  final String title;
+  const _SectionTitle({required this.title});
+  @override
+  Widget build(BuildContext context) {
+    return Text(title,
+        style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w900,
+            color: Color(0xFF1152D4),
+            letterSpacing: 1.5));
+  }
+}
+
+class _Label extends StatelessWidget {
+  final String label;
+  const _Label({required this.label});
+  @override
+  Widget build(BuildContext context) {
+    return Text(label.toUpperCase(),
+        style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            color: Colors.grey,
+            letterSpacing: 1));
+  }
+}
+
 enum _EmployeeImageAction { gallery, camera, remove }

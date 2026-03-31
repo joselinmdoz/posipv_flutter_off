@@ -13,7 +13,7 @@ class AnalyticsSalesListPage extends ConsumerStatefulWidget {
     required this.fromDate,
     required this.toDate,
     required this.currencySymbol,
-    this.title = 'Ventas del período',
+    this.title = 'Total de ventas',
     this.channel,
     this.paymentMethodKey,
     this.dependentKey,
@@ -98,19 +98,35 @@ class _AnalyticsSalesListPageState
   }
 
   Future<void> _openDetail(SalesAnalyticsSaleStat sale) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+    final bool? result = await Navigator.of(context).push(
+      MaterialPageRoute<bool>(
         builder: (_) => AnalyticsSaleDetailPage(
           saleId: sale.saleId,
           currencySymbol: widget.currencySymbol,
         ),
       ),
     );
+    if (result == true) {
+      await _load();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final ThemeData theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
+
+    // Colores basados en el HTML
+    final Color primaryNavy = const Color(0xFF1E3A8A); // primary
+    final Color accentBlue = const Color(0xFF3B82F6); // accent
+    final Color backgroundPage =
+        isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAF4); // slate-900 / slate-50
+    final Color cardBg =
+        isDark ? const Color(0xFF1E293B) : const Color(0xFFFFFFFF); // slate-800 / white
+    final Color borderCol =
+        isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0); // slate-700 / slate-200
+    final Color textMuted =
+        isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B); // slate-400 / slate-500
 
     return AppScaffold(
       title: widget.title,
@@ -126,124 +142,205 @@ class _AnalyticsSalesListPageState
           }
           context.go('/reportes');
         },
-        icon: const Icon(Icons.arrow_back_rounded),
+        icon: Icon(Icons.arrow_back_rounded, color: isDark ? Colors.white : Colors.black87),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _sales.isEmpty
-              ? const Center(child: Text('No hay ventas en este período.'))
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-                    itemBuilder: (BuildContext context, int index) {
-                      final SalesAnalyticsSaleStat sale = _sales[index];
-                      return Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(14),
-                          onTap: () => _openDetail(sale),
-                          child: Ink(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: isDark
-                                  ? const Color(0xFF0F172A)
-                                  : Colors.white,
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color: isDark
-                                    ? const Color(0xFF263244)
-                                    : const Color(0xFFD8E0EC),
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: <Widget>[
-                                Row(
-                                  children: <Widget>[
-                                    Expanded(
-                                      child: Text(
-                                        sale.folio,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        borderRadius:
-                                            BorderRadius.circular(999),
-                                        color: sale.channel == 'pos'
-                                            ? const Color(0xFFE0EBFF)
-                                            : const Color(0xFFDCFCE7),
-                                      ),
-                                      child: Text(
-                                        sale.channel == 'pos'
-                                            ? 'POS'
-                                            : 'DIRECTA',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w800,
-                                          color: sale.channel == 'pos'
-                                              ? const Color(0xFF1152D4)
-                                              : const Color(0xFF047857),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  _dateTime(sale.createdAt),
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: isDark
-                                        ? const Color(0xFF94A3B8)
-                                        : const Color(0xFF64748B),
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text('Dependiente: ${sale.cashierUsername}'),
-                                Text('Almacén: ${sale.warehouseName}'),
-                                Text(
-                                  'Cliente: ${sale.customerName ?? 'Sin cliente'}',
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: <Widget>[
-                                    Text(
-                                      '${sale.itemsCount} líneas',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        color: isDark
-                                            ? const Color(0xFF94A3B8)
-                                            : const Color(0xFF64748B),
-                                      ),
-                                    ),
-                                    const Spacer(),
-                                    Text(
-                                      _money(sale.totalCents),
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => context.go('/ventas-pos'),
+        backgroundColor: primaryNavy,
+        foregroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+        child: const Icon(Icons.add_rounded, size: 32),
+      ),
+      body: Container(
+        color: backgroundPage,
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _sales.isEmpty
+                ? const Center(child: Text('No hay ventas en este período.'))
+                : RefreshIndicator(
+                    onRefresh: _load,
+                    child: ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+                      itemBuilder: (BuildContext context, int index) {
+                        final SalesAnalyticsSaleStat sale = _sales[index];
+                        return _buildSaleCard(
+                          context,
+                          sale,
+                          isDark,
+                          primaryNavy,
+                          accentBlue,
+                          cardBg,
+                          borderCol,
+                          textMuted,
+                        );
+                      },
+                      separatorBuilder: (_, __) => const SizedBox(height: 16),
+                      itemCount: _sales.length,
+                    ),
+                  ),
+      ),
+    );
+  }
+
+  Widget _buildSaleCard(
+    BuildContext context,
+    SalesAnalyticsSaleStat sale,
+    bool isDark,
+    Color primaryNavy,
+    Color accentBlue,
+    Color cardBg,
+    Color borderCol,
+    Color textMuted,
+  ) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _openDetail(sale),
+        child: Ink(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: cardBg,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: borderCol),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.03),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              // Row 1: Folio and Tag
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          sale.folio,
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? accentBlue : primaryNavy,
+                            letterSpacing: -0.4,
                           ),
                         ),
-                      );
-                    },
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemCount: _sales.length,
+                        const SizedBox(height: 2),
+                        Text(
+                          _dateTime(sale.createdAt),
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDBEAFE), // blue-100
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFFBFDBFE)), // blue-200
+                    ),
+                    child: const Text(
+                      'POS',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF1E40AF), // blue-800
+                        letterSpacing: 1.0,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              // Field Info
+              _buildInfoRow('Dependiente:', sale.cashierUsername, textMuted, isDark),
+              const SizedBox(height: 4),
+              _buildInfoRow('Almacén:', sale.warehouseName, textMuted, isDark),
+              const SizedBox(height: 4),
+              _buildInfoRow(
+                'Cliente:',
+                sale.customerName ?? 'Sin cliente',
+                textMuted,
+                isDark,
+                italic: sale.customerName == null,
+              ),
+              const SizedBox(height: 16),
+              // Footer
+              Container(
+                padding: const EdgeInsets.only(top: 12),
+                decoration: BoxDecoration(
+                  border: Border(
+                    top: BorderSide(
+                      color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                    ),
                   ),
                 ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: <Widget>[
+                    Text(
+                      '${sale.itemsCount} líneas',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: textMuted,
+                      ),
+                    ),
+                    Text(
+                      _money(sale.totalCents),
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white : const Color(0xFF0F172A),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value, Color textMuted, bool isDark,
+      {bool italic = false}) {
+    return Row(
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 14,
+            color: textMuted,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            value,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: italic
+                  ? textMuted.withValues(alpha: 0.7)
+                  : (isDark ? Colors.white : Colors.black87),
+              fontStyle: italic ? FontStyle.italic : FontStyle.normal,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

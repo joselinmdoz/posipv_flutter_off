@@ -1,23 +1,25 @@
 import 'package:flutter/material.dart';
 
-import '../../../productos/data/productos_local_datasource.dart';
+import '../../../tpv/data/tpv_local_datasource.dart';
+import '../../../tpv/presentation/widgets/tpv_employee_avatar.dart';
 
-class ArchivedProductCard extends StatelessWidget {
-  const ArchivedProductCard({
+class ArchivedEmployeeCard extends StatelessWidget {
+  const ArchivedEmployeeCard({
     super.key,
-    required this.product,
-    required this.dateLabel,
+    required this.employee,
     this.onRestore,
     this.onDeletePermanently,
   });
 
-  final ArchivedProductView product;
-  final String dateLabel;
+  final TpvEmployee employee;
   final VoidCallback? onRestore;
   final VoidCallback? onDeletePermanently;
 
   @override
   Widget build(BuildContext context) {
+    final String identity = (employee.identityNumber ?? '').trim();
+    final String user = (employee.associatedUsername ?? '').trim();
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
@@ -27,17 +29,16 @@ class ArchivedProductCard extends StatelessWidget {
         border: Border.all(color: const Color(0xFFE5E7EB)),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Container(
+          SizedBox(
             width: 50,
             height: 50,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF3F4F6),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.inventory_2_outlined,
-              color: Color(0xFF6B7280),
+            child: TpvEmployeeAvatar(
+              imagePath: employee.imagePath,
+              radius: 25,
+              backgroundColor: const Color(0xFFF3F4F6),
+              iconColor: const Color(0xFF6B7280),
             ),
           ),
           const SizedBox(width: 12),
@@ -46,7 +47,7 @@ class ArchivedProductCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(
-                  product.name,
+                  employee.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -57,7 +58,7 @@ class ArchivedProductCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'SKU: ${product.sku}',
+                  'Código: ${employee.code}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -65,15 +66,27 @@ class ArchivedProductCard extends StatelessWidget {
                     color: Color(0xFF6B7280),
                   ),
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  '${product.currencyCode} ${(product.priceCents / 100).toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF1D4ED8),
+                if (identity.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 2),
+                  Text(
+                    'CI: $identity',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF6B7280),
+                    ),
                   ),
-                ),
+                ],
+                if (user.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 2),
+                  Text(
+                    '@$user',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1152D4),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -84,7 +97,7 @@ class ArchivedProductCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEEF2FF),
+                  color: const Color(0xFFFFF1F2),
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: const Text(
@@ -92,17 +105,9 @@ class ArchivedProductCard extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w800,
-                    color: Color(0xFF1D4ED8),
+                    color: Color(0xFFBE123C),
                     letterSpacing: 0.3,
                   ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                dateLabel,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFF6B7280),
                 ),
               ),
               if (onRestore != null) ...<Widget>[

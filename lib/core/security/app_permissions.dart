@@ -223,6 +223,7 @@ class AppPermissionsCatalog {
 
   static const Map<String, String> routePermissionMap = <String, String>{
     '/home': AppPermissionKeys.homeView,
+    '/home-actividad-reciente': AppPermissionKeys.homeView,
     '/perfil-empleado': AppPermissionKeys.homeView,
     '/tpv': AppPermissionKeys.tpvView,
     '/sync-manual': AppPermissionKeys.tpvManageSessions,

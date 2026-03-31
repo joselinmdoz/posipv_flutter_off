@@ -14,7 +14,7 @@ class AnalyticsPeriodTabs extends StatelessWidget {
 
   static const List<_PeriodTabItem> _items = <_PeriodTabItem>[
     _PeriodTabItem('Día', SalesAnalyticsGranularity.day),
-    _PeriodTabItem('Semana', SalesAnalyticsGranularity.week),
+    _PeriodTabItem('Sem.', SalesAnalyticsGranularity.week),
     _PeriodTabItem('Mes', SalesAnalyticsGranularity.month),
     _PeriodTabItem('Año', SalesAnalyticsGranularity.year),
   ];
@@ -22,46 +22,51 @@ class AnalyticsPeriodTabs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF111827) : const Color(0xFFF2F4F6),
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: _items.map((_PeriodTabItem item) {
           final bool active = item.value == selected;
           return Padding(
-            padding: const EdgeInsets.only(right: 18),
+            padding: const EdgeInsets.only(right: 3),
             child: InkWell(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(9),
               onTap: () => onSelected(item.value),
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 7),
-                child: Column(
-                  children: <Widget>[
-                    Text(
-                      item.label,
-                      style: TextStyle(
-                        fontSize: 34 / 2,
-                        fontWeight: FontWeight.w700,
-                        color: active
-                            ? const Color(0xFF1152D4)
-                            : (isDark
-                                ? const Color(0xFF94A3B8)
-                                : const Color(0xFF64748B)),
-                      ),
-                    ),
-                    const SizedBox(height: 9),
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      width: item.label.length * 7,
-                      height: 3,
-                      decoration: BoxDecoration(
-                        color: active
-                            ? const Color(0xFF1152D4)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                    ),
-                  ],
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                decoration: BoxDecoration(
+                  color: active
+                      ? (isDark ? const Color(0xFF1F2937) : Colors.white)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(9),
+                  boxShadow: active && !isDark
+                      ? const <BoxShadow>[
+                          BoxShadow(
+                            color: Color(0x140F172A),
+                            blurRadius: 5,
+                            offset: Offset(0, 2),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Text(
+                  item.label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: active
+                        ? const Color(0xFF1152D4)
+                        : (isDark
+                            ? const Color(0xFF94A3B8)
+                            : const Color(0xFF64748B)),
+                  ),
                 ),
               ),
             ),

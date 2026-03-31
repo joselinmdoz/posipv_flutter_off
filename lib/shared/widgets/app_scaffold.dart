@@ -23,7 +23,7 @@ class AppScaffold extends ConsumerWidget {
     this.onRefresh,
     this.floatingActionButton,
     this.showTopTabs = true,
-    this.useDefaultActions = true,
+    this.useDefaultActions = false,
     this.appBarActions,
     this.showDrawer = true,
     this.appBarLeading,
