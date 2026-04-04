@@ -14,6 +14,9 @@ class SaleReceipt {
     required this.totalCents,
     required this.payments,
     required this.paidCents,
+    this.receivedCents,
+    this.changeCents = 0,
+    this.changeReturned = true,
     this.customerName,
     this.customerCode,
     this.currencySymbol = r'$',
@@ -32,6 +35,9 @@ class SaleReceipt {
   final int totalCents;
   final List<ReceiptPayment> payments;
   final int paidCents;
+  final int? receivedCents;
+  final int changeCents;
+  final bool changeReturned;
   final String? customerName;
   final String? customerCode;
   final String currencySymbol;

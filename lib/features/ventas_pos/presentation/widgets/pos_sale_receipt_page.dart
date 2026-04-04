@@ -369,12 +369,14 @@ class PosSaleReceiptPage extends StatelessWidget {
   Widget _buildTotals(ColorScheme scheme, bool isDark) {
     final Color labelColor = isDark ? Colors.white60 : const Color(0xFF64748B);
     final Color valueColor = isDark ? Colors.white : const Color(0xFF0F172A);
-    final int safePaid = receipt.paidCents < 0
+    final int rawReceived = (receipt.receivedCents ?? receipt.paidCents) < 0
         ? 0
-        : (receipt.paidCents > receipt.totalCents
-            ? receipt.totalCents
-            : receipt.paidCents);
+        : (receipt.receivedCents ?? receipt.paidCents);
+    final int paidApplied = receipt.paidCents < 0 ? 0 : receipt.paidCents;
+    final int safePaid =
+        paidApplied > receipt.totalCents ? receipt.totalCents : paidApplied;
     final int pendingCents = receipt.totalCents - safePaid;
+    final int changeCents = receipt.changeCents < 0 ? 0 : receipt.changeCents;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -412,7 +414,20 @@ class PosSaleReceiptPage extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 8),
+          _detailRow('Recibido', _money(rawReceived), labelColor, valueColor),
+          const SizedBox(height: 8),
           _detailRow('Pagado', _money(safePaid), labelColor, valueColor),
+          if (changeCents > 0) ...<Widget>[
+            const SizedBox(height: 8),
+            _detailRow(
+              receipt.changeReturned ? 'Cambio devuelto' : 'Cambio no devuelto',
+              _money(changeCents),
+              labelColor,
+              receipt.changeReturned
+                  ? const Color(0xFFB91C1C)
+                  : const Color(0xFFB45309),
+            ),
+          ],
           const SizedBox(height: 8),
           _detailRow(
             'Pendiente',

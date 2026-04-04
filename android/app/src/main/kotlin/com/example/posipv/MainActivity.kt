@@ -24,6 +24,7 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val DEVICE_CHANNEL = "com.example.posipv/device_identity"
         private const val PICK_BACKUP_FILE_REQUEST = 7194
+        private const val PICK_SYNC_FILE_REQUEST = 7195
         private const val LICENSE_PUBLIC_KEY = """
 -----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzdlxu8PUy6QwhHhqtR2Z
@@ -37,6 +38,7 @@ RQIDAQAB
 """
     }
     private var pendingBackupPickerResult: MethodChannel.Result? = null
+    private var pendingSyncPickerResult: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -72,7 +74,7 @@ RQIDAQAB
                 }
 
                 "pickBackupFile" -> {
-                    if (pendingBackupPickerResult != null) {
+                    if (pendingBackupPickerResult != null || pendingSyncPickerResult != null) {
                         result.error(
                             "picker_busy",
                             "Ya hay un selector de archivo abierto.",
@@ -107,6 +109,42 @@ RQIDAQAB
                     }
                 }
 
+                "pickSyncFile" -> {
+                    if (pendingBackupPickerResult != null || pendingSyncPickerResult != null) {
+                        result.error(
+                            "picker_busy",
+                            "Ya hay un selector de archivo abierto.",
+                            null
+                        )
+                        return@setMethodCallHandler
+                    }
+                    pendingSyncPickerResult = result
+                    try {
+                        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "*/*"
+                            putExtra(
+                                Intent.EXTRA_MIME_TYPES,
+                                arrayOf(
+                                    "application/json",
+                                    "text/plain",
+                                    "application/octet-stream"
+                                )
+                            )
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                        }
+                        startActivityForResult(intent, PICK_SYNC_FILE_REQUEST)
+                    } catch (e: Exception) {
+                        pendingSyncPickerResult = null
+                        result.error(
+                            "picker_launch_failed",
+                            e.message ?: "No se pudo abrir el explorador de archivos.",
+                            null
+                        )
+                    }
+                }
+
                 "restartApp" -> {
                     try {
                         restartApplication()
@@ -127,12 +165,21 @@ RQIDAQAB
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != PICK_BACKUP_FILE_REQUEST) {
+        if (requestCode != PICK_BACKUP_FILE_REQUEST && requestCode != PICK_SYNC_FILE_REQUEST) {
             return
         }
 
-        val result = pendingBackupPickerResult
-        pendingBackupPickerResult = null
+        val isBackupPicker = requestCode == PICK_BACKUP_FILE_REQUEST
+        val result = if (isBackupPicker) {
+            pendingBackupPickerResult
+        } else {
+            pendingSyncPickerResult
+        }
+        if (isBackupPicker) {
+            pendingBackupPickerResult = null
+        } else {
+            pendingSyncPickerResult = null
+        }
         if (result == null) {
             return
         }
@@ -156,7 +203,9 @@ RQIDAQAB
             } catch (_: Exception) {
             }
 
-            val target = File(cacheDir, "picked-backup-${System.currentTimeMillis()}.db")
+            val targetSuffix = if (isBackupPicker) "db" else "json"
+            val targetPrefix = if (isBackupPicker) "picked-backup" else "picked-sync"
+            val target = File(cacheDir, "$targetPrefix-${System.currentTimeMillis()}.$targetSuffix")
             contentResolver.openInputStream(uri).use { input ->
                 if (input == null) {
                     throw IllegalStateException("No se pudo abrir el archivo seleccionado.")
@@ -168,8 +217,13 @@ RQIDAQAB
             result.success(target.absolutePath)
         } catch (e: Exception) {
             result.error(
-                "pick_backup_failed",
-                e.message ?: "No se pudo leer la copia seleccionada.",
+                if (isBackupPicker) "pick_backup_failed" else "pick_sync_failed",
+                e.message
+                    ?: if (isBackupPicker) {
+                        "No se pudo leer la copia seleccionada."
+                    } else {
+                        "No se pudo leer el archivo de sincronización seleccionado."
+                    },
                 null
             )
         }

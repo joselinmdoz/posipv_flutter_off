@@ -10117,6 +10117,1323 @@ class IpvReportLinesCompanion extends UpdateCompanion<IpvReportLine> {
   }
 }
 
+class $ManualIpvReportsTable extends ManualIpvReports
+    with TableInfo<$ManualIpvReportsTable, ManualIpvReport> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ManualIpvReportsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+      'id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _reportDateMeta =
+      const VerificationMeta('reportDate');
+  @override
+  late final GeneratedColumn<DateTime> reportDate = GeneratedColumn<DateTime>(
+      'report_date', aliasedName, false,
+      type: DriftSqlType.dateTime, requiredDuringInsert: true);
+  static const VerificationMeta _createdAtMeta =
+      const VerificationMeta('createdAt');
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+      'created_at', aliasedName, false,
+      type: DriftSqlType.dateTime,
+      requiredDuringInsert: false,
+      defaultValue: currentDateAndTime);
+  static const VerificationMeta _updatedAtMeta =
+      const VerificationMeta('updatedAt');
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+      'updated_at', aliasedName, true,
+      type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  static const VerificationMeta _createdByMeta =
+      const VerificationMeta('createdBy');
+  @override
+  late final GeneratedColumn<String> createdBy = GeneratedColumn<String>(
+      'created_by', aliasedName, true,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('REFERENCES users (id)'));
+  static const VerificationMeta _employeeIdsJsonMeta =
+      const VerificationMeta('employeeIdsJson');
+  @override
+  late final GeneratedColumn<String> employeeIdsJson = GeneratedColumn<String>(
+      'employee_ids_json', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('[]'));
+  static const VerificationMeta _employeeNamesJsonMeta =
+      const VerificationMeta('employeeNamesJson');
+  @override
+  late final GeneratedColumn<String> employeeNamesJson =
+      GeneratedColumn<String>('employee_names_json', aliasedName, false,
+          type: DriftSqlType.string,
+          requiredDuringInsert: false,
+          defaultValue: const Constant('[]'));
+  static const VerificationMeta _paymentTotalsJsonMeta =
+      const VerificationMeta('paymentTotalsJson');
+  @override
+  late final GeneratedColumn<String> paymentTotalsJson =
+      GeneratedColumn<String>('payment_totals_json', aliasedName, false,
+          type: DriftSqlType.string,
+          requiredDuringInsert: false,
+          defaultValue: const Constant('{}'));
+  static const VerificationMeta _currencySymbolMeta =
+      const VerificationMeta('currencySymbol');
+  @override
+  late final GeneratedColumn<String> currencySymbol = GeneratedColumn<String>(
+      'currency_symbol', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(r'$'));
+  static const VerificationMeta _noteMeta = const VerificationMeta('note');
+  @override
+  late final GeneratedColumn<String> note = GeneratedColumn<String>(
+      'note', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        reportDate,
+        createdAt,
+        updatedAt,
+        createdBy,
+        employeeIdsJson,
+        employeeNamesJson,
+        paymentTotalsJson,
+        currencySymbol,
+        note
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'manual_ipv_reports';
+  @override
+  VerificationContext validateIntegrity(Insertable<ManualIpvReport> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('report_date')) {
+      context.handle(
+          _reportDateMeta,
+          reportDate.isAcceptableOrUnknown(
+              data['report_date']!, _reportDateMeta));
+    } else if (isInserting) {
+      context.missing(_reportDateMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(_createdAtMeta,
+          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(_updatedAtMeta,
+          updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta));
+    }
+    if (data.containsKey('created_by')) {
+      context.handle(_createdByMeta,
+          createdBy.isAcceptableOrUnknown(data['created_by']!, _createdByMeta));
+    }
+    if (data.containsKey('employee_ids_json')) {
+      context.handle(
+          _employeeIdsJsonMeta,
+          employeeIdsJson.isAcceptableOrUnknown(
+              data['employee_ids_json']!, _employeeIdsJsonMeta));
+    }
+    if (data.containsKey('employee_names_json')) {
+      context.handle(
+          _employeeNamesJsonMeta,
+          employeeNamesJson.isAcceptableOrUnknown(
+              data['employee_names_json']!, _employeeNamesJsonMeta));
+    }
+    if (data.containsKey('payment_totals_json')) {
+      context.handle(
+          _paymentTotalsJsonMeta,
+          paymentTotalsJson.isAcceptableOrUnknown(
+              data['payment_totals_json']!, _paymentTotalsJsonMeta));
+    }
+    if (data.containsKey('currency_symbol')) {
+      context.handle(
+          _currencySymbolMeta,
+          currencySymbol.isAcceptableOrUnknown(
+              data['currency_symbol']!, _currencySymbolMeta));
+    }
+    if (data.containsKey('note')) {
+      context.handle(
+          _noteMeta, note.isAcceptableOrUnknown(data['note']!, _noteMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+        {reportDate},
+      ];
+  @override
+  ManualIpvReport map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ManualIpvReport(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
+      reportDate: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}report_date'])!,
+      createdAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
+      updatedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}updated_at']),
+      createdBy: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}created_by']),
+      employeeIdsJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}employee_ids_json'])!,
+      employeeNamesJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}employee_names_json'])!,
+      paymentTotalsJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}payment_totals_json'])!,
+      currencySymbol: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}currency_symbol'])!,
+      note: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}note']),
+    );
+  }
+
+  @override
+  $ManualIpvReportsTable createAlias(String alias) {
+    return $ManualIpvReportsTable(attachedDatabase, alias);
+  }
+}
+
+class ManualIpvReport extends DataClass implements Insertable<ManualIpvReport> {
+  final String id;
+  final DateTime reportDate;
+  final DateTime createdAt;
+  final DateTime? updatedAt;
+  final String? createdBy;
+  final String employeeIdsJson;
+  final String employeeNamesJson;
+  final String paymentTotalsJson;
+  final String currencySymbol;
+  final String? note;
+  const ManualIpvReport(
+      {required this.id,
+      required this.reportDate,
+      required this.createdAt,
+      this.updatedAt,
+      this.createdBy,
+      required this.employeeIdsJson,
+      required this.employeeNamesJson,
+      required this.paymentTotalsJson,
+      required this.currencySymbol,
+      this.note});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['report_date'] = Variable<DateTime>(reportDate);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    if (!nullToAbsent || updatedAt != null) {
+      map['updated_at'] = Variable<DateTime>(updatedAt);
+    }
+    if (!nullToAbsent || createdBy != null) {
+      map['created_by'] = Variable<String>(createdBy);
+    }
+    map['employee_ids_json'] = Variable<String>(employeeIdsJson);
+    map['employee_names_json'] = Variable<String>(employeeNamesJson);
+    map['payment_totals_json'] = Variable<String>(paymentTotalsJson);
+    map['currency_symbol'] = Variable<String>(currencySymbol);
+    if (!nullToAbsent || note != null) {
+      map['note'] = Variable<String>(note);
+    }
+    return map;
+  }
+
+  ManualIpvReportsCompanion toCompanion(bool nullToAbsent) {
+    return ManualIpvReportsCompanion(
+      id: Value(id),
+      reportDate: Value(reportDate),
+      createdAt: Value(createdAt),
+      updatedAt: updatedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(updatedAt),
+      createdBy: createdBy == null && nullToAbsent
+          ? const Value.absent()
+          : Value(createdBy),
+      employeeIdsJson: Value(employeeIdsJson),
+      employeeNamesJson: Value(employeeNamesJson),
+      paymentTotalsJson: Value(paymentTotalsJson),
+      currencySymbol: Value(currencySymbol),
+      note: note == null && nullToAbsent ? const Value.absent() : Value(note),
+    );
+  }
+
+  factory ManualIpvReport.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ManualIpvReport(
+      id: serializer.fromJson<String>(json['id']),
+      reportDate: serializer.fromJson<DateTime>(json['reportDate']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime?>(json['updatedAt']),
+      createdBy: serializer.fromJson<String?>(json['createdBy']),
+      employeeIdsJson: serializer.fromJson<String>(json['employeeIdsJson']),
+      employeeNamesJson: serializer.fromJson<String>(json['employeeNamesJson']),
+      paymentTotalsJson: serializer.fromJson<String>(json['paymentTotalsJson']),
+      currencySymbol: serializer.fromJson<String>(json['currencySymbol']),
+      note: serializer.fromJson<String?>(json['note']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'reportDate': serializer.toJson<DateTime>(reportDate),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime?>(updatedAt),
+      'createdBy': serializer.toJson<String?>(createdBy),
+      'employeeIdsJson': serializer.toJson<String>(employeeIdsJson),
+      'employeeNamesJson': serializer.toJson<String>(employeeNamesJson),
+      'paymentTotalsJson': serializer.toJson<String>(paymentTotalsJson),
+      'currencySymbol': serializer.toJson<String>(currencySymbol),
+      'note': serializer.toJson<String?>(note),
+    };
+  }
+
+  ManualIpvReport copyWith(
+          {String? id,
+          DateTime? reportDate,
+          DateTime? createdAt,
+          Value<DateTime?> updatedAt = const Value.absent(),
+          Value<String?> createdBy = const Value.absent(),
+          String? employeeIdsJson,
+          String? employeeNamesJson,
+          String? paymentTotalsJson,
+          String? currencySymbol,
+          Value<String?> note = const Value.absent()}) =>
+      ManualIpvReport(
+        id: id ?? this.id,
+        reportDate: reportDate ?? this.reportDate,
+        createdAt: createdAt ?? this.createdAt,
+        updatedAt: updatedAt.present ? updatedAt.value : this.updatedAt,
+        createdBy: createdBy.present ? createdBy.value : this.createdBy,
+        employeeIdsJson: employeeIdsJson ?? this.employeeIdsJson,
+        employeeNamesJson: employeeNamesJson ?? this.employeeNamesJson,
+        paymentTotalsJson: paymentTotalsJson ?? this.paymentTotalsJson,
+        currencySymbol: currencySymbol ?? this.currencySymbol,
+        note: note.present ? note.value : this.note,
+      );
+  ManualIpvReport copyWithCompanion(ManualIpvReportsCompanion data) {
+    return ManualIpvReport(
+      id: data.id.present ? data.id.value : this.id,
+      reportDate:
+          data.reportDate.present ? data.reportDate.value : this.reportDate,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      createdBy: data.createdBy.present ? data.createdBy.value : this.createdBy,
+      employeeIdsJson: data.employeeIdsJson.present
+          ? data.employeeIdsJson.value
+          : this.employeeIdsJson,
+      employeeNamesJson: data.employeeNamesJson.present
+          ? data.employeeNamesJson.value
+          : this.employeeNamesJson,
+      paymentTotalsJson: data.paymentTotalsJson.present
+          ? data.paymentTotalsJson.value
+          : this.paymentTotalsJson,
+      currencySymbol: data.currencySymbol.present
+          ? data.currencySymbol.value
+          : this.currencySymbol,
+      note: data.note.present ? data.note.value : this.note,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ManualIpvReport(')
+          ..write('id: $id, ')
+          ..write('reportDate: $reportDate, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('createdBy: $createdBy, ')
+          ..write('employeeIdsJson: $employeeIdsJson, ')
+          ..write('employeeNamesJson: $employeeNamesJson, ')
+          ..write('paymentTotalsJson: $paymentTotalsJson, ')
+          ..write('currencySymbol: $currencySymbol, ')
+          ..write('note: $note')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      id,
+      reportDate,
+      createdAt,
+      updatedAt,
+      createdBy,
+      employeeIdsJson,
+      employeeNamesJson,
+      paymentTotalsJson,
+      currencySymbol,
+      note);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ManualIpvReport &&
+          other.id == this.id &&
+          other.reportDate == this.reportDate &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt &&
+          other.createdBy == this.createdBy &&
+          other.employeeIdsJson == this.employeeIdsJson &&
+          other.employeeNamesJson == this.employeeNamesJson &&
+          other.paymentTotalsJson == this.paymentTotalsJson &&
+          other.currencySymbol == this.currencySymbol &&
+          other.note == this.note);
+}
+
+class ManualIpvReportsCompanion extends UpdateCompanion<ManualIpvReport> {
+  final Value<String> id;
+  final Value<DateTime> reportDate;
+  final Value<DateTime> createdAt;
+  final Value<DateTime?> updatedAt;
+  final Value<String?> createdBy;
+  final Value<String> employeeIdsJson;
+  final Value<String> employeeNamesJson;
+  final Value<String> paymentTotalsJson;
+  final Value<String> currencySymbol;
+  final Value<String?> note;
+  final Value<int> rowid;
+  const ManualIpvReportsCompanion({
+    this.id = const Value.absent(),
+    this.reportDate = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.createdBy = const Value.absent(),
+    this.employeeIdsJson = const Value.absent(),
+    this.employeeNamesJson = const Value.absent(),
+    this.paymentTotalsJson = const Value.absent(),
+    this.currencySymbol = const Value.absent(),
+    this.note = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ManualIpvReportsCompanion.insert({
+    required String id,
+    required DateTime reportDate,
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.createdBy = const Value.absent(),
+    this.employeeIdsJson = const Value.absent(),
+    this.employeeNamesJson = const Value.absent(),
+    this.paymentTotalsJson = const Value.absent(),
+    this.currencySymbol = const Value.absent(),
+    this.note = const Value.absent(),
+    this.rowid = const Value.absent(),
+  })  : id = Value(id),
+        reportDate = Value(reportDate);
+  static Insertable<ManualIpvReport> custom({
+    Expression<String>? id,
+    Expression<DateTime>? reportDate,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? updatedAt,
+    Expression<String>? createdBy,
+    Expression<String>? employeeIdsJson,
+    Expression<String>? employeeNamesJson,
+    Expression<String>? paymentTotalsJson,
+    Expression<String>? currencySymbol,
+    Expression<String>? note,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (reportDate != null) 'report_date': reportDate,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (createdBy != null) 'created_by': createdBy,
+      if (employeeIdsJson != null) 'employee_ids_json': employeeIdsJson,
+      if (employeeNamesJson != null) 'employee_names_json': employeeNamesJson,
+      if (paymentTotalsJson != null) 'payment_totals_json': paymentTotalsJson,
+      if (currencySymbol != null) 'currency_symbol': currencySymbol,
+      if (note != null) 'note': note,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ManualIpvReportsCompanion copyWith(
+      {Value<String>? id,
+      Value<DateTime>? reportDate,
+      Value<DateTime>? createdAt,
+      Value<DateTime?>? updatedAt,
+      Value<String?>? createdBy,
+      Value<String>? employeeIdsJson,
+      Value<String>? employeeNamesJson,
+      Value<String>? paymentTotalsJson,
+      Value<String>? currencySymbol,
+      Value<String?>? note,
+      Value<int>? rowid}) {
+    return ManualIpvReportsCompanion(
+      id: id ?? this.id,
+      reportDate: reportDate ?? this.reportDate,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      createdBy: createdBy ?? this.createdBy,
+      employeeIdsJson: employeeIdsJson ?? this.employeeIdsJson,
+      employeeNamesJson: employeeNamesJson ?? this.employeeNamesJson,
+      paymentTotalsJson: paymentTotalsJson ?? this.paymentTotalsJson,
+      currencySymbol: currencySymbol ?? this.currencySymbol,
+      note: note ?? this.note,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (reportDate.present) {
+      map['report_date'] = Variable<DateTime>(reportDate.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (createdBy.present) {
+      map['created_by'] = Variable<String>(createdBy.value);
+    }
+    if (employeeIdsJson.present) {
+      map['employee_ids_json'] = Variable<String>(employeeIdsJson.value);
+    }
+    if (employeeNamesJson.present) {
+      map['employee_names_json'] = Variable<String>(employeeNamesJson.value);
+    }
+    if (paymentTotalsJson.present) {
+      map['payment_totals_json'] = Variable<String>(paymentTotalsJson.value);
+    }
+    if (currencySymbol.present) {
+      map['currency_symbol'] = Variable<String>(currencySymbol.value);
+    }
+    if (note.present) {
+      map['note'] = Variable<String>(note.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ManualIpvReportsCompanion(')
+          ..write('id: $id, ')
+          ..write('reportDate: $reportDate, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('createdBy: $createdBy, ')
+          ..write('employeeIdsJson: $employeeIdsJson, ')
+          ..write('employeeNamesJson: $employeeNamesJson, ')
+          ..write('paymentTotalsJson: $paymentTotalsJson, ')
+          ..write('currencySymbol: $currencySymbol, ')
+          ..write('note: $note, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $ManualIpvReportLinesTable extends ManualIpvReportLines
+    with TableInfo<$ManualIpvReportLinesTable, ManualIpvReportLine> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ManualIpvReportLinesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+      'id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _reportIdMeta =
+      const VerificationMeta('reportId');
+  @override
+  late final GeneratedColumn<String> reportId = GeneratedColumn<String>(
+      'report_id', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES manual_ipv_reports (id)'));
+  static const VerificationMeta _productIdMeta =
+      const VerificationMeta('productId');
+  @override
+  late final GeneratedColumn<String> productId = GeneratedColumn<String>(
+      'product_id', aliasedName, true,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('REFERENCES products (id)'));
+  static const VerificationMeta _isCustomMeta =
+      const VerificationMeta('isCustom');
+  @override
+  late final GeneratedColumn<bool> isCustom = GeneratedColumn<bool>(
+      'is_custom', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("is_custom" IN (0, 1))'),
+      defaultValue: const Constant(false));
+  static const VerificationMeta _productNameSnapshotMeta =
+      const VerificationMeta('productNameSnapshot');
+  @override
+  late final GeneratedColumn<String> productNameSnapshot =
+      GeneratedColumn<String>('product_name_snapshot', aliasedName, false,
+          type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _productSkuSnapshotMeta =
+      const VerificationMeta('productSkuSnapshot');
+  @override
+  late final GeneratedColumn<String> productSkuSnapshot =
+      GeneratedColumn<String>('product_sku_snapshot', aliasedName, false,
+          type: DriftSqlType.string,
+          requiredDuringInsert: false,
+          defaultValue: const Constant('-'));
+  static const VerificationMeta _startQtyMeta =
+      const VerificationMeta('startQty');
+  @override
+  late final GeneratedColumn<double> startQty = GeneratedColumn<double>(
+      'start_qty', aliasedName, false,
+      type: DriftSqlType.double,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _entriesQtyMeta =
+      const VerificationMeta('entriesQty');
+  @override
+  late final GeneratedColumn<double> entriesQty = GeneratedColumn<double>(
+      'entries_qty', aliasedName, false,
+      type: DriftSqlType.double,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _outputsQtyMeta =
+      const VerificationMeta('outputsQty');
+  @override
+  late final GeneratedColumn<double> outputsQty = GeneratedColumn<double>(
+      'outputs_qty', aliasedName, false,
+      type: DriftSqlType.double,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _salesQtyMeta =
+      const VerificationMeta('salesQty');
+  @override
+  late final GeneratedColumn<double> salesQty = GeneratedColumn<double>(
+      'sales_qty', aliasedName, false,
+      type: DriftSqlType.double,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _finalQtyMeta =
+      const VerificationMeta('finalQty');
+  @override
+  late final GeneratedColumn<double> finalQty = GeneratedColumn<double>(
+      'final_qty', aliasedName, false,
+      type: DriftSqlType.double,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _salePriceCentsMeta =
+      const VerificationMeta('salePriceCents');
+  @override
+  late final GeneratedColumn<int> salePriceCents = GeneratedColumn<int>(
+      'sale_price_cents', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _unitCostCentsMeta =
+      const VerificationMeta('unitCostCents');
+  @override
+  late final GeneratedColumn<int> unitCostCents = GeneratedColumn<int>(
+      'unit_cost_cents', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _totalAmountCentsMeta =
+      const VerificationMeta('totalAmountCents');
+  @override
+  late final GeneratedColumn<int> totalAmountCents = GeneratedColumn<int>(
+      'total_amount_cents', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _sortOrderMeta =
+      const VerificationMeta('sortOrder');
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+      'sort_order', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _updatedAtMeta =
+      const VerificationMeta('updatedAt');
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+      'updated_at', aliasedName, true,
+      type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        reportId,
+        productId,
+        isCustom,
+        productNameSnapshot,
+        productSkuSnapshot,
+        startQty,
+        entriesQty,
+        outputsQty,
+        salesQty,
+        finalQty,
+        salePriceCents,
+        unitCostCents,
+        totalAmountCents,
+        sortOrder,
+        updatedAt
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'manual_ipv_report_lines';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<ManualIpvReportLine> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('report_id')) {
+      context.handle(_reportIdMeta,
+          reportId.isAcceptableOrUnknown(data['report_id']!, _reportIdMeta));
+    } else if (isInserting) {
+      context.missing(_reportIdMeta);
+    }
+    if (data.containsKey('product_id')) {
+      context.handle(_productIdMeta,
+          productId.isAcceptableOrUnknown(data['product_id']!, _productIdMeta));
+    }
+    if (data.containsKey('is_custom')) {
+      context.handle(_isCustomMeta,
+          isCustom.isAcceptableOrUnknown(data['is_custom']!, _isCustomMeta));
+    }
+    if (data.containsKey('product_name_snapshot')) {
+      context.handle(
+          _productNameSnapshotMeta,
+          productNameSnapshot.isAcceptableOrUnknown(
+              data['product_name_snapshot']!, _productNameSnapshotMeta));
+    } else if (isInserting) {
+      context.missing(_productNameSnapshotMeta);
+    }
+    if (data.containsKey('product_sku_snapshot')) {
+      context.handle(
+          _productSkuSnapshotMeta,
+          productSkuSnapshot.isAcceptableOrUnknown(
+              data['product_sku_snapshot']!, _productSkuSnapshotMeta));
+    }
+    if (data.containsKey('start_qty')) {
+      context.handle(_startQtyMeta,
+          startQty.isAcceptableOrUnknown(data['start_qty']!, _startQtyMeta));
+    }
+    if (data.containsKey('entries_qty')) {
+      context.handle(
+          _entriesQtyMeta,
+          entriesQty.isAcceptableOrUnknown(
+              data['entries_qty']!, _entriesQtyMeta));
+    }
+    if (data.containsKey('outputs_qty')) {
+      context.handle(
+          _outputsQtyMeta,
+          outputsQty.isAcceptableOrUnknown(
+              data['outputs_qty']!, _outputsQtyMeta));
+    }
+    if (data.containsKey('sales_qty')) {
+      context.handle(_salesQtyMeta,
+          salesQty.isAcceptableOrUnknown(data['sales_qty']!, _salesQtyMeta));
+    }
+    if (data.containsKey('final_qty')) {
+      context.handle(_finalQtyMeta,
+          finalQty.isAcceptableOrUnknown(data['final_qty']!, _finalQtyMeta));
+    }
+    if (data.containsKey('sale_price_cents')) {
+      context.handle(
+          _salePriceCentsMeta,
+          salePriceCents.isAcceptableOrUnknown(
+              data['sale_price_cents']!, _salePriceCentsMeta));
+    }
+    if (data.containsKey('unit_cost_cents')) {
+      context.handle(
+          _unitCostCentsMeta,
+          unitCostCents.isAcceptableOrUnknown(
+              data['unit_cost_cents']!, _unitCostCentsMeta));
+    }
+    if (data.containsKey('total_amount_cents')) {
+      context.handle(
+          _totalAmountCentsMeta,
+          totalAmountCents.isAcceptableOrUnknown(
+              data['total_amount_cents']!, _totalAmountCentsMeta));
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(_sortOrderMeta,
+          sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta));
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(_updatedAtMeta,
+          updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  ManualIpvReportLine map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ManualIpvReportLine(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
+      reportId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}report_id'])!,
+      productId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}product_id']),
+      isCustom: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}is_custom'])!,
+      productNameSnapshot: attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}product_name_snapshot'])!,
+      productSkuSnapshot: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}product_sku_snapshot'])!,
+      startQty: attachedDatabase.typeMapping
+          .read(DriftSqlType.double, data['${effectivePrefix}start_qty'])!,
+      entriesQty: attachedDatabase.typeMapping
+          .read(DriftSqlType.double, data['${effectivePrefix}entries_qty'])!,
+      outputsQty: attachedDatabase.typeMapping
+          .read(DriftSqlType.double, data['${effectivePrefix}outputs_qty'])!,
+      salesQty: attachedDatabase.typeMapping
+          .read(DriftSqlType.double, data['${effectivePrefix}sales_qty'])!,
+      finalQty: attachedDatabase.typeMapping
+          .read(DriftSqlType.double, data['${effectivePrefix}final_qty'])!,
+      salePriceCents: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}sale_price_cents'])!,
+      unitCostCents: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}unit_cost_cents'])!,
+      totalAmountCents: attachedDatabase.typeMapping.read(
+          DriftSqlType.int, data['${effectivePrefix}total_amount_cents'])!,
+      sortOrder: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}sort_order'])!,
+      updatedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}updated_at']),
+    );
+  }
+
+  @override
+  $ManualIpvReportLinesTable createAlias(String alias) {
+    return $ManualIpvReportLinesTable(attachedDatabase, alias);
+  }
+}
+
+class ManualIpvReportLine extends DataClass
+    implements Insertable<ManualIpvReportLine> {
+  final String id;
+  final String reportId;
+  final String? productId;
+  final bool isCustom;
+  final String productNameSnapshot;
+  final String productSkuSnapshot;
+  final double startQty;
+  final double entriesQty;
+  final double outputsQty;
+  final double salesQty;
+  final double finalQty;
+  final int salePriceCents;
+  final int unitCostCents;
+  final int totalAmountCents;
+  final int sortOrder;
+  final DateTime? updatedAt;
+  const ManualIpvReportLine(
+      {required this.id,
+      required this.reportId,
+      this.productId,
+      required this.isCustom,
+      required this.productNameSnapshot,
+      required this.productSkuSnapshot,
+      required this.startQty,
+      required this.entriesQty,
+      required this.outputsQty,
+      required this.salesQty,
+      required this.finalQty,
+      required this.salePriceCents,
+      required this.unitCostCents,
+      required this.totalAmountCents,
+      required this.sortOrder,
+      this.updatedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['report_id'] = Variable<String>(reportId);
+    if (!nullToAbsent || productId != null) {
+      map['product_id'] = Variable<String>(productId);
+    }
+    map['is_custom'] = Variable<bool>(isCustom);
+    map['product_name_snapshot'] = Variable<String>(productNameSnapshot);
+    map['product_sku_snapshot'] = Variable<String>(productSkuSnapshot);
+    map['start_qty'] = Variable<double>(startQty);
+    map['entries_qty'] = Variable<double>(entriesQty);
+    map['outputs_qty'] = Variable<double>(outputsQty);
+    map['sales_qty'] = Variable<double>(salesQty);
+    map['final_qty'] = Variable<double>(finalQty);
+    map['sale_price_cents'] = Variable<int>(salePriceCents);
+    map['unit_cost_cents'] = Variable<int>(unitCostCents);
+    map['total_amount_cents'] = Variable<int>(totalAmountCents);
+    map['sort_order'] = Variable<int>(sortOrder);
+    if (!nullToAbsent || updatedAt != null) {
+      map['updated_at'] = Variable<DateTime>(updatedAt);
+    }
+    return map;
+  }
+
+  ManualIpvReportLinesCompanion toCompanion(bool nullToAbsent) {
+    return ManualIpvReportLinesCompanion(
+      id: Value(id),
+      reportId: Value(reportId),
+      productId: productId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(productId),
+      isCustom: Value(isCustom),
+      productNameSnapshot: Value(productNameSnapshot),
+      productSkuSnapshot: Value(productSkuSnapshot),
+      startQty: Value(startQty),
+      entriesQty: Value(entriesQty),
+      outputsQty: Value(outputsQty),
+      salesQty: Value(salesQty),
+      finalQty: Value(finalQty),
+      salePriceCents: Value(salePriceCents),
+      unitCostCents: Value(unitCostCents),
+      totalAmountCents: Value(totalAmountCents),
+      sortOrder: Value(sortOrder),
+      updatedAt: updatedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(updatedAt),
+    );
+  }
+
+  factory ManualIpvReportLine.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ManualIpvReportLine(
+      id: serializer.fromJson<String>(json['id']),
+      reportId: serializer.fromJson<String>(json['reportId']),
+      productId: serializer.fromJson<String?>(json['productId']),
+      isCustom: serializer.fromJson<bool>(json['isCustom']),
+      productNameSnapshot:
+          serializer.fromJson<String>(json['productNameSnapshot']),
+      productSkuSnapshot:
+          serializer.fromJson<String>(json['productSkuSnapshot']),
+      startQty: serializer.fromJson<double>(json['startQty']),
+      entriesQty: serializer.fromJson<double>(json['entriesQty']),
+      outputsQty: serializer.fromJson<double>(json['outputsQty']),
+      salesQty: serializer.fromJson<double>(json['salesQty']),
+      finalQty: serializer.fromJson<double>(json['finalQty']),
+      salePriceCents: serializer.fromJson<int>(json['salePriceCents']),
+      unitCostCents: serializer.fromJson<int>(json['unitCostCents']),
+      totalAmountCents: serializer.fromJson<int>(json['totalAmountCents']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      updatedAt: serializer.fromJson<DateTime?>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'reportId': serializer.toJson<String>(reportId),
+      'productId': serializer.toJson<String?>(productId),
+      'isCustom': serializer.toJson<bool>(isCustom),
+      'productNameSnapshot': serializer.toJson<String>(productNameSnapshot),
+      'productSkuSnapshot': serializer.toJson<String>(productSkuSnapshot),
+      'startQty': serializer.toJson<double>(startQty),
+      'entriesQty': serializer.toJson<double>(entriesQty),
+      'outputsQty': serializer.toJson<double>(outputsQty),
+      'salesQty': serializer.toJson<double>(salesQty),
+      'finalQty': serializer.toJson<double>(finalQty),
+      'salePriceCents': serializer.toJson<int>(salePriceCents),
+      'unitCostCents': serializer.toJson<int>(unitCostCents),
+      'totalAmountCents': serializer.toJson<int>(totalAmountCents),
+      'sortOrder': serializer.toJson<int>(sortOrder),
+      'updatedAt': serializer.toJson<DateTime?>(updatedAt),
+    };
+  }
+
+  ManualIpvReportLine copyWith(
+          {String? id,
+          String? reportId,
+          Value<String?> productId = const Value.absent(),
+          bool? isCustom,
+          String? productNameSnapshot,
+          String? productSkuSnapshot,
+          double? startQty,
+          double? entriesQty,
+          double? outputsQty,
+          double? salesQty,
+          double? finalQty,
+          int? salePriceCents,
+          int? unitCostCents,
+          int? totalAmountCents,
+          int? sortOrder,
+          Value<DateTime?> updatedAt = const Value.absent()}) =>
+      ManualIpvReportLine(
+        id: id ?? this.id,
+        reportId: reportId ?? this.reportId,
+        productId: productId.present ? productId.value : this.productId,
+        isCustom: isCustom ?? this.isCustom,
+        productNameSnapshot: productNameSnapshot ?? this.productNameSnapshot,
+        productSkuSnapshot: productSkuSnapshot ?? this.productSkuSnapshot,
+        startQty: startQty ?? this.startQty,
+        entriesQty: entriesQty ?? this.entriesQty,
+        outputsQty: outputsQty ?? this.outputsQty,
+        salesQty: salesQty ?? this.salesQty,
+        finalQty: finalQty ?? this.finalQty,
+        salePriceCents: salePriceCents ?? this.salePriceCents,
+        unitCostCents: unitCostCents ?? this.unitCostCents,
+        totalAmountCents: totalAmountCents ?? this.totalAmountCents,
+        sortOrder: sortOrder ?? this.sortOrder,
+        updatedAt: updatedAt.present ? updatedAt.value : this.updatedAt,
+      );
+  ManualIpvReportLine copyWithCompanion(ManualIpvReportLinesCompanion data) {
+    return ManualIpvReportLine(
+      id: data.id.present ? data.id.value : this.id,
+      reportId: data.reportId.present ? data.reportId.value : this.reportId,
+      productId: data.productId.present ? data.productId.value : this.productId,
+      isCustom: data.isCustom.present ? data.isCustom.value : this.isCustom,
+      productNameSnapshot: data.productNameSnapshot.present
+          ? data.productNameSnapshot.value
+          : this.productNameSnapshot,
+      productSkuSnapshot: data.productSkuSnapshot.present
+          ? data.productSkuSnapshot.value
+          : this.productSkuSnapshot,
+      startQty: data.startQty.present ? data.startQty.value : this.startQty,
+      entriesQty:
+          data.entriesQty.present ? data.entriesQty.value : this.entriesQty,
+      outputsQty:
+          data.outputsQty.present ? data.outputsQty.value : this.outputsQty,
+      salesQty: data.salesQty.present ? data.salesQty.value : this.salesQty,
+      finalQty: data.finalQty.present ? data.finalQty.value : this.finalQty,
+      salePriceCents: data.salePriceCents.present
+          ? data.salePriceCents.value
+          : this.salePriceCents,
+      unitCostCents: data.unitCostCents.present
+          ? data.unitCostCents.value
+          : this.unitCostCents,
+      totalAmountCents: data.totalAmountCents.present
+          ? data.totalAmountCents.value
+          : this.totalAmountCents,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ManualIpvReportLine(')
+          ..write('id: $id, ')
+          ..write('reportId: $reportId, ')
+          ..write('productId: $productId, ')
+          ..write('isCustom: $isCustom, ')
+          ..write('productNameSnapshot: $productNameSnapshot, ')
+          ..write('productSkuSnapshot: $productSkuSnapshot, ')
+          ..write('startQty: $startQty, ')
+          ..write('entriesQty: $entriesQty, ')
+          ..write('outputsQty: $outputsQty, ')
+          ..write('salesQty: $salesQty, ')
+          ..write('finalQty: $finalQty, ')
+          ..write('salePriceCents: $salePriceCents, ')
+          ..write('unitCostCents: $unitCostCents, ')
+          ..write('totalAmountCents: $totalAmountCents, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      id,
+      reportId,
+      productId,
+      isCustom,
+      productNameSnapshot,
+      productSkuSnapshot,
+      startQty,
+      entriesQty,
+      outputsQty,
+      salesQty,
+      finalQty,
+      salePriceCents,
+      unitCostCents,
+      totalAmountCents,
+      sortOrder,
+      updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ManualIpvReportLine &&
+          other.id == this.id &&
+          other.reportId == this.reportId &&
+          other.productId == this.productId &&
+          other.isCustom == this.isCustom &&
+          other.productNameSnapshot == this.productNameSnapshot &&
+          other.productSkuSnapshot == this.productSkuSnapshot &&
+          other.startQty == this.startQty &&
+          other.entriesQty == this.entriesQty &&
+          other.outputsQty == this.outputsQty &&
+          other.salesQty == this.salesQty &&
+          other.finalQty == this.finalQty &&
+          other.salePriceCents == this.salePriceCents &&
+          other.unitCostCents == this.unitCostCents &&
+          other.totalAmountCents == this.totalAmountCents &&
+          other.sortOrder == this.sortOrder &&
+          other.updatedAt == this.updatedAt);
+}
+
+class ManualIpvReportLinesCompanion
+    extends UpdateCompanion<ManualIpvReportLine> {
+  final Value<String> id;
+  final Value<String> reportId;
+  final Value<String?> productId;
+  final Value<bool> isCustom;
+  final Value<String> productNameSnapshot;
+  final Value<String> productSkuSnapshot;
+  final Value<double> startQty;
+  final Value<double> entriesQty;
+  final Value<double> outputsQty;
+  final Value<double> salesQty;
+  final Value<double> finalQty;
+  final Value<int> salePriceCents;
+  final Value<int> unitCostCents;
+  final Value<int> totalAmountCents;
+  final Value<int> sortOrder;
+  final Value<DateTime?> updatedAt;
+  final Value<int> rowid;
+  const ManualIpvReportLinesCompanion({
+    this.id = const Value.absent(),
+    this.reportId = const Value.absent(),
+    this.productId = const Value.absent(),
+    this.isCustom = const Value.absent(),
+    this.productNameSnapshot = const Value.absent(),
+    this.productSkuSnapshot = const Value.absent(),
+    this.startQty = const Value.absent(),
+    this.entriesQty = const Value.absent(),
+    this.outputsQty = const Value.absent(),
+    this.salesQty = const Value.absent(),
+    this.finalQty = const Value.absent(),
+    this.salePriceCents = const Value.absent(),
+    this.unitCostCents = const Value.absent(),
+    this.totalAmountCents = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ManualIpvReportLinesCompanion.insert({
+    required String id,
+    required String reportId,
+    this.productId = const Value.absent(),
+    this.isCustom = const Value.absent(),
+    required String productNameSnapshot,
+    this.productSkuSnapshot = const Value.absent(),
+    this.startQty = const Value.absent(),
+    this.entriesQty = const Value.absent(),
+    this.outputsQty = const Value.absent(),
+    this.salesQty = const Value.absent(),
+    this.finalQty = const Value.absent(),
+    this.salePriceCents = const Value.absent(),
+    this.unitCostCents = const Value.absent(),
+    this.totalAmountCents = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  })  : id = Value(id),
+        reportId = Value(reportId),
+        productNameSnapshot = Value(productNameSnapshot);
+  static Insertable<ManualIpvReportLine> custom({
+    Expression<String>? id,
+    Expression<String>? reportId,
+    Expression<String>? productId,
+    Expression<bool>? isCustom,
+    Expression<String>? productNameSnapshot,
+    Expression<String>? productSkuSnapshot,
+    Expression<double>? startQty,
+    Expression<double>? entriesQty,
+    Expression<double>? outputsQty,
+    Expression<double>? salesQty,
+    Expression<double>? finalQty,
+    Expression<int>? salePriceCents,
+    Expression<int>? unitCostCents,
+    Expression<int>? totalAmountCents,
+    Expression<int>? sortOrder,
+    Expression<DateTime>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (reportId != null) 'report_id': reportId,
+      if (productId != null) 'product_id': productId,
+      if (isCustom != null) 'is_custom': isCustom,
+      if (productNameSnapshot != null)
+        'product_name_snapshot': productNameSnapshot,
+      if (productSkuSnapshot != null)
+        'product_sku_snapshot': productSkuSnapshot,
+      if (startQty != null) 'start_qty': startQty,
+      if (entriesQty != null) 'entries_qty': entriesQty,
+      if (outputsQty != null) 'outputs_qty': outputsQty,
+      if (salesQty != null) 'sales_qty': salesQty,
+      if (finalQty != null) 'final_qty': finalQty,
+      if (salePriceCents != null) 'sale_price_cents': salePriceCents,
+      if (unitCostCents != null) 'unit_cost_cents': unitCostCents,
+      if (totalAmountCents != null) 'total_amount_cents': totalAmountCents,
+      if (sortOrder != null) 'sort_order': sortOrder,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ManualIpvReportLinesCompanion copyWith(
+      {Value<String>? id,
+      Value<String>? reportId,
+      Value<String?>? productId,
+      Value<bool>? isCustom,
+      Value<String>? productNameSnapshot,
+      Value<String>? productSkuSnapshot,
+      Value<double>? startQty,
+      Value<double>? entriesQty,
+      Value<double>? outputsQty,
+      Value<double>? salesQty,
+      Value<double>? finalQty,
+      Value<int>? salePriceCents,
+      Value<int>? unitCostCents,
+      Value<int>? totalAmountCents,
+      Value<int>? sortOrder,
+      Value<DateTime?>? updatedAt,
+      Value<int>? rowid}) {
+    return ManualIpvReportLinesCompanion(
+      id: id ?? this.id,
+      reportId: reportId ?? this.reportId,
+      productId: productId ?? this.productId,
+      isCustom: isCustom ?? this.isCustom,
+      productNameSnapshot: productNameSnapshot ?? this.productNameSnapshot,
+      productSkuSnapshot: productSkuSnapshot ?? this.productSkuSnapshot,
+      startQty: startQty ?? this.startQty,
+      entriesQty: entriesQty ?? this.entriesQty,
+      outputsQty: outputsQty ?? this.outputsQty,
+      salesQty: salesQty ?? this.salesQty,
+      finalQty: finalQty ?? this.finalQty,
+      salePriceCents: salePriceCents ?? this.salePriceCents,
+      unitCostCents: unitCostCents ?? this.unitCostCents,
+      totalAmountCents: totalAmountCents ?? this.totalAmountCents,
+      sortOrder: sortOrder ?? this.sortOrder,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (reportId.present) {
+      map['report_id'] = Variable<String>(reportId.value);
+    }
+    if (productId.present) {
+      map['product_id'] = Variable<String>(productId.value);
+    }
+    if (isCustom.present) {
+      map['is_custom'] = Variable<bool>(isCustom.value);
+    }
+    if (productNameSnapshot.present) {
+      map['product_name_snapshot'] =
+          Variable<String>(productNameSnapshot.value);
+    }
+    if (productSkuSnapshot.present) {
+      map['product_sku_snapshot'] = Variable<String>(productSkuSnapshot.value);
+    }
+    if (startQty.present) {
+      map['start_qty'] = Variable<double>(startQty.value);
+    }
+    if (entriesQty.present) {
+      map['entries_qty'] = Variable<double>(entriesQty.value);
+    }
+    if (outputsQty.present) {
+      map['outputs_qty'] = Variable<double>(outputsQty.value);
+    }
+    if (salesQty.present) {
+      map['sales_qty'] = Variable<double>(salesQty.value);
+    }
+    if (finalQty.present) {
+      map['final_qty'] = Variable<double>(finalQty.value);
+    }
+    if (salePriceCents.present) {
+      map['sale_price_cents'] = Variable<int>(salePriceCents.value);
+    }
+    if (unitCostCents.present) {
+      map['unit_cost_cents'] = Variable<int>(unitCostCents.value);
+    }
+    if (totalAmountCents.present) {
+      map['total_amount_cents'] = Variable<int>(totalAmountCents.value);
+    }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ManualIpvReportLinesCompanion(')
+          ..write('id: $id, ')
+          ..write('reportId: $reportId, ')
+          ..write('productId: $productId, ')
+          ..write('isCustom: $isCustom, ')
+          ..write('productNameSnapshot: $productNameSnapshot, ')
+          ..write('productSkuSnapshot: $productSkuSnapshot, ')
+          ..write('startQty: $startQty, ')
+          ..write('entriesQty: $entriesQty, ')
+          ..write('outputsQty: $outputsQty, ')
+          ..write('salesQty: $salesQty, ')
+          ..write('finalQty: $finalQty, ')
+          ..write('salePriceCents: $salePriceCents, ')
+          ..write('unitCostCents: $unitCostCents, ')
+          ..write('totalAmountCents: $totalAmountCents, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $AppSettingsTable extends AppSettings
     with TableInfo<$AppSettingsTable, AppSetting> {
   @override
@@ -10761,6 +12078,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $PaymentsTable payments = $PaymentsTable(this);
   late final $IpvReportsTable ipvReports = $IpvReportsTable(this);
   late final $IpvReportLinesTable ipvReportLines = $IpvReportLinesTable(this);
+  late final $ManualIpvReportsTable manualIpvReports =
+      $ManualIpvReportsTable(this);
+  late final $ManualIpvReportLinesTable manualIpvReportLines =
+      $ManualIpvReportLinesTable(this);
   late final $AppSettingsTable appSettings = $AppSettingsTable(this);
   late final $AuditLogsTable auditLogs = $AuditLogsTable(this);
   @override
@@ -10790,6 +12111,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         payments,
         ipvReports,
         ipvReportLines,
+        manualIpvReports,
+        manualIpvReportLines,
         appSettings,
         auditLogs
       ];
@@ -10935,6 +12258,23 @@ final class $$UsersTableReferences
         .filter((f) => f.closedBy.id.sqlEquals($_itemColumn<String>('id')!));
 
     final cache = $_typedResult.readTableOrNull(_closedIpvReportsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
+
+  static MultiTypedResultKey<$ManualIpvReportsTable, List<ManualIpvReport>>
+      _manualIpvReportsRefsTable(_$AppDatabase db) =>
+          MultiTypedResultKey.fromTable(db.manualIpvReports,
+              aliasName: $_aliasNameGenerator(
+                  db.users.id, db.manualIpvReports.createdBy));
+
+  $$ManualIpvReportsTableProcessedTableManager get manualIpvReportsRefs {
+    final manager = $$ManualIpvReportsTableTableManager(
+            $_db, $_db.manualIpvReports)
+        .filter((f) => f.createdBy.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache =
+        $_typedResult.readTableOrNull(_manualIpvReportsRefsTable($_db));
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
@@ -11146,6 +12486,27 @@ class $$UsersTableFilterComposer extends Composer<_$AppDatabase, $UsersTable> {
             $$IpvReportsTableFilterComposer(
               $db: $db,
               $table: $db.ipvReports,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<bool> manualIpvReportsRefs(
+      Expression<bool> Function($$ManualIpvReportsTableFilterComposer f) f) {
+    final $$ManualIpvReportsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.manualIpvReports,
+        getReferencedColumn: (t) => t.createdBy,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ManualIpvReportsTableFilterComposer(
+              $db: $db,
+              $table: $db.manualIpvReports,
               $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
               joinBuilder: joinBuilder,
               $removeJoinBuilderFromRootComposer:
@@ -11412,6 +12773,27 @@ class $$UsersTableAnnotationComposer
     return f(composer);
   }
 
+  Expression<T> manualIpvReportsRefs<T extends Object>(
+      Expression<T> Function($$ManualIpvReportsTableAnnotationComposer a) f) {
+    final $$ManualIpvReportsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.manualIpvReports,
+        getReferencedColumn: (t) => t.createdBy,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ManualIpvReportsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.manualIpvReports,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
   Expression<T> auditLogsRefs<T extends Object>(
       Expression<T> Function($$AuditLogsTableAnnotationComposer a) f) {
     final $$AuditLogsTableAnnotationComposer composer = $composerBuilder(
@@ -11454,6 +12836,7 @@ class $$UsersTableTableManager extends RootTableManager<
         bool salesRefs,
         bool openedIpvReports,
         bool closedIpvReports,
+        bool manualIpvReportsRefs,
         bool auditLogsRefs})> {
   $$UsersTableTableManager(_$AppDatabase db, $UsersTable table)
       : super(TableManagerState(
@@ -11522,6 +12905,7 @@ class $$UsersTableTableManager extends RootTableManager<
               salesRefs = false,
               openedIpvReports = false,
               closedIpvReports = false,
+              manualIpvReportsRefs = false,
               auditLogsRefs = false}) {
             return PrefetchHooks(
               db: db,
@@ -11534,6 +12918,7 @@ class $$UsersTableTableManager extends RootTableManager<
                 if (salesRefs) db.sales,
                 if (openedIpvReports) db.ipvReports,
                 if (closedIpvReports) db.ipvReports,
+                if (manualIpvReportsRefs) db.manualIpvReports,
                 if (auditLogsRefs) db.auditLogs
               ],
               addJoins: null,
@@ -11632,6 +13017,19 @@ class $$UsersTableTableManager extends RootTableManager<
                                 referencedItems) =>
                             referencedItems.where((e) => e.closedBy == item.id),
                         typedResults: items),
+                  if (manualIpvReportsRefs)
+                    await $_getPrefetchedData<User, $UsersTable,
+                            ManualIpvReport>(
+                        currentTable: table,
+                        referencedTable: $$UsersTableReferences
+                            ._manualIpvReportsRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$UsersTableReferences(db, table, p0)
+                                .manualIpvReportsRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.createdBy == item.id),
+                        typedResults: items),
                   if (auditLogsRefs)
                     await $_getPrefetchedData<User, $UsersTable, AuditLog>(
                         currentTable: table,
@@ -11670,6 +13068,7 @@ typedef $$UsersTableProcessedTableManager = ProcessedTableManager<
         bool salesRefs,
         bool openedIpvReports,
         bool closedIpvReports,
+        bool manualIpvReportsRefs,
         bool auditLogsRefs})>;
 typedef $$RolesTableCreateCompanionBuilder = RolesCompanion Function({
   required String id,
@@ -13023,6 +14422,25 @@ final class $$ProductsTableReferences
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
+
+  static MultiTypedResultKey<$ManualIpvReportLinesTable,
+      List<ManualIpvReportLine>> _manualIpvReportLinesRefsTable(
+          _$AppDatabase db) =>
+      MultiTypedResultKey.fromTable(db.manualIpvReportLines,
+          aliasName: $_aliasNameGenerator(
+              db.products.id, db.manualIpvReportLines.productId));
+
+  $$ManualIpvReportLinesTableProcessedTableManager
+      get manualIpvReportLinesRefs {
+    final manager = $$ManualIpvReportLinesTableTableManager(
+            $_db, $_db.manualIpvReportLines)
+        .filter((f) => f.productId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache =
+        $_typedResult.readTableOrNull(_manualIpvReportLinesRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
 }
 
 class $$ProductsTableFilterComposer
@@ -13156,6 +14574,28 @@ class $$ProductsTableFilterComposer
             $$IpvReportLinesTableFilterComposer(
               $db: $db,
               $table: $db.ipvReportLines,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<bool> manualIpvReportLinesRefs(
+      Expression<bool> Function($$ManualIpvReportLinesTableFilterComposer f)
+          f) {
+    final $$ManualIpvReportLinesTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.manualIpvReportLines,
+        getReferencedColumn: (t) => t.productId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ManualIpvReportLinesTableFilterComposer(
+              $db: $db,
+              $table: $db.manualIpvReportLines,
               $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
               joinBuilder: joinBuilder,
               $removeJoinBuilderFromRootComposer:
@@ -13359,6 +14799,29 @@ class $$ProductsTableAnnotationComposer
             ));
     return f(composer);
   }
+
+  Expression<T> manualIpvReportLinesRefs<T extends Object>(
+      Expression<T> Function($$ManualIpvReportLinesTableAnnotationComposer a)
+          f) {
+    final $$ManualIpvReportLinesTableAnnotationComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.manualIpvReportLines,
+            getReferencedColumn: (t) => t.productId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$ManualIpvReportLinesTableAnnotationComposer(
+                  $db: $db,
+                  $table: $db.manualIpvReportLines,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return f(composer);
+  }
 }
 
 class $$ProductsTableTableManager extends RootTableManager<
@@ -13376,7 +14839,8 @@ class $$ProductsTableTableManager extends RootTableManager<
         {bool stockBalancesRefs,
         bool stockMovementsRefs,
         bool saleItemsRefs,
-        bool ipvReportLinesRefs})> {
+        bool ipvReportLinesRefs,
+        bool manualIpvReportLinesRefs})> {
   $$ProductsTableTableManager(_$AppDatabase db, $ProductsTable table)
       : super(TableManagerState(
           db: db,
@@ -13467,14 +14931,16 @@ class $$ProductsTableTableManager extends RootTableManager<
               {stockBalancesRefs = false,
               stockMovementsRefs = false,
               saleItemsRefs = false,
-              ipvReportLinesRefs = false}) {
+              ipvReportLinesRefs = false,
+              manualIpvReportLinesRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
                 if (stockBalancesRefs) db.stockBalances,
                 if (stockMovementsRefs) db.stockMovements,
                 if (saleItemsRefs) db.saleItems,
-                if (ipvReportLinesRefs) db.ipvReportLines
+                if (ipvReportLinesRefs) db.ipvReportLines,
+                if (manualIpvReportLinesRefs) db.manualIpvReportLines
               ],
               addJoins: null,
               getPrefetchedDataCallback: (items) async {
@@ -13530,6 +14996,19 @@ class $$ProductsTableTableManager extends RootTableManager<
                         referencedItemsForCurrentItem:
                             (item, referencedItems) => referencedItems
                                 .where((e) => e.productId == item.id),
+                        typedResults: items),
+                  if (manualIpvReportLinesRefs)
+                    await $_getPrefetchedData<Product, $ProductsTable,
+                            ManualIpvReportLine>(
+                        currentTable: table,
+                        referencedTable: $$ProductsTableReferences
+                            ._manualIpvReportLinesRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$ProductsTableReferences(db, table, p0)
+                                .manualIpvReportLinesRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.productId == item.id),
                         typedResults: items)
                 ];
               },
@@ -13553,7 +15032,8 @@ typedef $$ProductsTableProcessedTableManager = ProcessedTableManager<
         {bool stockBalancesRefs,
         bool stockMovementsRefs,
         bool saleItemsRefs,
-        bool ipvReportLinesRefs})>;
+        bool ipvReportLinesRefs,
+        bool manualIpvReportLinesRefs})>;
 typedef $$ProductCatalogItemsTableCreateCompanionBuilder
     = ProductCatalogItemsCompanion Function({
   required String id,
@@ -21444,6 +22924,980 @@ typedef $$IpvReportLinesTableProcessedTableManager = ProcessedTableManager<
     (IpvReportLine, $$IpvReportLinesTableReferences),
     IpvReportLine,
     PrefetchHooks Function({bool reportId, bool productId})>;
+typedef $$ManualIpvReportsTableCreateCompanionBuilder
+    = ManualIpvReportsCompanion Function({
+  required String id,
+  required DateTime reportDate,
+  Value<DateTime> createdAt,
+  Value<DateTime?> updatedAt,
+  Value<String?> createdBy,
+  Value<String> employeeIdsJson,
+  Value<String> employeeNamesJson,
+  Value<String> paymentTotalsJson,
+  Value<String> currencySymbol,
+  Value<String?> note,
+  Value<int> rowid,
+});
+typedef $$ManualIpvReportsTableUpdateCompanionBuilder
+    = ManualIpvReportsCompanion Function({
+  Value<String> id,
+  Value<DateTime> reportDate,
+  Value<DateTime> createdAt,
+  Value<DateTime?> updatedAt,
+  Value<String?> createdBy,
+  Value<String> employeeIdsJson,
+  Value<String> employeeNamesJson,
+  Value<String> paymentTotalsJson,
+  Value<String> currencySymbol,
+  Value<String?> note,
+  Value<int> rowid,
+});
+
+final class $$ManualIpvReportsTableReferences extends BaseReferences<
+    _$AppDatabase, $ManualIpvReportsTable, ManualIpvReport> {
+  $$ManualIpvReportsTableReferences(
+      super.$_db, super.$_table, super.$_typedResult);
+
+  static $UsersTable _createdByTable(_$AppDatabase db) => db.users.createAlias(
+      $_aliasNameGenerator(db.manualIpvReports.createdBy, db.users.id));
+
+  $$UsersTableProcessedTableManager? get createdBy {
+    final $_column = $_itemColumn<String>('created_by');
+    if ($_column == null) return null;
+    final manager = $$UsersTableTableManager($_db, $_db.users)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_createdByTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static MultiTypedResultKey<$ManualIpvReportLinesTable,
+      List<ManualIpvReportLine>> _manualIpvReportLinesRefsTable(
+          _$AppDatabase db) =>
+      MultiTypedResultKey.fromTable(db.manualIpvReportLines,
+          aliasName: $_aliasNameGenerator(
+              db.manualIpvReports.id, db.manualIpvReportLines.reportId));
+
+  $$ManualIpvReportLinesTableProcessedTableManager
+      get manualIpvReportLinesRefs {
+    final manager = $$ManualIpvReportLinesTableTableManager(
+            $_db, $_db.manualIpvReportLines)
+        .filter((f) => f.reportId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache =
+        $_typedResult.readTableOrNull(_manualIpvReportLinesRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
+}
+
+class $$ManualIpvReportsTableFilterComposer
+    extends Composer<_$AppDatabase, $ManualIpvReportsTable> {
+  $$ManualIpvReportsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get reportDate => $composableBuilder(
+      column: $table.reportDate, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get employeeIdsJson => $composableBuilder(
+      column: $table.employeeIdsJson,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get employeeNamesJson => $composableBuilder(
+      column: $table.employeeNamesJson,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get paymentTotalsJson => $composableBuilder(
+      column: $table.paymentTotalsJson,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get currencySymbol => $composableBuilder(
+      column: $table.currencySymbol,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get note => $composableBuilder(
+      column: $table.note, builder: (column) => ColumnFilters(column));
+
+  $$UsersTableFilterComposer get createdBy {
+    final $$UsersTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.createdBy,
+        referencedTable: $db.users,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$UsersTableFilterComposer(
+              $db: $db,
+              $table: $db.users,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  Expression<bool> manualIpvReportLinesRefs(
+      Expression<bool> Function($$ManualIpvReportLinesTableFilterComposer f)
+          f) {
+    final $$ManualIpvReportLinesTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.manualIpvReportLines,
+        getReferencedColumn: (t) => t.reportId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ManualIpvReportLinesTableFilterComposer(
+              $db: $db,
+              $table: $db.manualIpvReportLines,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+}
+
+class $$ManualIpvReportsTableOrderingComposer
+    extends Composer<_$AppDatabase, $ManualIpvReportsTable> {
+  $$ManualIpvReportsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get reportDate => $composableBuilder(
+      column: $table.reportDate, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get employeeIdsJson => $composableBuilder(
+      column: $table.employeeIdsJson,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get employeeNamesJson => $composableBuilder(
+      column: $table.employeeNamesJson,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get paymentTotalsJson => $composableBuilder(
+      column: $table.paymentTotalsJson,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get currencySymbol => $composableBuilder(
+      column: $table.currencySymbol,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get note => $composableBuilder(
+      column: $table.note, builder: (column) => ColumnOrderings(column));
+
+  $$UsersTableOrderingComposer get createdBy {
+    final $$UsersTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.createdBy,
+        referencedTable: $db.users,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$UsersTableOrderingComposer(
+              $db: $db,
+              $table: $db.users,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$ManualIpvReportsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ManualIpvReportsTable> {
+  $$ManualIpvReportsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get reportDate => $composableBuilder(
+      column: $table.reportDate, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get employeeIdsJson => $composableBuilder(
+      column: $table.employeeIdsJson, builder: (column) => column);
+
+  GeneratedColumn<String> get employeeNamesJson => $composableBuilder(
+      column: $table.employeeNamesJson, builder: (column) => column);
+
+  GeneratedColumn<String> get paymentTotalsJson => $composableBuilder(
+      column: $table.paymentTotalsJson, builder: (column) => column);
+
+  GeneratedColumn<String> get currencySymbol => $composableBuilder(
+      column: $table.currencySymbol, builder: (column) => column);
+
+  GeneratedColumn<String> get note =>
+      $composableBuilder(column: $table.note, builder: (column) => column);
+
+  $$UsersTableAnnotationComposer get createdBy {
+    final $$UsersTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.createdBy,
+        referencedTable: $db.users,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$UsersTableAnnotationComposer(
+              $db: $db,
+              $table: $db.users,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  Expression<T> manualIpvReportLinesRefs<T extends Object>(
+      Expression<T> Function($$ManualIpvReportLinesTableAnnotationComposer a)
+          f) {
+    final $$ManualIpvReportLinesTableAnnotationComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.manualIpvReportLines,
+            getReferencedColumn: (t) => t.reportId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$ManualIpvReportLinesTableAnnotationComposer(
+                  $db: $db,
+                  $table: $db.manualIpvReportLines,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return f(composer);
+  }
+}
+
+class $$ManualIpvReportsTableTableManager extends RootTableManager<
+    _$AppDatabase,
+    $ManualIpvReportsTable,
+    ManualIpvReport,
+    $$ManualIpvReportsTableFilterComposer,
+    $$ManualIpvReportsTableOrderingComposer,
+    $$ManualIpvReportsTableAnnotationComposer,
+    $$ManualIpvReportsTableCreateCompanionBuilder,
+    $$ManualIpvReportsTableUpdateCompanionBuilder,
+    (ManualIpvReport, $$ManualIpvReportsTableReferences),
+    ManualIpvReport,
+    PrefetchHooks Function({bool createdBy, bool manualIpvReportLinesRefs})> {
+  $$ManualIpvReportsTableTableManager(
+      _$AppDatabase db, $ManualIpvReportsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ManualIpvReportsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ManualIpvReportsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ManualIpvReportsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> id = const Value.absent(),
+            Value<DateTime> reportDate = const Value.absent(),
+            Value<DateTime> createdAt = const Value.absent(),
+            Value<DateTime?> updatedAt = const Value.absent(),
+            Value<String?> createdBy = const Value.absent(),
+            Value<String> employeeIdsJson = const Value.absent(),
+            Value<String> employeeNamesJson = const Value.absent(),
+            Value<String> paymentTotalsJson = const Value.absent(),
+            Value<String> currencySymbol = const Value.absent(),
+            Value<String?> note = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              ManualIpvReportsCompanion(
+            id: id,
+            reportDate: reportDate,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            createdBy: createdBy,
+            employeeIdsJson: employeeIdsJson,
+            employeeNamesJson: employeeNamesJson,
+            paymentTotalsJson: paymentTotalsJson,
+            currencySymbol: currencySymbol,
+            note: note,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String id,
+            required DateTime reportDate,
+            Value<DateTime> createdAt = const Value.absent(),
+            Value<DateTime?> updatedAt = const Value.absent(),
+            Value<String?> createdBy = const Value.absent(),
+            Value<String> employeeIdsJson = const Value.absent(),
+            Value<String> employeeNamesJson = const Value.absent(),
+            Value<String> paymentTotalsJson = const Value.absent(),
+            Value<String> currencySymbol = const Value.absent(),
+            Value<String?> note = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              ManualIpvReportsCompanion.insert(
+            id: id,
+            reportDate: reportDate,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            createdBy: createdBy,
+            employeeIdsJson: employeeIdsJson,
+            employeeNamesJson: employeeNamesJson,
+            paymentTotalsJson: paymentTotalsJson,
+            currencySymbol: currencySymbol,
+            note: note,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$ManualIpvReportsTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: (
+              {createdBy = false, manualIpvReportLinesRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [
+                if (manualIpvReportLinesRefs) db.manualIpvReportLines
+              ],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (createdBy) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.createdBy,
+                    referencedTable:
+                        $$ManualIpvReportsTableReferences._createdByTable(db),
+                    referencedColumn: $$ManualIpvReportsTableReferences
+                        ._createdByTable(db)
+                        .id,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (manualIpvReportLinesRefs)
+                    await $_getPrefetchedData<ManualIpvReport,
+                            $ManualIpvReportsTable, ManualIpvReportLine>(
+                        currentTable: table,
+                        referencedTable: $$ManualIpvReportsTableReferences
+                            ._manualIpvReportLinesRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$ManualIpvReportsTableReferences(db, table, p0)
+                                .manualIpvReportLinesRefs,
+                        referencedItemsForCurrentItem: (item,
+                                referencedItems) =>
+                            referencedItems.where((e) => e.reportId == item.id),
+                        typedResults: items)
+                ];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$ManualIpvReportsTableProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    $ManualIpvReportsTable,
+    ManualIpvReport,
+    $$ManualIpvReportsTableFilterComposer,
+    $$ManualIpvReportsTableOrderingComposer,
+    $$ManualIpvReportsTableAnnotationComposer,
+    $$ManualIpvReportsTableCreateCompanionBuilder,
+    $$ManualIpvReportsTableUpdateCompanionBuilder,
+    (ManualIpvReport, $$ManualIpvReportsTableReferences),
+    ManualIpvReport,
+    PrefetchHooks Function({bool createdBy, bool manualIpvReportLinesRefs})>;
+typedef $$ManualIpvReportLinesTableCreateCompanionBuilder
+    = ManualIpvReportLinesCompanion Function({
+  required String id,
+  required String reportId,
+  Value<String?> productId,
+  Value<bool> isCustom,
+  required String productNameSnapshot,
+  Value<String> productSkuSnapshot,
+  Value<double> startQty,
+  Value<double> entriesQty,
+  Value<double> outputsQty,
+  Value<double> salesQty,
+  Value<double> finalQty,
+  Value<int> salePriceCents,
+  Value<int> unitCostCents,
+  Value<int> totalAmountCents,
+  Value<int> sortOrder,
+  Value<DateTime?> updatedAt,
+  Value<int> rowid,
+});
+typedef $$ManualIpvReportLinesTableUpdateCompanionBuilder
+    = ManualIpvReportLinesCompanion Function({
+  Value<String> id,
+  Value<String> reportId,
+  Value<String?> productId,
+  Value<bool> isCustom,
+  Value<String> productNameSnapshot,
+  Value<String> productSkuSnapshot,
+  Value<double> startQty,
+  Value<double> entriesQty,
+  Value<double> outputsQty,
+  Value<double> salesQty,
+  Value<double> finalQty,
+  Value<int> salePriceCents,
+  Value<int> unitCostCents,
+  Value<int> totalAmountCents,
+  Value<int> sortOrder,
+  Value<DateTime?> updatedAt,
+  Value<int> rowid,
+});
+
+final class $$ManualIpvReportLinesTableReferences extends BaseReferences<
+    _$AppDatabase, $ManualIpvReportLinesTable, ManualIpvReportLine> {
+  $$ManualIpvReportLinesTableReferences(
+      super.$_db, super.$_table, super.$_typedResult);
+
+  static $ManualIpvReportsTable _reportIdTable(_$AppDatabase db) =>
+      db.manualIpvReports.createAlias($_aliasNameGenerator(
+          db.manualIpvReportLines.reportId, db.manualIpvReports.id));
+
+  $$ManualIpvReportsTableProcessedTableManager get reportId {
+    final $_column = $_itemColumn<String>('report_id')!;
+
+    final manager =
+        $$ManualIpvReportsTableTableManager($_db, $_db.manualIpvReports)
+            .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_reportIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static $ProductsTable _productIdTable(_$AppDatabase db) =>
+      db.products.createAlias($_aliasNameGenerator(
+          db.manualIpvReportLines.productId, db.products.id));
+
+  $$ProductsTableProcessedTableManager? get productId {
+    final $_column = $_itemColumn<String>('product_id');
+    if ($_column == null) return null;
+    final manager = $$ProductsTableTableManager($_db, $_db.products)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_productIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+}
+
+class $$ManualIpvReportLinesTableFilterComposer
+    extends Composer<_$AppDatabase, $ManualIpvReportLinesTable> {
+  $$ManualIpvReportLinesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get isCustom => $composableBuilder(
+      column: $table.isCustom, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get productNameSnapshot => $composableBuilder(
+      column: $table.productNameSnapshot,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get productSkuSnapshot => $composableBuilder(
+      column: $table.productSkuSnapshot,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get startQty => $composableBuilder(
+      column: $table.startQty, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get entriesQty => $composableBuilder(
+      column: $table.entriesQty, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get outputsQty => $composableBuilder(
+      column: $table.outputsQty, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get salesQty => $composableBuilder(
+      column: $table.salesQty, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get finalQty => $composableBuilder(
+      column: $table.finalQty, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get salePriceCents => $composableBuilder(
+      column: $table.salePriceCents,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get unitCostCents => $composableBuilder(
+      column: $table.unitCostCents, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get totalAmountCents => $composableBuilder(
+      column: $table.totalAmountCents,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+      column: $table.sortOrder, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+
+  $$ManualIpvReportsTableFilterComposer get reportId {
+    final $$ManualIpvReportsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.reportId,
+        referencedTable: $db.manualIpvReports,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ManualIpvReportsTableFilterComposer(
+              $db: $db,
+              $table: $db.manualIpvReports,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$ProductsTableFilterComposer get productId {
+    final $$ProductsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.productId,
+        referencedTable: $db.products,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ProductsTableFilterComposer(
+              $db: $db,
+              $table: $db.products,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$ManualIpvReportLinesTableOrderingComposer
+    extends Composer<_$AppDatabase, $ManualIpvReportLinesTable> {
+  $$ManualIpvReportLinesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get isCustom => $composableBuilder(
+      column: $table.isCustom, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get productNameSnapshot => $composableBuilder(
+      column: $table.productNameSnapshot,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get productSkuSnapshot => $composableBuilder(
+      column: $table.productSkuSnapshot,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get startQty => $composableBuilder(
+      column: $table.startQty, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get entriesQty => $composableBuilder(
+      column: $table.entriesQty, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get outputsQty => $composableBuilder(
+      column: $table.outputsQty, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get salesQty => $composableBuilder(
+      column: $table.salesQty, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get finalQty => $composableBuilder(
+      column: $table.finalQty, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get salePriceCents => $composableBuilder(
+      column: $table.salePriceCents,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get unitCostCents => $composableBuilder(
+      column: $table.unitCostCents,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get totalAmountCents => $composableBuilder(
+      column: $table.totalAmountCents,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+      column: $table.sortOrder, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+
+  $$ManualIpvReportsTableOrderingComposer get reportId {
+    final $$ManualIpvReportsTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.reportId,
+        referencedTable: $db.manualIpvReports,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ManualIpvReportsTableOrderingComposer(
+              $db: $db,
+              $table: $db.manualIpvReports,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$ProductsTableOrderingComposer get productId {
+    final $$ProductsTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.productId,
+        referencedTable: $db.products,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ProductsTableOrderingComposer(
+              $db: $db,
+              $table: $db.products,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$ManualIpvReportLinesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ManualIpvReportLinesTable> {
+  $$ManualIpvReportLinesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<bool> get isCustom =>
+      $composableBuilder(column: $table.isCustom, builder: (column) => column);
+
+  GeneratedColumn<String> get productNameSnapshot => $composableBuilder(
+      column: $table.productNameSnapshot, builder: (column) => column);
+
+  GeneratedColumn<String> get productSkuSnapshot => $composableBuilder(
+      column: $table.productSkuSnapshot, builder: (column) => column);
+
+  GeneratedColumn<double> get startQty =>
+      $composableBuilder(column: $table.startQty, builder: (column) => column);
+
+  GeneratedColumn<double> get entriesQty => $composableBuilder(
+      column: $table.entriesQty, builder: (column) => column);
+
+  GeneratedColumn<double> get outputsQty => $composableBuilder(
+      column: $table.outputsQty, builder: (column) => column);
+
+  GeneratedColumn<double> get salesQty =>
+      $composableBuilder(column: $table.salesQty, builder: (column) => column);
+
+  GeneratedColumn<double> get finalQty =>
+      $composableBuilder(column: $table.finalQty, builder: (column) => column);
+
+  GeneratedColumn<int> get salePriceCents => $composableBuilder(
+      column: $table.salePriceCents, builder: (column) => column);
+
+  GeneratedColumn<int> get unitCostCents => $composableBuilder(
+      column: $table.unitCostCents, builder: (column) => column);
+
+  GeneratedColumn<int> get totalAmountCents => $composableBuilder(
+      column: $table.totalAmountCents, builder: (column) => column);
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  $$ManualIpvReportsTableAnnotationComposer get reportId {
+    final $$ManualIpvReportsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.reportId,
+        referencedTable: $db.manualIpvReports,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ManualIpvReportsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.manualIpvReports,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$ProductsTableAnnotationComposer get productId {
+    final $$ProductsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.productId,
+        referencedTable: $db.products,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ProductsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.products,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$ManualIpvReportLinesTableTableManager extends RootTableManager<
+    _$AppDatabase,
+    $ManualIpvReportLinesTable,
+    ManualIpvReportLine,
+    $$ManualIpvReportLinesTableFilterComposer,
+    $$ManualIpvReportLinesTableOrderingComposer,
+    $$ManualIpvReportLinesTableAnnotationComposer,
+    $$ManualIpvReportLinesTableCreateCompanionBuilder,
+    $$ManualIpvReportLinesTableUpdateCompanionBuilder,
+    (ManualIpvReportLine, $$ManualIpvReportLinesTableReferences),
+    ManualIpvReportLine,
+    PrefetchHooks Function({bool reportId, bool productId})> {
+  $$ManualIpvReportLinesTableTableManager(
+      _$AppDatabase db, $ManualIpvReportLinesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ManualIpvReportLinesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ManualIpvReportLinesTableOrderingComposer(
+                  $db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ManualIpvReportLinesTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> id = const Value.absent(),
+            Value<String> reportId = const Value.absent(),
+            Value<String?> productId = const Value.absent(),
+            Value<bool> isCustom = const Value.absent(),
+            Value<String> productNameSnapshot = const Value.absent(),
+            Value<String> productSkuSnapshot = const Value.absent(),
+            Value<double> startQty = const Value.absent(),
+            Value<double> entriesQty = const Value.absent(),
+            Value<double> outputsQty = const Value.absent(),
+            Value<double> salesQty = const Value.absent(),
+            Value<double> finalQty = const Value.absent(),
+            Value<int> salePriceCents = const Value.absent(),
+            Value<int> unitCostCents = const Value.absent(),
+            Value<int> totalAmountCents = const Value.absent(),
+            Value<int> sortOrder = const Value.absent(),
+            Value<DateTime?> updatedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              ManualIpvReportLinesCompanion(
+            id: id,
+            reportId: reportId,
+            productId: productId,
+            isCustom: isCustom,
+            productNameSnapshot: productNameSnapshot,
+            productSkuSnapshot: productSkuSnapshot,
+            startQty: startQty,
+            entriesQty: entriesQty,
+            outputsQty: outputsQty,
+            salesQty: salesQty,
+            finalQty: finalQty,
+            salePriceCents: salePriceCents,
+            unitCostCents: unitCostCents,
+            totalAmountCents: totalAmountCents,
+            sortOrder: sortOrder,
+            updatedAt: updatedAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String id,
+            required String reportId,
+            Value<String?> productId = const Value.absent(),
+            Value<bool> isCustom = const Value.absent(),
+            required String productNameSnapshot,
+            Value<String> productSkuSnapshot = const Value.absent(),
+            Value<double> startQty = const Value.absent(),
+            Value<double> entriesQty = const Value.absent(),
+            Value<double> outputsQty = const Value.absent(),
+            Value<double> salesQty = const Value.absent(),
+            Value<double> finalQty = const Value.absent(),
+            Value<int> salePriceCents = const Value.absent(),
+            Value<int> unitCostCents = const Value.absent(),
+            Value<int> totalAmountCents = const Value.absent(),
+            Value<int> sortOrder = const Value.absent(),
+            Value<DateTime?> updatedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              ManualIpvReportLinesCompanion.insert(
+            id: id,
+            reportId: reportId,
+            productId: productId,
+            isCustom: isCustom,
+            productNameSnapshot: productNameSnapshot,
+            productSkuSnapshot: productSkuSnapshot,
+            startQty: startQty,
+            entriesQty: entriesQty,
+            outputsQty: outputsQty,
+            salesQty: salesQty,
+            finalQty: finalQty,
+            salePriceCents: salePriceCents,
+            unitCostCents: unitCostCents,
+            totalAmountCents: totalAmountCents,
+            sortOrder: sortOrder,
+            updatedAt: updatedAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$ManualIpvReportLinesTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: ({reportId = false, productId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (reportId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.reportId,
+                    referencedTable: $$ManualIpvReportLinesTableReferences
+                        ._reportIdTable(db),
+                    referencedColumn: $$ManualIpvReportLinesTableReferences
+                        ._reportIdTable(db)
+                        .id,
+                  ) as T;
+                }
+                if (productId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.productId,
+                    referencedTable: $$ManualIpvReportLinesTableReferences
+                        ._productIdTable(db),
+                    referencedColumn: $$ManualIpvReportLinesTableReferences
+                        ._productIdTable(db)
+                        .id,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$ManualIpvReportLinesTableProcessedTableManager
+    = ProcessedTableManager<
+        _$AppDatabase,
+        $ManualIpvReportLinesTable,
+        ManualIpvReportLine,
+        $$ManualIpvReportLinesTableFilterComposer,
+        $$ManualIpvReportLinesTableOrderingComposer,
+        $$ManualIpvReportLinesTableAnnotationComposer,
+        $$ManualIpvReportLinesTableCreateCompanionBuilder,
+        $$ManualIpvReportLinesTableUpdateCompanionBuilder,
+        (ManualIpvReportLine, $$ManualIpvReportLinesTableReferences),
+        ManualIpvReportLine,
+        PrefetchHooks Function({bool reportId, bool productId})>;
 typedef $$AppSettingsTableCreateCompanionBuilder = AppSettingsCompanion
     Function({
   required String key,
@@ -21932,6 +24386,10 @@ class $AppDatabaseManager {
       $$IpvReportsTableTableManager(_db, _db.ipvReports);
   $$IpvReportLinesTableTableManager get ipvReportLines =>
       $$IpvReportLinesTableTableManager(_db, _db.ipvReportLines);
+  $$ManualIpvReportsTableTableManager get manualIpvReports =>
+      $$ManualIpvReportsTableTableManager(_db, _db.manualIpvReports);
+  $$ManualIpvReportLinesTableTableManager get manualIpvReportLines =>
+      $$ManualIpvReportLinesTableTableManager(_db, _db.manualIpvReportLines);
   $$AppSettingsTableTableManager get appSettings =>
       $$AppSettingsTableTableManager(_db, _db.appSettings);
   $$AuditLogsTableTableManager get auditLogs =>

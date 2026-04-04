@@ -172,6 +172,12 @@ class _TpvPageState extends ConsumerState<TpvPage> {
   }
 
   Future<void> _openManualSync() async {
+    final UserSession? session = ref.read(currentSessionProvider);
+    if (session == null ||
+        !session.hasPermission(AppPermissionKeys.tpvManageSessions)) {
+      _show('No tienes permisos para usar la sincronización manual.');
+      return;
+    }
     await context.push('/sync-manual');
     if (mounted) {
       await _load();
@@ -349,6 +355,10 @@ class _TpvPageState extends ConsumerState<TpvPage> {
                   AppPermissionKeys.tpvManageTerminals,
                 ) ??
             false;
+    final bool canManualSync = ref.watch(currentSessionProvider)?.hasPermission(
+              AppPermissionKeys.tpvManageSessions,
+            ) ??
+        false;
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final List<TpvTerminalView> filteredTerminals = _getFilteredTerminals();
@@ -366,13 +376,15 @@ class _TpvPageState extends ConsumerState<TpvPage> {
         onPressed: () => context.go('/home'),
         icon: const Icon(Icons.arrow_back_rounded),
       ),
-      appBarActions: <Widget>[
-        IconButton(
-          onPressed: _openManualSync,
-          icon: const Icon(Icons.sync_alt_rounded),
-          tooltip: 'Sincronización manual',
-        ),
-      ],
+      appBarActions: canManualSync
+          ? <Widget>[
+              IconButton(
+                onPressed: _openManualSync,
+                icon: const Icon(Icons.sync_alt_rounded),
+                tooltip: 'Sincronización manual',
+              ),
+            ]
+          : const <Widget>[],
       floatingActionButton: license.canWrite && canManageTerminals
           ? AppAddActionButton(
               currentRoute: '/tpv',

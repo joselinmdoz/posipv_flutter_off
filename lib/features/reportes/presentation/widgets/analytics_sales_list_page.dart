@@ -15,6 +15,7 @@ class AnalyticsSalesListPage extends ConsumerStatefulWidget {
     required this.currencySymbol,
     this.title = 'Total de ventas',
     this.channel,
+    this.terminalId,
     this.paymentMethodKey,
     this.dependentKey,
   });
@@ -24,6 +25,7 @@ class AnalyticsSalesListPage extends ConsumerStatefulWidget {
   final String currencySymbol;
   final String title;
   final String? channel;
+  final String? terminalId;
   final String? paymentMethodKey;
   final String? dependentKey;
 
@@ -60,6 +62,7 @@ class _AnalyticsSalesListPageState
             toDate: widget.toDate,
             limit: 1000,
             channel: widget.channel,
+            terminalId: widget.terminalId,
             paymentMethodKey: widget.paymentMethodKey,
             dependentKey: widget.dependentKey,
           );
@@ -117,16 +120,20 @@ class _AnalyticsSalesListPageState
     final bool isDark = theme.brightness == Brightness.dark;
 
     // Colores basados en el HTML
-    final Color primaryNavy = const Color(0xFF1E3A8A); // primary
-    final Color accentBlue = const Color(0xFF3B82F6); // accent
-    final Color backgroundPage =
-        isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAF4); // slate-900 / slate-50
-    final Color cardBg =
-        isDark ? const Color(0xFF1E293B) : const Color(0xFFFFFFFF); // slate-800 / white
-    final Color borderCol =
-        isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0); // slate-700 / slate-200
-    final Color textMuted =
-        isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B); // slate-400 / slate-500
+    const Color primaryNavy = Color(0xFF1E3A8A); // primary
+    const Color accentBlue = Color(0xFF3B82F6); // accent
+    final Color backgroundPage = isDark
+        ? const Color(0xFF0F172A)
+        : const Color(0xFFF8FAF4); // slate-900 / slate-50
+    final Color cardBg = isDark
+        ? const Color(0xFF1E293B)
+        : const Color(0xFFFFFFFF); // slate-800 / white
+    final Color borderCol = isDark
+        ? const Color(0xFF334155)
+        : const Color(0xFFE2E8F0); // slate-700 / slate-200
+    final Color textMuted = isDark
+        ? const Color(0xFF94A3B8)
+        : const Color(0xFF64748B); // slate-400 / slate-500
 
     return AppScaffold(
       title: widget.title,
@@ -142,7 +149,8 @@ class _AnalyticsSalesListPageState
           }
           context.go('/reportes');
         },
-        icon: Icon(Icons.arrow_back_rounded, color: isDark ? Colors.white : Colors.black87),
+        icon: Icon(Icons.arrow_back_rounded,
+            color: isDark ? Colors.white : Colors.black87),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => context.go('/ventas-pos'),
@@ -192,6 +200,8 @@ class _AnalyticsSalesListPageState
     Color borderCol,
     Color textMuted,
   ) {
+    final String channelLabel =
+        sale.channel.trim().toLowerCase() == 'directa' ? 'DIRECTA' : 'POS';
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -244,18 +254,27 @@ class _AnalyticsSalesListPageState
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFDBEAFE), // blue-100
+                      color: channelLabel == 'POS'
+                          ? const Color(0xFFDBEAFE)
+                          : const Color(0xFFFDE68A),
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFBFDBFE)), // blue-200
+                      border: Border.all(
+                        color: channelLabel == 'POS'
+                            ? const Color(0xFFBFDBFE)
+                            : const Color(0xFFFCD34D),
+                      ),
                     ),
-                    child: const Text(
-                      'POS',
+                    child: Text(
+                      channelLabel,
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w800,
-                        color: Color(0xFF1E40AF), // blue-800
+                        color: channelLabel == 'POS'
+                            ? const Color(0xFF1E40AF)
+                            : const Color(0xFF92400E),
                         letterSpacing: 1.0,
                       ),
                     ),
@@ -264,7 +283,8 @@ class _AnalyticsSalesListPageState
               ),
               const SizedBox(height: 16),
               // Field Info
-              _buildInfoRow('Dependiente:', sale.cashierUsername, textMuted, isDark),
+              _buildInfoRow(
+                  'Dependiente:', sale.cashierUsername, textMuted, isDark),
               const SizedBox(height: 4),
               _buildInfoRow('Almacén:', sale.warehouseName, textMuted, isDark),
               const SizedBox(height: 4),
@@ -275,6 +295,15 @@ class _AnalyticsSalesListPageState
                 isDark,
                 italic: sale.customerName == null,
               ),
+              if ((sale.terminalName ?? '').trim().isNotEmpty) ...<Widget>[
+                const SizedBox(height: 4),
+                _buildInfoRow(
+                  'TPV:',
+                  sale.terminalName!.trim(),
+                  textMuted,
+                  isDark,
+                ),
+              ],
               const SizedBox(height: 16),
               // Footer
               Container(
@@ -282,7 +311,9 @@ class _AnalyticsSalesListPageState
                 decoration: BoxDecoration(
                   border: Border(
                     top: BorderSide(
-                      color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                      color: isDark
+                          ? const Color(0xFF334155)
+                          : const Color(0xFFF1F5F9),
                     ),
                   ),
                 ),

@@ -138,6 +138,8 @@ class DataManagementLocalDataSource {
     'payments',
     'ipv_reports',
     'ipv_report_lines',
+    'manual_ipv_reports',
+    'manual_ipv_report_lines',
     'app_settings',
     'audit_logs',
   ];
@@ -150,6 +152,8 @@ class DataManagementLocalDataSource {
     'sales',
     'ipv_report_lines',
     'ipv_reports',
+    'manual_ipv_report_lines',
+    'manual_ipv_reports',
     'pos_session_cash_breakdowns',
     'pos_session_employees',
     'pos_sessions',

@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:uuid/uuid.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_service.dart';
@@ -374,6 +375,8 @@ class IpvReportLineStat {
     required this.finalQty,
     required this.salePriceCents,
     required this.totalAmountCents,
+    this.profitMarginCents = 0,
+    this.realProfitCents = 0,
   });
 
   final String productId;
@@ -386,6 +389,8 @@ class IpvReportLineStat {
   final double finalQty;
   final int salePriceCents;
   final int totalAmountCents;
+  final int profitMarginCents;
+  final int realProfitCents;
 }
 
 class IpvReportDetailStat {
@@ -396,6 +401,132 @@ class IpvReportDetailStat {
 
   final IpvReportSummaryStat summary;
   final List<IpvReportLineStat> lines;
+}
+
+class ManualIpvEmployeeOption {
+  const ManualIpvEmployeeOption({
+    required this.id,
+    required this.name,
+  });
+
+  final String id;
+  final String name;
+}
+
+class ManualIpvEditableLineStat {
+  const ManualIpvEditableLineStat({
+    required this.lineId,
+    required this.productId,
+    required this.isCustom,
+    required this.productName,
+    required this.sku,
+    required this.startQty,
+    required this.entriesQty,
+    required this.outputsQty,
+    required this.salesQty,
+    required this.finalQty,
+    required this.salePriceCents,
+    required this.unitCostCents,
+    required this.totalAmountCents,
+    required this.sortOrder,
+  });
+
+  final String lineId;
+  final String? productId;
+  final bool isCustom;
+  final String productName;
+  final String sku;
+  final double startQty;
+  final double entriesQty;
+  final double outputsQty;
+  final double salesQty;
+  final double finalQty;
+  final int salePriceCents;
+  final int unitCostCents;
+  final int totalAmountCents;
+  final int sortOrder;
+
+  int get profitMarginCents => salePriceCents - unitCostCents;
+
+  int get realProfitCents => (salesQty * profitMarginCents).round();
+
+  ManualIpvEditableLineStat copyWith({
+    String? lineId,
+    String? productId,
+    bool? isCustom,
+    String? productName,
+    String? sku,
+    double? startQty,
+    double? entriesQty,
+    double? outputsQty,
+    double? salesQty,
+    double? finalQty,
+    int? salePriceCents,
+    int? unitCostCents,
+    int? totalAmountCents,
+    int? sortOrder,
+  }) {
+    return ManualIpvEditableLineStat(
+      lineId: lineId ?? this.lineId,
+      productId: productId ?? this.productId,
+      isCustom: isCustom ?? this.isCustom,
+      productName: productName ?? this.productName,
+      sku: sku ?? this.sku,
+      startQty: startQty ?? this.startQty,
+      entriesQty: entriesQty ?? this.entriesQty,
+      outputsQty: outputsQty ?? this.outputsQty,
+      salesQty: salesQty ?? this.salesQty,
+      finalQty: finalQty ?? this.finalQty,
+      salePriceCents: salePriceCents ?? this.salePriceCents,
+      unitCostCents: unitCostCents ?? this.unitCostCents,
+      totalAmountCents: totalAmountCents ?? this.totalAmountCents,
+      sortOrder: sortOrder ?? this.sortOrder,
+    );
+  }
+}
+
+class ManualIpvReportStat {
+  const ManualIpvReportStat({
+    required this.reportId,
+    required this.reportDate,
+    required this.hasPreviousReport,
+    required this.currencySymbol,
+    required this.employeeIds,
+    required this.employeeNames,
+    required this.paymentMethods,
+    required this.paymentTotalsByMethod,
+    required this.note,
+    required this.lines,
+  });
+
+  final String reportId;
+  final DateTime reportDate;
+  final bool hasPreviousReport;
+  final String currencySymbol;
+  final List<String> employeeIds;
+  final List<String> employeeNames;
+  final List<String> paymentMethods;
+  final Map<String, int> paymentTotalsByMethod;
+  final String note;
+  final List<ManualIpvEditableLineStat> lines;
+}
+
+class ManualIpvProductOption {
+  const ManualIpvProductOption({
+    required this.productId,
+    required this.name,
+    required this.sku,
+    required this.priceCents,
+    required this.costCents,
+    required this.suggestedStartQty,
+  });
+
+  final String productId;
+  final String name;
+  final String sku;
+  final int priceCents;
+  final int costCents;
+  final double suggestedStartQty;
 }
 
 class ReportesDashboard {
@@ -472,6 +603,7 @@ class ReportesLocalDataSource {
 
   final AppDatabase _db;
   final OfflineLicenseService _licenseService;
+  final Uuid _uuid = const Uuid();
   static const String _demoIpvExportBlockedMessage =
       'Modo demo: la exportacion de IPV (CSV/PDF) esta disponible solo con licencia activa.';
   static const String _demoAnalyticsExportBlockedMessage =
@@ -612,20 +744,31 @@ class ReportesLocalDataSource {
     required DateTime toDate,
     required SalesAnalyticsGranularity granularity,
     int topLimit = 5,
+    String? channel,
+    String? terminalId,
   }) async {
     final DateTime from = _startOfDay(fromDate);
     DateTime toExclusive = _startOfDay(toDate).add(const Duration(days: 1));
     if (!toExclusive.isAfter(from)) {
       toExclusive = from.add(const Duration(days: 1));
     }
+    final String? normalizedTerminalId = _normalizeTerminalIdFilter(terminalId);
+    final String? normalizedChannel =
+        normalizedTerminalId == null ? _normalizeChannelFilter(channel) : 'pos';
     final Duration span = toExclusive.difference(from);
     final DateTime prevFrom = from.subtract(span);
     final DateTime prevToExclusive = from;
 
-    final List<Sale> currentSales =
-        await _postedSalesBetween(from, toExclusive);
-    final List<Sale> previousSales =
-        await _postedSalesBetween(prevFrom, prevToExclusive);
+    final List<Sale> currentSales = _filterSalesForAnalytics(
+      await _postedSalesBetween(from, toExclusive),
+      normalizedChannel: normalizedChannel,
+      normalizedTerminalId: normalizedTerminalId,
+    );
+    final List<Sale> previousSales = _filterSalesForAnalytics(
+      await _postedSalesBetween(prevFrom, prevToExclusive),
+      normalizedChannel: normalizedChannel,
+      normalizedTerminalId: normalizedTerminalId,
+    );
     final int currentTotal = currentSales.fold<int>(
       0,
       (int sum, Sale row) => sum + row.totalCents,
@@ -643,10 +786,14 @@ class ReportesLocalDataSource {
     final double itemsSoldQty = await _itemsSoldQtyForRange(
       from: from,
       toExclusive: toExclusive,
+      normalizedChannel: normalizedChannel,
+      normalizedTerminalId: normalizedTerminalId,
     );
     final int totalProfitCents = await _profitCentsForRange(
       from: from,
       toExclusive: toExclusive,
+      normalizedChannel: normalizedChannel,
+      normalizedTerminalId: normalizedTerminalId,
     );
     int posRevenueCents = 0;
     int posOrdersCount = 0;
@@ -684,26 +831,36 @@ class ReportesLocalDataSource {
       prevFrom: prevFrom,
       prevToExclusive: prevToExclusive,
       limit: topLimit < 1 ? 1 : topLimit,
+      normalizedChannel: normalizedChannel,
+      normalizedTerminalId: normalizedTerminalId,
     );
     final List<SalesBreakdownStat> paymentMethods =
         await _paymentMethodBreakdownForRange(
       from: from,
       toExclusive: toExclusive,
+      normalizedChannel: normalizedChannel,
+      normalizedTerminalId: normalizedTerminalId,
     );
     final List<SalesBreakdownStat> byCashier = await _cashierBreakdownForRange(
       from: from,
       toExclusive: toExclusive,
+      normalizedChannel: normalizedChannel,
+      normalizedTerminalId: normalizedTerminalId,
     );
     final List<SalesBreakdownStat> byWarehouse =
         await _warehouseBreakdownForRange(
       from: from,
       toExclusive: toExclusive,
+      normalizedChannel: normalizedChannel,
+      normalizedTerminalId: normalizedTerminalId,
     );
     final List<AnalyticsTopCustomerStat> topCustomers =
         await _topCustomersForRange(
       from: from,
       toExclusive: toExclusive,
       limit: 8,
+      normalizedChannel: normalizedChannel,
+      normalizedTerminalId: normalizedTerminalId,
     );
 
     return SalesAnalyticsSnapshot(
@@ -737,6 +894,7 @@ class ReportesLocalDataSource {
     required DateTime toDate,
     int limit = 500,
     String? channel,
+    String? terminalId,
     String? paymentMethodKey,
     String? dependentKey,
   }) async {
@@ -745,7 +903,9 @@ class ReportesLocalDataSource {
     if (!toExclusive.isAfter(from)) {
       toExclusive = from.add(const Duration(days: 1));
     }
-    final String? normalizedChannel = _normalizeChannelFilter(channel);
+    final String? normalizedTerminalId = _normalizeTerminalIdFilter(terminalId);
+    final String? normalizedChannel =
+        normalizedTerminalId == null ? _normalizeChannelFilter(channel) : 'pos';
     final String? normalizedPaymentMethod =
         _normalizePaymentMethodKey(paymentMethodKey);
     final String? normalizedDependentKey = _normalizeDependentKey(dependentKey);
@@ -795,7 +955,10 @@ class ReportesLocalDataSource {
       Variable<DateTime>(from),
       Variable<DateTime>(toExclusive),
     ];
-    if (normalizedChannel == 'pos') {
+    if (normalizedTerminalId != null) {
+      sql.write(" AND COALESCE(TRIM(s.terminal_id), '') = ?");
+      variables.add(Variable<String>(normalizedTerminalId));
+    } else if (normalizedChannel == 'pos') {
       sql.write(" AND COALESCE(TRIM(s.terminal_id), '') <> ''");
     } else if (normalizedChannel == 'directa') {
       sql.write(" AND COALESCE(TRIM(s.terminal_id), '') = ''");
@@ -1026,6 +1189,8 @@ class ReportesLocalDataSource {
   Future<List<SalesPaymentReportRow>> listSalesPaymentsReport({
     required DateTime fromDate,
     required DateTime toDate,
+    String? channel,
+    String? terminalId,
     String? paymentMethodKey,
     int limit = 2000,
     int offset = 0,
@@ -1037,8 +1202,16 @@ class ReportesLocalDataSource {
     }
     final String? normalizedMethod =
         _normalizePaymentMethodKey(paymentMethodKey);
+    final String? normalizedTerminalId = _normalizeTerminalIdFilter(terminalId);
+    final String? normalizedChannel =
+        normalizedTerminalId == null ? _normalizeChannelFilter(channel) : 'pos';
     final int safeLimit = limit < 1 ? 1 : limit;
     final int safeOffset = offset < 0 ? 0 : offset;
+    final _SalesFilterSql salesFilter = _buildSalesFilterSql(
+      salesAlias: 's',
+      normalizedChannel: normalizedChannel,
+      normalizedTerminalId: normalizedTerminalId,
+    );
     final StringBuffer sql = StringBuffer(
       '''
       SELECT
@@ -1072,11 +1245,13 @@ class ReportesLocalDataSource {
       WHERE s.status = 'posted'
         AND p.created_at >= ?
         AND p.created_at < ?
+        ${salesFilter.sql}
       ''',
     );
     final List<Variable<Object>> variables = <Variable<Object>>[
       Variable<DateTime>(from),
       Variable<DateTime>(toExclusive),
+      ...salesFilter.variables,
     ];
     if (normalizedMethod != null) {
       sql.write(
@@ -1158,6 +1333,8 @@ class ReportesLocalDataSource {
   Future<int> countSalesPaymentsReport({
     required DateTime fromDate,
     required DateTime toDate,
+    String? channel,
+    String? terminalId,
     String? paymentMethodKey,
   }) async {
     final DateTime from = _startOfDay(fromDate);
@@ -1167,6 +1344,14 @@ class ReportesLocalDataSource {
     }
     final String? normalizedMethod =
         _normalizePaymentMethodKey(paymentMethodKey);
+    final String? normalizedTerminalId = _normalizeTerminalIdFilter(terminalId);
+    final String? normalizedChannel =
+        normalizedTerminalId == null ? _normalizeChannelFilter(channel) : 'pos';
+    final _SalesFilterSql salesFilter = _buildSalesFilterSql(
+      salesAlias: 's',
+      normalizedChannel: normalizedChannel,
+      normalizedTerminalId: normalizedTerminalId,
+    );
     final StringBuffer sql = StringBuffer(
       '''
       SELECT CAST(COUNT(*) AS INTEGER) AS total_count
@@ -1175,11 +1360,13 @@ class ReportesLocalDataSource {
       WHERE s.status = 'posted'
         AND p.created_at >= ?
         AND p.created_at < ?
+        ${salesFilter.sql}
       ''',
     );
     final List<Variable<Object>> variables = <Variable<Object>>[
       Variable<DateTime>(from),
       Variable<DateTime>(toExclusive),
+      ...salesFilter.variables,
     ];
     if (normalizedMethod != null) {
       sql.write(
@@ -1204,12 +1391,22 @@ class ReportesLocalDataSource {
   Future<List<String>> listPaymentMethodKeysForRange({
     required DateTime fromDate,
     required DateTime toDate,
+    String? channel,
+    String? terminalId,
   }) async {
     final DateTime from = _startOfDay(fromDate);
     DateTime toExclusive = _startOfDay(toDate).add(const Duration(days: 1));
     if (!toExclusive.isAfter(from)) {
       toExclusive = from.add(const Duration(days: 1));
     }
+    final String? normalizedTerminalId = _normalizeTerminalIdFilter(terminalId);
+    final String? normalizedChannel =
+        normalizedTerminalId == null ? _normalizeChannelFilter(channel) : 'pos';
+    final _SalesFilterSql salesFilter = _buildSalesFilterSql(
+      salesAlias: 's',
+      normalizedChannel: normalizedChannel,
+      normalizedTerminalId: normalizedTerminalId,
+    );
     final List<QueryRow> rows = await _db.customSelect(
       '''
       SELECT DISTINCT
@@ -1219,11 +1416,13 @@ class ReportesLocalDataSource {
       WHERE s.status = 'posted'
         AND p.created_at >= ?
         AND p.created_at < ?
+        ${salesFilter.sql}
       ORDER BY method_key ASC
       ''',
       variables: <Variable<Object>>[
         Variable<DateTime>(from),
         Variable<DateTime>(toExclusive),
+        ...salesFilter.variables,
       ],
     ).get();
     return rows
@@ -1381,7 +1580,14 @@ class ReportesLocalDataSource {
     required DateTime prevFrom,
     required DateTime prevToExclusive,
     required int limit,
+    String? normalizedChannel,
+    String? normalizedTerminalId,
   }) async {
+    final _SalesFilterSql salesFilter = _buildSalesFilterSql(
+      salesAlias: 's',
+      normalizedChannel: normalizedChannel,
+      normalizedTerminalId: normalizedTerminalId,
+    );
     final List<QueryRow> currentRows = await _db.customSelect(
       '''
       SELECT
@@ -1400,6 +1606,7 @@ class ReportesLocalDataSource {
       WHERE s.status = 'posted'
         AND s.created_at >= ?
         AND s.created_at < ?
+        ${salesFilter.sql}
       GROUP BY si.product_id, p.name, p.sku, p.image_path
       ORDER BY total_cents DESC, qty DESC
       LIMIT ?
@@ -1407,6 +1614,7 @@ class ReportesLocalDataSource {
       variables: <Variable<Object>>[
         Variable<DateTime>(from),
         Variable<DateTime>(toExclusive),
+        ...salesFilter.variables,
         Variable<int>(limit),
       ],
     ).get();
@@ -1434,12 +1642,14 @@ class ReportesLocalDataSource {
         WHERE s.status = 'posted'
           AND s.created_at >= ?
           AND s.created_at < ?
+          ${salesFilter.sql}
           AND si.product_id IN (${List<String>.filled(productIds.length, '?').join(', ')})
         GROUP BY si.product_id
         ''',
         variables: <Variable<Object>>[
           Variable<DateTime>(prevFrom),
           Variable<DateTime>(prevToExclusive),
+          ...salesFilter.variables,
           ...productIds.map((String id) => Variable<String>(id)),
         ],
       ).get();
@@ -1472,7 +1682,14 @@ class ReportesLocalDataSource {
   Future<double> _itemsSoldQtyForRange({
     required DateTime from,
     required DateTime toExclusive,
+    String? normalizedChannel,
+    String? normalizedTerminalId,
   }) async {
+    final _SalesFilterSql salesFilter = _buildSalesFilterSql(
+      salesAlias: 's',
+      normalizedChannel: normalizedChannel,
+      normalizedTerminalId: normalizedTerminalId,
+    );
     final QueryRow? row = await _db.customSelect(
       '''
       SELECT COALESCE(SUM(si.qty), 0) AS qty
@@ -1484,10 +1701,12 @@ class ReportesLocalDataSource {
       WHERE s.status = 'posted'
         AND s.created_at >= ?
         AND s.created_at < ?
+        ${salesFilter.sql}
       ''',
       variables: <Variable<Object>>[
         Variable<DateTime>(from),
         Variable<DateTime>(toExclusive),
+        ...salesFilter.variables,
       ],
     ).getSingleOrNull();
     return (row?.data['qty'] as num?)?.toDouble() ?? 0;
@@ -1496,7 +1715,14 @@ class ReportesLocalDataSource {
   Future<int> _profitCentsForRange({
     required DateTime from,
     required DateTime toExclusive,
+    String? normalizedChannel,
+    String? normalizedTerminalId,
   }) async {
+    final _SalesFilterSql salesFilter = _buildSalesFilterSql(
+      salesAlias: 's',
+      normalizedChannel: normalizedChannel,
+      normalizedTerminalId: normalizedTerminalId,
+    );
     final QueryRow? row = await _db.customSelect(
       '''
       SELECT
@@ -1515,10 +1741,12 @@ class ReportesLocalDataSource {
       WHERE s.status = 'posted'
         AND s.created_at >= ?
         AND s.created_at < ?
+        ${salesFilter.sql}
       ''',
       variables: <Variable<Object>>[
         Variable<DateTime>(from),
         Variable<DateTime>(toExclusive),
+        ...salesFilter.variables,
       ],
     ).getSingleOrNull();
     final int revenue = (row?.data['revenue_cents'] as num?)?.toInt() ?? 0;
@@ -1529,7 +1757,14 @@ class ReportesLocalDataSource {
   Future<List<SalesBreakdownStat>> _paymentMethodBreakdownForRange({
     required DateTime from,
     required DateTime toExclusive,
+    String? normalizedChannel,
+    String? normalizedTerminalId,
   }) async {
+    final _SalesFilterSql salesFilter = _buildSalesFilterSql(
+      salesAlias: 's',
+      normalizedChannel: normalizedChannel,
+      normalizedTerminalId: normalizedTerminalId,
+    );
     final List<QueryRow> rows = await _db.customSelect(
       '''
       SELECT
@@ -1541,12 +1776,14 @@ class ReportesLocalDataSource {
       WHERE s.status = 'posted'
         AND s.created_at >= ?
         AND s.created_at < ?
+        ${salesFilter.sql}
       GROUP BY key
       ORDER BY total_cents DESC, orders_count DESC
       ''',
       variables: <Variable<Object>>[
         Variable<DateTime>(from),
         Variable<DateTime>(toExclusive),
+        ...salesFilter.variables,
       ],
     ).get();
 
@@ -1564,7 +1801,14 @@ class ReportesLocalDataSource {
   Future<List<SalesBreakdownStat>> _cashierBreakdownForRange({
     required DateTime from,
     required DateTime toExclusive,
+    String? normalizedChannel,
+    String? normalizedTerminalId,
   }) async {
+    final _SalesFilterSql salesFilter = _buildSalesFilterSql(
+      salesAlias: 's',
+      normalizedChannel: normalizedChannel,
+      normalizedTerminalId: normalizedTerminalId,
+    );
     final List<QueryRow> rows = await _db.customSelect(
       '''
       WITH sale_dependent AS (
@@ -1587,6 +1831,7 @@ class ReportesLocalDataSource {
         WHERE s.status = 'posted'
           AND s.created_at >= ?
           AND s.created_at < ?
+          ${salesFilter.sql}
         GROUP BY s.id, s.total_cents, s.cashier_id, u.username
       )
       SELECT
@@ -1601,6 +1846,7 @@ class ReportesLocalDataSource {
       variables: <Variable<Object>>[
         Variable<DateTime>(from),
         Variable<DateTime>(toExclusive),
+        ...salesFilter.variables,
       ],
     ).get();
 
@@ -1617,7 +1863,14 @@ class ReportesLocalDataSource {
   Future<List<SalesBreakdownStat>> _warehouseBreakdownForRange({
     required DateTime from,
     required DateTime toExclusive,
+    String? normalizedChannel,
+    String? normalizedTerminalId,
   }) async {
+    final _SalesFilterSql salesFilter = _buildSalesFilterSql(
+      salesAlias: 's',
+      normalizedChannel: normalizedChannel,
+      normalizedTerminalId: normalizedTerminalId,
+    );
     final List<QueryRow> rows = await _db.customSelect(
       '''
       SELECT
@@ -1630,12 +1883,14 @@ class ReportesLocalDataSource {
       WHERE s.status = 'posted'
         AND s.created_at >= ?
         AND s.created_at < ?
+        ${salesFilter.sql}
       GROUP BY s.warehouse_id, w.name
       ORDER BY total_cents DESC, orders_count DESC
       ''',
       variables: <Variable<Object>>[
         Variable<DateTime>(from),
         Variable<DateTime>(toExclusive),
+        ...salesFilter.variables,
       ],
     ).get();
 
@@ -1653,7 +1908,14 @@ class ReportesLocalDataSource {
     required DateTime from,
     required DateTime toExclusive,
     required int limit,
+    String? normalizedChannel,
+    String? normalizedTerminalId,
   }) async {
+    final _SalesFilterSql salesFilter = _buildSalesFilterSql(
+      salesAlias: 's',
+      normalizedChannel: normalizedChannel,
+      normalizedTerminalId: normalizedTerminalId,
+    );
     final List<QueryRow> rows = await _db.customSelect(
       '''
       SELECT
@@ -1668,6 +1930,7 @@ class ReportesLocalDataSource {
       WHERE s.status = 'posted'
         AND s.created_at >= ?
         AND s.created_at < ?
+        ${salesFilter.sql}
         AND s.customer_id IS NOT NULL
         AND TRIM(s.customer_id) <> ''
       GROUP BY s.customer_id, c.full_name, c.customer_type
@@ -1677,6 +1940,7 @@ class ReportesLocalDataSource {
       variables: <Variable<Object>>[
         Variable<DateTime>(from),
         Variable<DateTime>(toExclusive),
+        ...salesFilter.variables,
         Variable<int>(limit),
       ],
     ).get();
@@ -2331,6 +2595,9 @@ class ReportesLocalDataSource {
     }
     final Map<String, _IpvProductSnapshot> productById =
         await _loadIpvProductSnapshots(byProduct.keys.toSet());
+    final String sessionId = _readTextCell(header, 'session_id', fallback: '');
+    final Map<String, _IpvProfitByProduct> profitByProduct =
+        await _loadIpvProfitByProductForSession(sessionId);
 
     int totalAmountCents = 0;
     final List<IpvReportLineStat> lines = <IpvReportLineStat>[];
@@ -2340,10 +2607,15 @@ class ReportesLocalDataSource {
       if (product == null) {
         continue;
       }
-      final int salePriceCents = agg.salePriceCents ?? product.priceCents;
+      final _IpvProfitByProduct? profit = profitByProduct[productId];
+      final int salePriceCents = (profit != null && profit.soldQty > 0)
+          ? profit.unitSalePriceCents
+          : (agg.salePriceCents ?? product.priceCents);
       final double finalQty =
           agg.startQty + agg.entriesQty - agg.outputsQty - agg.salesQty;
       final int amountCents = (agg.salesQty * salePriceCents).round();
+      final int realProfitCents = profit?.profitCents ?? 0;
+      final int marginCents = profit?.unitMarginCents ?? 0;
       totalAmountCents += amountCents;
       lines.add(
         IpvReportLineStat(
@@ -2357,6 +2629,8 @@ class ReportesLocalDataSource {
           finalQty: finalQty,
           salePriceCents: salePriceCents,
           totalAmountCents: amountCents,
+          profitMarginCents: marginCents,
+          realProfitCents: realProfitCents,
         ),
       );
     }
@@ -2391,6 +2665,9 @@ class ReportesLocalDataSource {
     required List<QueryRow> baseLineRows,
   }) async {
     int totalAmountCents = 0;
+    final String sessionId = _readTextCell(header, 'session_id', fallback: '');
+    final Map<String, _IpvProfitByProduct> profitByProduct =
+        await _loadIpvProfitByProductForSession(sessionId);
     final List<IpvReportLineStat> lines = <IpvReportLineStat>[];
     for (final QueryRow row in baseLineRows) {
       final String productId = _readTextCell(row, 'product_id', fallback: '');
@@ -2407,10 +2684,15 @@ class ReportesLocalDataSource {
           (startQty + entriesQty - outputsQty - salesQty);
       final int salePriceCents =
           (row.data['sale_price_cents'] as num?)?.toInt() ?? 0;
-      final int amountCents =
-          (row.data['total_amount_cents'] as num?)?.toInt() ??
-              (salesQty * salePriceCents).round();
-      totalAmountCents += amountCents;
+      final _IpvProfitByProduct? profit = profitByProduct[productId];
+      final int resolvedSalePriceCents = (profit != null && profit.soldQty > 0)
+          ? profit.unitSalePriceCents
+          : salePriceCents;
+      final int resolvedAmountCents =
+          (salesQty * resolvedSalePriceCents).round();
+      final int realProfitCents = profit?.profitCents ?? 0;
+      final int marginCents = profit?.unitMarginCents ?? 0;
+      totalAmountCents += resolvedAmountCents;
 
       final String snapshotName =
           _readTextCell(row, 'product_name_snapshot', fallback: '');
@@ -2426,8 +2708,10 @@ class ReportesLocalDataSource {
           outputsQty: outputsQty,
           salesQty: salesQty,
           finalQty: finalQty,
-          salePriceCents: salePriceCents,
-          totalAmountCents: amountCents,
+          salePriceCents: resolvedSalePriceCents,
+          totalAmountCents: resolvedAmountCents,
+          profitMarginCents: marginCents,
+          realProfitCents: realProfitCents,
         ),
       );
     }
@@ -2485,6 +2769,8 @@ class ReportesLocalDataSource {
     required SalesAnalyticsGranularity granularity,
     required String currencySymbol,
     int topLimit = 20,
+    String? channel,
+    String? terminalId,
   }) async {
     await _licenseService.requireFullAccess(
       message: _demoAnalyticsExportBlockedMessage,
@@ -2494,6 +2780,8 @@ class ReportesLocalDataSource {
       toDate: toDate,
       granularity: granularity,
       topLimit: topLimit,
+      channel: channel,
+      terminalId: terminalId,
     );
     final DateTime now = DateTime.now();
     final Directory preferredBase = await _resolveDownloadsBaseDir();
@@ -2704,7 +2992,10 @@ class ReportesLocalDataSource {
     }
   }
 
-  Future<String> exportIpvReportPdf(String reportId) async {
+  Future<String> exportIpvReportPdf(
+    String reportId, {
+    bool includeAdminProfitColumns = false,
+  }) async {
     await _licenseService.requireFullAccess(
       message: _demoIpvExportBlockedMessage,
     );
@@ -2737,6 +3028,7 @@ class ReportesLocalDataSource {
               detail: detail,
               meta: meta,
               generatedAt: generatedAt,
+              includeAdminProfitColumns: includeAdminProfitColumns,
             );
           },
         ),
@@ -2873,6 +3165,82 @@ class ReportesLocalDataSource {
       totalOutputsQty: totalOutputsQty,
       totalSalesAmountCents: totalSalesAmountCents,
     );
+  }
+
+  Future<Map<String, _IpvProfitByProduct>> _loadIpvProfitByProductForSession(
+    String sessionId,
+  ) async {
+    final String id = sessionId.trim();
+    if (id.isEmpty) {
+      return <String, _IpvProfitByProduct>{};
+    }
+    final List<QueryRow> rows = await _db.customSelect(
+      '''
+      SELECT
+        si.product_id AS product_id,
+        COALESCE(SUM(si.qty), 0) AS sold_qty,
+        COALESCE(
+          SUM(
+            COALESCE(
+              si.line_subtotal_cents,
+              CAST(ROUND(COALESCE(si.qty, 0) * COALESCE(si.unit_price_cents, 0)) AS INTEGER)
+            )
+          ),
+          0
+        ) AS subtotal_cents,
+        COALESCE(
+          SUM(
+            COALESCE(
+              si.line_subtotal_cents,
+              CAST(ROUND(COALESCE(si.qty, 0) * COALESCE(si.unit_price_cents, 0)) AS INTEGER)
+            ) - COALESCE(
+              si.line_cost_cents,
+              CAST(ROUND(COALESCE(si.qty, 0) * COALESCE(si.unit_cost_cents, 0)) AS INTEGER)
+            )
+          ),
+          0
+        ) AS profit_cents
+      FROM sale_items si
+      INNER JOIN sales s ON s.id = si.sale_id
+      WHERE s.status = 'posted'
+        AND s.terminal_session_id = ?
+        AND NOT EXISTS (
+          SELECT 1
+          FROM stock_movements sm
+          WHERE sm.ref_id = s.id
+            AND COALESCE(sm.is_voided, 0) = 0
+            AND (
+              LOWER(COALESCE(sm.reason_code, '')) = 'consignment_sale'
+              OR LOWER(COALESCE(sm.ref_type, '')) IN (
+                'consignment_sale',
+                'consignment_sale_pos',
+                'consignment_sale_direct'
+              )
+              OR LOWER(COALESCE(sm.movement_source, '')) IN (
+                'pos_consignment',
+                'direct_consignment'
+              )
+            )
+        )
+      GROUP BY si.product_id
+      ''',
+      variables: <Variable<Object>>[Variable<String>(id)],
+    ).get();
+
+    final Map<String, _IpvProfitByProduct> result =
+        <String, _IpvProfitByProduct>{};
+    for (final QueryRow row in rows) {
+      final String productId = _readTextCell(row, 'product_id', fallback: '');
+      if (productId.isEmpty) {
+        continue;
+      }
+      result[productId] = _IpvProfitByProduct(
+        soldQty: (row.data['sold_qty'] as num?)?.toDouble() ?? 0,
+        subtotalCents: (row.data['subtotal_cents'] as num?)?.toInt() ?? 0,
+        profitCents: (row.data['profit_cents'] as num?)?.toInt() ?? 0,
+      );
+    }
+    return result;
   }
 
   Future<_IpvExportMeta> _loadIpvExportMeta(String reportId) async {
@@ -3076,6 +3444,7 @@ class ReportesLocalDataSource {
     required IpvReportDetailStat detail,
     required _IpvExportMeta meta,
     required String generatedAt,
+    required bool includeAdminProfitColumns,
   }) {
     final _IpvExecutiveSummary executive = _buildIpvExecutiveSummary(detail);
     final List<MapEntry<String, int>> paymentEntries = meta
@@ -3091,6 +3460,16 @@ class ReportesLocalDataSource {
     final PdfColor headerBg = PdfColor.fromHex('#D8E0EC');
     final PdfColor totalBg = PdfColor.fromHex('#D7E6DB');
     final PdfColor stripeBg = PdfColor.fromHex('#F4F6F9');
+    final double totalSalesQty = detail.lines.fold<double>(
+      0,
+      (double total, IpvReportLineStat line) => total + line.salesQty,
+    );
+    final int totalRealProfitCents = detail.lines.fold<int>(
+      0,
+      (int total, IpvReportLineStat line) => total + line.realProfitCents,
+    );
+    final int totalMarginCents =
+        totalSalesQty <= 0 ? 0 : (totalRealProfitCents / totalSalesQty).round();
 
     pw.Widget sectionTitle(String text) {
       return pw.Padding(
@@ -3206,31 +3585,32 @@ class ReportesLocalDataSource {
           'Importe total', _formatMoney(executive.totalSalesAmountCents)),
     ];
 
+    final List<pw.Widget> headerCells = <pw.Widget>[
+      cell('Producto',
+          alignment: pw.Alignment.centerLeft, header: true, bg: headerBg),
+      cell('Cod', alignment: pw.Alignment.center, header: true, bg: headerBg),
+      cell('Ini', alignment: pw.Alignment.center, header: true, bg: headerBg),
+      cell('Ent', alignment: pw.Alignment.center, header: true, bg: headerBg),
+      cell('Sal', alignment: pw.Alignment.center, header: true, bg: headerBg),
+      cell('Ven', alignment: pw.Alignment.center, header: true, bg: headerBg),
+      cell('Tot', alignment: pw.Alignment.center, header: true, bg: headerBg),
+      cell('Fin', alignment: pw.Alignment.center, header: true, bg: headerBg),
+      cell('Precio',
+          alignment: pw.Alignment.centerRight, header: true, bg: headerBg),
+      cell('Importe',
+          alignment: pw.Alignment.centerRight, header: true, bg: headerBg),
+    ];
+    if (includeAdminProfitColumns) {
+      headerCells.addAll(<pw.Widget>[
+        cell('Margen',
+            alignment: pw.Alignment.centerRight, header: true, bg: headerBg),
+        cell('Ganancia',
+            alignment: pw.Alignment.centerRight, header: true, bg: headerBg),
+      ]);
+    }
+
     final List<pw.TableRow> tableRows = <pw.TableRow>[
-      pw.TableRow(
-        children: <pw.Widget>[
-          cell('Producto',
-              alignment: pw.Alignment.centerLeft, header: true, bg: headerBg),
-          cell('Cod',
-              alignment: pw.Alignment.center, header: true, bg: headerBg),
-          cell('Ini',
-              alignment: pw.Alignment.center, header: true, bg: headerBg),
-          cell('Ent',
-              alignment: pw.Alignment.center, header: true, bg: headerBg),
-          cell('Sal',
-              alignment: pw.Alignment.center, header: true, bg: headerBg),
-          cell('Ven',
-              alignment: pw.Alignment.center, header: true, bg: headerBg),
-          cell('Tot',
-              alignment: pw.Alignment.center, header: true, bg: headerBg),
-          cell('Fin',
-              alignment: pw.Alignment.center, header: true, bg: headerBg),
-          cell('Precio',
-              alignment: pw.Alignment.centerRight, header: true, bg: headerBg),
-          cell('Importe',
-              alignment: pw.Alignment.centerRight, header: true, bg: headerBg),
-        ],
-      ),
+      pw.TableRow(children: headerCells),
     ];
 
     for (int i = 0; i < detail.lines.length; i++) {
@@ -3239,59 +3619,73 @@ class ReportesLocalDataSource {
           row.startQty + row.entriesQty - row.outputsQty;
       final int salesAmountCents = (row.salesQty * row.salePriceCents).round();
       final PdfColor? rowBg = i.isEven ? stripeBg : null;
-      tableRows.add(
-        pw.TableRow(
-          children: <pw.Widget>[
-            cell(row.productName,
-                alignment: pw.Alignment.centerLeft, header: false, bg: rowBg),
-            cell(row.sku,
-                alignment: pw.Alignment.center, header: false, bg: rowBg),
-            cell(_formatQtyPretty(row.startQty),
-                alignment: pw.Alignment.center, header: false, bg: rowBg),
-            cell(_formatQtyPretty(row.entriesQty),
-                alignment: pw.Alignment.center, header: false, bg: rowBg),
-            cell(_formatQtyPretty(row.outputsQty),
-                alignment: pw.Alignment.center, header: false, bg: rowBg),
-            cell(_formatQtyPretty(row.salesQty),
-                alignment: pw.Alignment.center, header: false, bg: rowBg),
-            cell(_formatQtyPretty(totalBeforeSales),
-                alignment: pw.Alignment.center, header: false, bg: rowBg),
-            cell(_formatQtyPretty(row.finalQty),
-                alignment: pw.Alignment.center, header: false, bg: rowBg),
-            cell(_formatMoney(row.salePriceCents),
-                alignment: pw.Alignment.centerRight, header: false, bg: rowBg),
-            cell(_formatMoney(salesAmountCents),
-                alignment: pw.Alignment.centerRight, header: false, bg: rowBg),
-          ],
-        ),
-      );
+      final List<pw.Widget> cells = <pw.Widget>[
+        cell(row.productName,
+            alignment: pw.Alignment.centerLeft, header: false, bg: rowBg),
+        cell(row.sku, alignment: pw.Alignment.center, header: false, bg: rowBg),
+        cell(_formatQtyPretty(row.startQty),
+            alignment: pw.Alignment.center, header: false, bg: rowBg),
+        cell(_formatQtyPretty(row.entriesQty),
+            alignment: pw.Alignment.center, header: false, bg: rowBg),
+        cell(_formatQtyPretty(row.outputsQty),
+            alignment: pw.Alignment.center, header: false, bg: rowBg),
+        cell(_formatQtyPretty(row.salesQty),
+            alignment: pw.Alignment.center, header: false, bg: rowBg),
+        cell(_formatQtyPretty(totalBeforeSales),
+            alignment: pw.Alignment.center, header: false, bg: rowBg),
+        cell(_formatQtyPretty(row.finalQty),
+            alignment: pw.Alignment.center, header: false, bg: rowBg),
+        cell(_formatMoney(row.salePriceCents),
+            alignment: pw.Alignment.centerRight, header: false, bg: rowBg),
+        cell(_formatMoney(salesAmountCents),
+            alignment: pw.Alignment.centerRight, header: false, bg: rowBg),
+      ];
+      if (includeAdminProfitColumns) {
+        cells.addAll(<pw.Widget>[
+          cell(_formatMoney(row.profitMarginCents),
+              alignment: pw.Alignment.centerRight, header: false, bg: rowBg),
+          cell(_formatMoney(row.realProfitCents),
+              alignment: pw.Alignment.centerRight, header: false, bg: rowBg),
+        ]);
+      }
+      tableRows.add(pw.TableRow(children: cells));
     }
 
-    tableRows.add(
-      pw.TableRow(
-        children: <pw.Widget>[
-          cell('',
-              alignment: pw.Alignment.centerLeft, header: false, bg: totalBg),
-          cell('', alignment: pw.Alignment.center, header: false, bg: totalBg),
-          cell('', alignment: pw.Alignment.center, header: false, bg: totalBg),
-          cell('', alignment: pw.Alignment.center, header: false, bg: totalBg),
-          cell('', alignment: pw.Alignment.center, header: false, bg: totalBg),
-          cell('', alignment: pw.Alignment.center, header: false, bg: totalBg),
-          cell('', alignment: pw.Alignment.center, header: false, bg: totalBg),
-          cell('', alignment: pw.Alignment.center, header: false, bg: totalBg),
-          cell('TOTAL IMPORTE',
-              alignment: pw.Alignment.centerRight,
-              header: false,
-              bg: totalBg,
-              bold: true),
-          cell(_formatMoney(executive.totalSalesAmountCents),
-              alignment: pw.Alignment.centerRight,
-              header: false,
-              bg: totalBg,
-              bold: true),
-        ],
-      ),
-    );
+    final List<pw.Widget> totalCells = <pw.Widget>[
+      cell('', alignment: pw.Alignment.centerLeft, header: false, bg: totalBg),
+      cell('', alignment: pw.Alignment.center, header: false, bg: totalBg),
+      cell('', alignment: pw.Alignment.center, header: false, bg: totalBg),
+      cell('', alignment: pw.Alignment.center, header: false, bg: totalBg),
+      cell('', alignment: pw.Alignment.center, header: false, bg: totalBg),
+      cell('', alignment: pw.Alignment.center, header: false, bg: totalBg),
+      cell('', alignment: pw.Alignment.center, header: false, bg: totalBg),
+      cell('', alignment: pw.Alignment.center, header: false, bg: totalBg),
+      cell('TOTAL IMPORTE',
+          alignment: pw.Alignment.centerRight,
+          header: false,
+          bg: totalBg,
+          bold: true),
+      cell(_formatMoney(executive.totalSalesAmountCents),
+          alignment: pw.Alignment.centerRight,
+          header: false,
+          bg: totalBg,
+          bold: true),
+    ];
+    if (includeAdminProfitColumns) {
+      totalCells.addAll(<pw.Widget>[
+        cell(_formatMoney(totalMarginCents),
+            alignment: pw.Alignment.centerRight,
+            header: false,
+            bg: totalBg,
+            bold: true),
+        cell(_formatMoney(totalRealProfitCents),
+            alignment: pw.Alignment.centerRight,
+            header: false,
+            bg: totalBg,
+            bold: true),
+      ]);
+    }
+    tableRows.add(pw.TableRow(children: totalCells));
 
     return <pw.Widget>[
       pw.Container(
@@ -3334,17 +3728,19 @@ class ReportesLocalDataSource {
       if (detail.lines.isNotEmpty)
         pw.Table(
           border: pw.TableBorder.all(color: infoBorder, width: 0.7),
-          columnWidths: const <int, pw.TableColumnWidth>{
-            0: pw.FlexColumnWidth(3.3),
-            1: pw.FlexColumnWidth(1.2),
-            2: pw.FlexColumnWidth(0.72),
-            3: pw.FlexColumnWidth(0.72),
-            4: pw.FlexColumnWidth(0.72),
-            5: pw.FlexColumnWidth(0.72),
-            6: pw.FlexColumnWidth(0.85),
-            7: pw.FlexColumnWidth(0.72),
-            8: pw.FlexColumnWidth(1.45),
-            9: pw.FlexColumnWidth(1.9),
+          columnWidths: <int, pw.TableColumnWidth>{
+            0: const pw.FlexColumnWidth(3.3),
+            1: const pw.FlexColumnWidth(1.2),
+            2: const pw.FlexColumnWidth(0.72),
+            3: const pw.FlexColumnWidth(0.72),
+            4: const pw.FlexColumnWidth(0.72),
+            5: const pw.FlexColumnWidth(0.72),
+            6: const pw.FlexColumnWidth(0.85),
+            7: const pw.FlexColumnWidth(0.72),
+            8: const pw.FlexColumnWidth(1.45),
+            9: const pw.FlexColumnWidth(1.9),
+            if (includeAdminProfitColumns) 10: const pw.FlexColumnWidth(1.15),
+            if (includeAdminProfitColumns) 11: const pw.FlexColumnWidth(1.55),
           },
           children: tableRows,
         ),
@@ -3402,6 +3798,806 @@ class ReportesLocalDataSource {
     );
   }
 
+  Future<List<ManualIpvEmployeeOption>> listManualIpvEmployeeOptions() async {
+    final List<Employee> rows = await (_db.select(_db.employees)
+          ..where((Employees tbl) => tbl.isActive.equals(true))
+          ..orderBy(<OrderingTerm Function(Employees)>[
+            (Employees tbl) => OrderingTerm.asc(tbl.name),
+          ]))
+        .get();
+    return rows
+        .map(
+          (Employee row) => ManualIpvEmployeeOption(
+            id: row.id,
+            name: row.name.trim().isEmpty ? 'Empleado' : row.name.trim(),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<List<String>> listManualIpvPaymentMethods() async {
+    const List<String> defaults = <String>[
+      'cash',
+      'card',
+      'transfer',
+      'wallet',
+      'consignment',
+    ];
+    final AppSetting? row = await (_db.select(_db.appSettings)
+          ..where((AppSettings tbl) =>
+              tbl.key.equals('payment_methods_config_json_v1'))
+          ..limit(1))
+        .getSingleOrNull();
+    if (row == null || row.value.trim().isEmpty) {
+      return defaults;
+    }
+    try {
+      final Object? decoded = jsonDecode(row.value);
+      if (decoded is! List) {
+        return defaults;
+      }
+      final List<String> out = <String>[];
+      final Set<String> seen = <String>{};
+      for (final Object? entry in decoded) {
+        String code = '';
+        if (entry is Map) {
+          final Object? raw = entry['code'];
+          if (raw is String) {
+            code = raw.trim().toLowerCase();
+          }
+        } else if (entry is String) {
+          code = entry.trim().toLowerCase();
+        }
+        if (code.isEmpty || seen.contains(code)) {
+          continue;
+        }
+        seen.add(code);
+        out.add(code);
+      }
+      if (out.isEmpty) {
+        return defaults;
+      }
+      return out;
+    } catch (_) {
+      return defaults;
+    }
+  }
+
+  Future<List<ManualIpvProductOption>> listManualIpvAddableProducts({
+    required String reportId,
+    required DateTime reportDate,
+    String search = '',
+  }) async {
+    final String cleanReportId = reportId.trim();
+    if (cleanReportId.isEmpty) {
+      return <ManualIpvProductOption>[];
+    }
+    final DateTime normalizedDate = _startOfDay(reportDate);
+    final String cleanSearch = search.trim().toLowerCase();
+
+    final List<ManualIpvReportLine> existingLines = await (_db
+            .select(_db.manualIpvReportLines)
+          ..where((ManualIpvReportLines tbl) =>
+              tbl.reportId.equals(cleanReportId) & tbl.productId.isNotNull()))
+        .get();
+    final Set<String> existingProductIds = existingLines
+        .map((ManualIpvReportLine row) => (row.productId ?? '').trim())
+        .where((String value) => value.isNotEmpty)
+        .toSet();
+
+    final _ManualIpvPreviousReport? previous =
+        await _manualIpvPreviousReport(beforeDate: normalizedDate);
+    final Map<String, double> previousFinalByProduct = previous == null
+        ? <String, double>{}
+        : await _manualIpvFinalQtyByProduct(previous.id);
+
+    final List<Product> activeProducts = await (_db.select(_db.products)
+          ..where((Products tbl) {
+            final Expression<bool> active = tbl.isActive.equals(true);
+            if (cleanSearch.isEmpty) {
+              return active;
+            }
+            final String pattern = '%$cleanSearch%';
+            return active &
+                (tbl.name.lower().like(pattern) |
+                    tbl.sku.lower().like(pattern));
+          })
+          ..orderBy(<OrderingTerm Function(Products)>[
+            (Products tbl) => OrderingTerm.asc(tbl.name),
+          ]))
+        .get();
+
+    final List<ManualIpvProductOption> out = <ManualIpvProductOption>[];
+    for (final Product row in activeProducts) {
+      if (existingProductIds.contains(row.id)) {
+        continue;
+      }
+      out.add(
+        ManualIpvProductOption(
+          productId: row.id,
+          name: row.name.trim().isEmpty ? 'Producto' : row.name.trim(),
+          sku: row.sku.trim().isEmpty ? '-' : row.sku.trim(),
+          priceCents: row.priceCents,
+          costCents: row.costPriceCents,
+          suggestedStartQty: previousFinalByProduct[row.id] ?? 0,
+        ),
+      );
+    }
+    return out;
+  }
+
+  Future<ManualIpvReportStat> loadOrCreateManualIpvReport({
+    required DateTime reportDate,
+    required String? userId,
+  }) async {
+    final DateTime normalizedDate = _startOfDay(reportDate);
+    final String creatorId = (userId ?? '').trim();
+    final List<String> configuredMethods = await listManualIpvPaymentMethods();
+    final String defaultCurrency = await _manualIpvCurrencySymbolFromSettings();
+
+    return _db.transaction(() async {
+      ManualIpvReport? report = await (_db.select(_db.manualIpvReports)
+            ..where(
+                (ManualIpvReports tbl) => tbl.reportDate.equals(normalizedDate))
+            ..limit(1))
+          .getSingleOrNull();
+      _ManualIpvPreviousReport? previous =
+          await _manualIpvPreviousReport(beforeDate: normalizedDate);
+
+      if (report == null) {
+        final String reportId = _uuid.v4();
+        await _db.into(_db.manualIpvReports).insert(
+              ManualIpvReportsCompanion.insert(
+                id: reportId,
+                reportDate: normalizedDate,
+                createdBy:
+                    creatorId.isEmpty ? const Value.absent() : Value(creatorId),
+                employeeIdsJson: const Value('[]'),
+                employeeNamesJson: const Value('[]'),
+                paymentTotalsJson: Value(
+                  jsonEncode(
+                    _normalizeManualIpvPaymentTotals(
+                      configuredMethods,
+                      const <String, int>{},
+                    ),
+                  ),
+                ),
+                currencySymbol: Value(defaultCurrency),
+              ),
+            );
+        previous = await _manualIpvPreviousReport(beforeDate: normalizedDate);
+        await _seedManualIpvActiveProducts(
+          reportId: reportId,
+          previousReportId: previous?.id,
+        );
+        report = await (_db.select(_db.manualIpvReports)
+              ..where((ManualIpvReports tbl) => tbl.id.equals(reportId))
+              ..limit(1))
+            .getSingle();
+      } else {
+        await _syncManualIpvActiveProducts(
+          reportId: report.id,
+          reportDate: normalizedDate,
+        );
+        final Map<String, int> normalizedTotals =
+            _normalizeManualIpvPaymentTotals(
+          configuredMethods,
+          _decodeManualIpvPaymentTotals(report.paymentTotalsJson),
+        );
+        final String nextCurrencySymbol = report.currencySymbol.trim().isEmpty
+            ? defaultCurrency
+            : report.currencySymbol;
+        await (_db.update(_db.manualIpvReports)
+              ..where((ManualIpvReports tbl) => tbl.id.equals(report!.id)))
+            .write(
+          ManualIpvReportsCompanion(
+            paymentTotalsJson: Value(jsonEncode(normalizedTotals)),
+            currencySymbol: Value(nextCurrencySymbol),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
+        report = await (_db.select(_db.manualIpvReports)
+              ..where((ManualIpvReports tbl) => tbl.id.equals(report!.id))
+              ..limit(1))
+            .getSingle();
+      }
+
+      final List<ManualIpvEditableLineStat> lines =
+          await _loadManualIpvLines(report.id);
+      final List<String> employeeIds =
+          _decodeManualIpvStringList(report.employeeIdsJson);
+      final List<String> employeeNames =
+          _decodeManualIpvStringList(report.employeeNamesJson);
+      final Map<String, int> paymentTotals = _normalizeManualIpvPaymentTotals(
+        configuredMethods,
+        _decodeManualIpvPaymentTotals(report.paymentTotalsJson),
+      );
+
+      return ManualIpvReportStat(
+        reportId: report.id,
+        reportDate: report.reportDate,
+        hasPreviousReport: previous != null,
+        currencySymbol: report.currencySymbol.trim().isEmpty
+            ? defaultCurrency
+            : report.currencySymbol.trim(),
+        employeeIds: employeeIds,
+        employeeNames: employeeNames,
+        paymentMethods: configuredMethods,
+        paymentTotalsByMethod: paymentTotals,
+        note: (report.note ?? '').trim(),
+        lines: lines,
+      );
+    });
+  }
+
+  Future<void> saveManualIpvReport({
+    required String reportId,
+    required DateTime reportDate,
+    required String currencySymbol,
+    required List<String> employeeIds,
+    required List<String> employeeNames,
+    required Map<String, int> paymentTotalsByMethod,
+    required String? note,
+    required List<ManualIpvEditableLineStat> lines,
+  }) async {
+    final String cleanReportId = reportId.trim();
+    if (cleanReportId.isEmpty) {
+      throw Exception('ID de reporte manual inválido.');
+    }
+
+    final DateTime normalizedDate = _startOfDay(reportDate);
+    final String safeCurrency = currencySymbol.trim().isEmpty
+        ? await _manualIpvCurrencySymbolFromSettings()
+        : currencySymbol.trim();
+    final List<String> configuredMethods = await listManualIpvPaymentMethods();
+    final Map<String, int> normalizedTotals = _normalizeManualIpvPaymentTotals(
+      configuredMethods,
+      paymentTotalsByMethod,
+    );
+    final List<String> normalizedEmployeeIds = employeeIds
+        .map((String value) => value.trim())
+        .where((String value) => value.isNotEmpty)
+        .toList(growable: false);
+
+    await _db.transaction(() async {
+      final ManualIpvReport? existing = await (_db.select(_db.manualIpvReports)
+            ..where((ManualIpvReports tbl) => tbl.id.equals(cleanReportId))
+            ..limit(1))
+          .getSingleOrNull();
+      if (existing == null) {
+        throw Exception('No existe el reporte manual seleccionado.');
+      }
+
+      final ManualIpvReport? duplicate = await (_db.select(_db.manualIpvReports)
+            ..where((ManualIpvReports tbl) =>
+                tbl.reportDate.equals(normalizedDate) &
+                tbl.id.isNotValue(cleanReportId))
+            ..limit(1))
+          .getSingleOrNull();
+      if (duplicate != null) {
+        throw Exception(
+          'Ya existe un IPV manual para esa fecha. Selecciona otra fecha.',
+        );
+      }
+
+      final _ManualIpvPreviousReport? previous = await _manualIpvPreviousReport(
+        beforeDate: normalizedDate,
+        excludeReportId: cleanReportId,
+      );
+      final Map<String, double> previousFinalByProduct = previous == null
+          ? <String, double>{}
+          : await _manualIpvFinalQtyByProduct(previous.id);
+
+      final List<String> distinctProductIds = lines
+          .map(
+              (ManualIpvEditableLineStat line) => (line.productId ?? '').trim())
+          .where((String id) => id.isNotEmpty)
+          .toSet()
+          .toList(growable: false);
+      final Map<String, Product> productById = await _loadProductsByIds(
+        distinctProductIds,
+      );
+
+      final List<ManualIpvEditableLineStat> orderedLines =
+          lines.toList(growable: true)
+            ..sort((ManualIpvEditableLineStat a, ManualIpvEditableLineStat b) {
+              final int bySort = a.sortOrder.compareTo(b.sortOrder);
+              if (bySort != 0) {
+                return bySort;
+              }
+              return a.productName.toLowerCase().compareTo(
+                    b.productName.toLowerCase(),
+                  );
+            });
+
+      final List<ManualIpvEditableLineStat> sanitizedLines =
+          <ManualIpvEditableLineStat>[];
+      int sortOrder = 0;
+      for (final ManualIpvEditableLineStat line in orderedLines) {
+        final String? productId = (line.productId ?? '').trim().isEmpty
+            ? null
+            : (line.productId ?? '').trim();
+        final Product? product =
+            productId == null ? null : productById[productId];
+        String productName = line.productName.trim();
+        if (productName.isEmpty) {
+          productName = product?.name.trim() ?? '';
+        }
+        if (productName.isEmpty) {
+          continue;
+        }
+        String sku = line.sku.trim();
+        if (sku.isEmpty) {
+          sku = product?.sku.trim() ?? '-';
+        }
+        final int safePrice = line.salePriceCents < 0 ? 0 : line.salePriceCents;
+        final int safeCost = line.unitCostCents < 0 ? 0 : line.unitCostCents;
+        final double safeEntries =
+            line.entriesQty.isFinite ? line.entriesQty : 0;
+        final double safeOutputs =
+            line.outputsQty.isFinite ? line.outputsQty : 0;
+        final double safeSales = line.salesQty.isFinite ? line.salesQty : 0;
+        double startQty = line.startQty.isFinite ? line.startQty : 0;
+        if (productId != null &&
+            previousFinalByProduct.containsKey(productId)) {
+          startQty = previousFinalByProduct[productId] ?? 0;
+        }
+        final ManualIpvEditableLineStat computed = _recalculateManualIpvLine(
+          line.copyWith(
+            lineId:
+                line.lineId.trim().isEmpty ? _uuid.v4() : line.lineId.trim(),
+            productId: productId,
+            isCustom: productId == null,
+            productName: productName,
+            sku: sku,
+            startQty: startQty,
+            entriesQty: safeEntries,
+            outputsQty: safeOutputs,
+            salesQty: safeSales,
+            salePriceCents: safePrice,
+            unitCostCents: safeCost,
+            sortOrder: sortOrder,
+          ),
+        );
+        sanitizedLines.add(computed);
+        sortOrder += 1;
+      }
+
+      final List<String> resolvedEmployeeNames =
+          await _resolveManualIpvEmployeeNames(
+        employeeIds: normalizedEmployeeIds,
+        fallbackNames: employeeNames,
+      );
+
+      await (_db.update(_db.manualIpvReports)
+            ..where((ManualIpvReports tbl) => tbl.id.equals(cleanReportId)))
+          .write(
+        ManualIpvReportsCompanion(
+          reportDate: Value(normalizedDate),
+          currencySymbol: Value(safeCurrency),
+          employeeIdsJson: Value(jsonEncode(normalizedEmployeeIds)),
+          employeeNamesJson: Value(jsonEncode(resolvedEmployeeNames)),
+          paymentTotalsJson: Value(jsonEncode(normalizedTotals)),
+          note: Value((note ?? '').trim().isEmpty ? null : note!.trim()),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
+
+      final Set<String> keepIds = sanitizedLines
+          .map((ManualIpvEditableLineStat line) => line.lineId)
+          .toSet();
+
+      if (keepIds.isEmpty) {
+        await (_db.delete(_db.manualIpvReportLines)
+              ..where((ManualIpvReportLines tbl) =>
+                  tbl.reportId.equals(cleanReportId)))
+            .go();
+      } else {
+        await (_db.delete(_db.manualIpvReportLines)
+              ..where((ManualIpvReportLines tbl) =>
+                  tbl.reportId.equals(cleanReportId) &
+                  tbl.id.isNotIn(keepIds.toList(growable: false))))
+            .go();
+      }
+
+      for (final ManualIpvEditableLineStat line in sanitizedLines) {
+        await _db.into(_db.manualIpvReportLines).insert(
+              ManualIpvReportLinesCompanion.insert(
+                id: line.lineId,
+                reportId: cleanReportId,
+                productId: Value(line.productId),
+                isCustom: Value(line.isCustom),
+                productNameSnapshot: line.productName,
+                productSkuSnapshot: Value(line.sku),
+                startQty: Value(line.startQty),
+                entriesQty: Value(line.entriesQty),
+                outputsQty: Value(line.outputsQty),
+                salesQty: Value(line.salesQty),
+                finalQty: Value(line.finalQty),
+                salePriceCents: Value(line.salePriceCents),
+                unitCostCents: Value(line.unitCostCents),
+                totalAmountCents: Value(line.totalAmountCents),
+                sortOrder: Value(line.sortOrder),
+                updatedAt: Value(DateTime.now()),
+              ),
+              mode: InsertMode.insertOrReplace,
+            );
+      }
+
+      await _syncManualIpvActiveProducts(
+        reportId: cleanReportId,
+        reportDate: normalizedDate,
+      );
+    });
+  }
+
+  ManualIpvEditableLineStat _recalculateManualIpvLine(
+    ManualIpvEditableLineStat line,
+  ) {
+    final double finalQty =
+        line.startQty + line.entriesQty - line.outputsQty - line.salesQty;
+    final int totalAmountCents = (line.salesQty * line.salePriceCents).round();
+    return line.copyWith(
+      finalQty: finalQty,
+      totalAmountCents: totalAmountCents,
+    );
+  }
+
+  Future<void> _seedManualIpvActiveProducts({
+    required String reportId,
+    required String? previousReportId,
+  }) async {
+    final List<Product> activeProducts = await (_db.select(_db.products)
+          ..where((Products tbl) => tbl.isActive.equals(true))
+          ..orderBy(<OrderingTerm Function(Products)>[
+            (Products tbl) => OrderingTerm.asc(tbl.name),
+          ]))
+        .get();
+    final Map<String, double> previousFinalByProduct =
+        previousReportId == null || previousReportId.trim().isEmpty
+            ? <String, double>{}
+            : await _manualIpvFinalQtyByProduct(previousReportId);
+    int sort = 0;
+    for (final Product product in activeProducts) {
+      final double startQty = previousFinalByProduct[product.id] ?? 0;
+      final ManualIpvEditableLineStat computed = _recalculateManualIpvLine(
+        ManualIpvEditableLineStat(
+          lineId: _uuid.v4(),
+          productId: product.id,
+          isCustom: false,
+          productName:
+              product.name.trim().isEmpty ? 'Producto' : product.name.trim(),
+          sku: product.sku.trim().isEmpty ? '-' : product.sku.trim(),
+          startQty: startQty,
+          entriesQty: 0,
+          outputsQty: 0,
+          salesQty: 0,
+          finalQty: startQty,
+          salePriceCents: product.priceCents,
+          unitCostCents: product.costPriceCents,
+          totalAmountCents: 0,
+          sortOrder: sort,
+        ),
+      );
+      sort += 1;
+      await _db.into(_db.manualIpvReportLines).insert(
+            ManualIpvReportLinesCompanion.insert(
+              id: computed.lineId,
+              reportId: reportId,
+              productId: Value(computed.productId),
+              isCustom: Value(false),
+              productNameSnapshot: computed.productName,
+              productSkuSnapshot: Value(computed.sku),
+              startQty: Value(computed.startQty),
+              entriesQty: Value(0),
+              outputsQty: Value(0),
+              salesQty: Value(0),
+              finalQty: Value(computed.finalQty),
+              salePriceCents: Value(computed.salePriceCents),
+              unitCostCents: Value(computed.unitCostCents),
+              totalAmountCents: Value(0),
+              sortOrder: Value(computed.sortOrder),
+            ),
+          );
+    }
+  }
+
+  Future<void> _syncManualIpvActiveProducts({
+    required String reportId,
+    required DateTime reportDate,
+  }) async {
+    final List<ManualIpvReportLine> currentLines = await (_db
+            .select(_db.manualIpvReportLines)
+          ..where((ManualIpvReportLines tbl) => tbl.reportId.equals(reportId))
+          ..orderBy(<OrderingTerm Function(ManualIpvReportLines)>[
+            (ManualIpvReportLines tbl) => OrderingTerm.desc(tbl.sortOrder),
+          ])
+          ..limit(1))
+        .get();
+    int nextSort = 0;
+    if (currentLines.isNotEmpty) {
+      nextSort = currentLines.first.sortOrder + 1;
+    }
+
+    final Set<String> existingProductIds = (await (_db.select(
+      _db.manualIpvReportLines,
+    )..where((ManualIpvReportLines tbl) =>
+                tbl.reportId.equals(reportId) & tbl.productId.isNotNull()))
+            .get())
+        .map((ManualIpvReportLine row) => (row.productId ?? '').trim())
+        .where((String value) => value.isNotEmpty)
+        .toSet();
+
+    final _ManualIpvPreviousReport? previous =
+        await _manualIpvPreviousReport(beforeDate: reportDate);
+    final Map<String, double> previousFinalByProduct = previous == null
+        ? <String, double>{}
+        : await _manualIpvFinalQtyByProduct(previous.id);
+
+    final List<Product> activeProducts = await (_db.select(_db.products)
+          ..where((Products tbl) => tbl.isActive.equals(true))
+          ..orderBy(<OrderingTerm Function(Products)>[
+            (Products tbl) => OrderingTerm.asc(tbl.name),
+          ]))
+        .get();
+    for (final Product product in activeProducts) {
+      if (existingProductIds.contains(product.id)) {
+        continue;
+      }
+      final double startQty = previousFinalByProduct[product.id] ?? 0;
+      final ManualIpvEditableLineStat computed = _recalculateManualIpvLine(
+        ManualIpvEditableLineStat(
+          lineId: _uuid.v4(),
+          productId: product.id,
+          isCustom: false,
+          productName:
+              product.name.trim().isEmpty ? 'Producto' : product.name.trim(),
+          sku: product.sku.trim().isEmpty ? '-' : product.sku.trim(),
+          startQty: startQty,
+          entriesQty: 0,
+          outputsQty: 0,
+          salesQty: 0,
+          finalQty: startQty,
+          salePriceCents: product.priceCents,
+          unitCostCents: product.costPriceCents,
+          totalAmountCents: 0,
+          sortOrder: nextSort,
+        ),
+      );
+      nextSort += 1;
+      await _db.into(_db.manualIpvReportLines).insert(
+            ManualIpvReportLinesCompanion.insert(
+              id: computed.lineId,
+              reportId: reportId,
+              productId: Value(computed.productId),
+              isCustom: Value(false),
+              productNameSnapshot: computed.productName,
+              productSkuSnapshot: Value(computed.sku),
+              startQty: Value(computed.startQty),
+              entriesQty: Value(computed.entriesQty),
+              outputsQty: Value(computed.outputsQty),
+              salesQty: Value(computed.salesQty),
+              finalQty: Value(computed.finalQty),
+              salePriceCents: Value(computed.salePriceCents),
+              unitCostCents: Value(computed.unitCostCents),
+              totalAmountCents: Value(computed.totalAmountCents),
+              sortOrder: Value(computed.sortOrder),
+            ),
+          );
+    }
+  }
+
+  Future<List<ManualIpvEditableLineStat>> _loadManualIpvLines(
+    String reportId,
+  ) async {
+    final List<ManualIpvReportLine> rows = await (_db
+            .select(_db.manualIpvReportLines)
+          ..where((ManualIpvReportLines tbl) => tbl.reportId.equals(reportId))
+          ..orderBy(<OrderingTerm Function(ManualIpvReportLines)>[
+            (ManualIpvReportLines tbl) => OrderingTerm.asc(tbl.sortOrder),
+            (ManualIpvReportLines tbl) =>
+                OrderingTerm.asc(tbl.productNameSnapshot),
+          ]))
+        .get();
+    return rows
+        .map(
+          (ManualIpvReportLine row) => _recalculateManualIpvLine(
+            ManualIpvEditableLineStat(
+              lineId: row.id,
+              productId: row.productId,
+              isCustom: row.isCustom,
+              productName: row.productNameSnapshot.trim().isEmpty
+                  ? 'Producto'
+                  : row.productNameSnapshot.trim(),
+              sku: row.productSkuSnapshot.trim().isEmpty
+                  ? '-'
+                  : row.productSkuSnapshot.trim(),
+              startQty: row.startQty,
+              entriesQty: row.entriesQty,
+              outputsQty: row.outputsQty,
+              salesQty: row.salesQty,
+              finalQty: row.finalQty,
+              salePriceCents: row.salePriceCents,
+              unitCostCents: row.unitCostCents,
+              totalAmountCents: row.totalAmountCents,
+              sortOrder: row.sortOrder,
+            ),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<Map<String, Product>> _loadProductsByIds(List<String> ids) async {
+    if (ids.isEmpty) {
+      return <String, Product>{};
+    }
+    final List<Product> rows = await (_db.select(_db.products)
+          ..where((Products tbl) => tbl.id.isIn(ids)))
+        .get();
+    return <String, Product>{
+      for (final Product row in rows) row.id: row,
+    };
+  }
+
+  Future<_ManualIpvPreviousReport?> _manualIpvPreviousReport({
+    required DateTime beforeDate,
+    String? excludeReportId,
+  }) async {
+    final String cleanExclude = (excludeReportId ?? '').trim();
+    final List<Expression<bool>> filters = <Expression<bool>>[
+      _db.manualIpvReports.reportDate.isSmallerThanValue(beforeDate),
+    ];
+    if (cleanExclude.isNotEmpty) {
+      filters.add(_db.manualIpvReports.id.isNotValue(cleanExclude));
+    }
+    Expression<bool> condition = filters.first;
+    for (int i = 1; i < filters.length; i++) {
+      condition = condition & filters[i];
+    }
+    final ManualIpvReport? row = await (_db.select(_db.manualIpvReports)
+          ..where((ManualIpvReports tbl) => condition)
+          ..orderBy(<OrderingTerm Function(ManualIpvReports)>[
+            (ManualIpvReports tbl) => OrderingTerm.desc(tbl.reportDate),
+          ])
+          ..limit(1))
+        .getSingleOrNull();
+    if (row == null) {
+      return null;
+    }
+    return _ManualIpvPreviousReport(
+      id: row.id,
+      reportDate: row.reportDate,
+    );
+  }
+
+  Future<Map<String, double>> _manualIpvFinalQtyByProduct(
+    String reportId,
+  ) async {
+    final List<ManualIpvReportLine> rows =
+        await (_db.select(_db.manualIpvReportLines)
+              ..where((ManualIpvReportLines tbl) =>
+                  tbl.reportId.equals(reportId) & tbl.productId.isNotNull()))
+            .get();
+    final Map<String, double> out = <String, double>{};
+    for (final ManualIpvReportLine row in rows) {
+      final String productId = (row.productId ?? '').trim();
+      if (productId.isEmpty) {
+        continue;
+      }
+      out[productId] = row.finalQty;
+    }
+    return out;
+  }
+
+  Future<String> _manualIpvCurrencySymbolFromSettings() async {
+    final AppSetting? row = await (_db.select(_db.appSettings)
+          ..where((AppSettings tbl) => tbl.key.equals('currency_symbol'))
+          ..limit(1))
+        .getSingleOrNull();
+    final String symbol = (row?.value ?? '').trim();
+    return symbol.isEmpty ? r'$' : symbol;
+  }
+
+  List<String> _decodeManualIpvStringList(String raw) {
+    if (raw.trim().isEmpty) {
+      return <String>[];
+    }
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! List) {
+        return <String>[];
+      }
+      return decoded
+          .whereType<Object>()
+          .map((Object entry) => entry.toString().trim())
+          .where((String value) => value.isNotEmpty)
+          .toList(growable: false);
+    } catch (_) {
+      return <String>[];
+    }
+  }
+
+  Map<String, int> _decodeManualIpvPaymentTotals(String raw) {
+    if (raw.trim().isEmpty) {
+      return <String, int>{};
+    }
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! Map) {
+        return <String, int>{};
+      }
+      final Map<String, int> out = <String, int>{};
+      decoded.forEach((Object? key, Object? value) {
+        final String method = key?.toString().trim().toLowerCase() ?? '';
+        if (method.isEmpty) {
+          return;
+        }
+        final int amount = (value as num?)?.round() ?? 0;
+        out[method] = amount < 0 ? 0 : amount;
+      });
+      return out;
+    } catch (_) {
+      return <String, int>{};
+    }
+  }
+
+  Map<String, int> _normalizeManualIpvPaymentTotals(
+    List<String> configuredMethods,
+    Map<String, int> rawTotals,
+  ) {
+    final List<String> normalizedMethods = configuredMethods
+        .map((String value) => value.trim().toLowerCase())
+        .where((String value) => value.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    final Map<String, int> out = <String, int>{};
+    for (final String method in normalizedMethods) {
+      final int amount = rawTotals[method] ?? 0;
+      out[method] = amount < 0 ? 0 : amount;
+    }
+    for (final MapEntry<String, int> entry in rawTotals.entries) {
+      final String method = entry.key.trim().toLowerCase();
+      if (method.isEmpty || out.containsKey(method)) {
+        continue;
+      }
+      out[method] = entry.value < 0 ? 0 : entry.value;
+    }
+    return out;
+  }
+
+  Future<List<String>> _resolveManualIpvEmployeeNames({
+    required List<String> employeeIds,
+    required List<String> fallbackNames,
+  }) async {
+    if (employeeIds.isEmpty) {
+      return fallbackNames
+          .map((String value) => value.trim())
+          .where((String value) => value.isNotEmpty)
+          .toList(growable: false);
+    }
+    final List<Employee> rows = await (_db.select(_db.employees)
+          ..where((Employees tbl) => tbl.id.isIn(employeeIds)))
+        .get();
+    final Map<String, String> byId = <String, String>{
+      for (final Employee row in rows)
+        row.id: row.name.trim().isEmpty ? 'Empleado' : row.name.trim(),
+    };
+    final List<String> out = <String>[];
+    for (final String employeeId in employeeIds) {
+      final String name = (byId[employeeId] ?? '').trim();
+      if (name.isNotEmpty) {
+        out.add(name);
+      }
+    }
+    if (out.isNotEmpty) {
+      return out;
+    }
+    return fallbackNames
+        .map((String value) => value.trim())
+        .where((String value) => value.isNotEmpty)
+        .toList(growable: false);
+  }
+
   String _paymentMethodLabel(String method) {
     switch (method.trim().toLowerCase()) {
       case 'cash':
@@ -3423,6 +4619,54 @@ class ReportesLocalDataSource {
     return _paymentMethodLabel(method);
   }
 
+  List<Sale> _filterSalesForAnalytics(
+    List<Sale> sales, {
+    String? normalizedChannel,
+    String? normalizedTerminalId,
+  }) {
+    if (normalizedTerminalId != null && normalizedTerminalId.isNotEmpty) {
+      return sales.where((Sale row) {
+        final String terminal = (row.terminalId ?? '').trim();
+        return terminal == normalizedTerminalId;
+      }).toList(growable: false);
+    }
+    if (normalizedChannel == 'pos') {
+      return sales.where((Sale row) {
+        return (row.terminalId ?? '').trim().isNotEmpty;
+      }).toList(growable: false);
+    }
+    if (normalizedChannel == 'directa') {
+      return sales.where((Sale row) {
+        return (row.terminalId ?? '').trim().isEmpty;
+      }).toList(growable: false);
+    }
+    return sales;
+  }
+
+  _SalesFilterSql _buildSalesFilterSql({
+    required String salesAlias,
+    String? normalizedChannel,
+    String? normalizedTerminalId,
+  }) {
+    if (normalizedTerminalId != null && normalizedTerminalId.isNotEmpty) {
+      return _SalesFilterSql(
+        sql: " AND COALESCE(TRIM($salesAlias.terminal_id), '') = ?",
+        variables: <Variable<Object>>[Variable<String>(normalizedTerminalId)],
+      );
+    }
+    if (normalizedChannel == 'pos') {
+      return _SalesFilterSql(
+        sql: " AND COALESCE(TRIM($salesAlias.terminal_id), '') <> ''",
+      );
+    }
+    if (normalizedChannel == 'directa') {
+      return _SalesFilterSql(
+        sql: " AND COALESCE(TRIM($salesAlias.terminal_id), '') = ''",
+      );
+    }
+    return const _SalesFilterSql();
+  }
+
   String? _normalizeChannelFilter(String? channel) {
     final String clean = (channel ?? '').trim().toLowerCase();
     if (clean == 'pos') {
@@ -3432,6 +4676,14 @@ class ReportesLocalDataSource {
       return 'directa';
     }
     return null;
+  }
+
+  String? _normalizeTerminalIdFilter(String? terminalId) {
+    final String clean = (terminalId ?? '').trim();
+    if (clean.isEmpty) {
+      return null;
+    }
+    return clean;
   }
 
   String? _normalizePaymentMethodKey(String? paymentMethodKey) {
@@ -3688,6 +4940,32 @@ class _IpvProductSnapshot {
   final int priceCents;
 }
 
+class _IpvProfitByProduct {
+  const _IpvProfitByProduct({
+    required this.soldQty,
+    required this.subtotalCents,
+    required this.profitCents,
+  });
+
+  final double soldQty;
+  final int subtotalCents;
+  final int profitCents;
+
+  int get unitMarginCents {
+    if (soldQty <= 0) {
+      return 0;
+    }
+    return (profitCents / soldQty).round();
+  }
+
+  int get unitSalePriceCents {
+    if (soldQty <= 0) {
+      return 0;
+    }
+    return (subtotalCents / soldQty).round();
+  }
+}
+
 class _DayAccumulator {
   int salesCount = 0;
   int totalCents = 0;
@@ -3705,4 +4983,24 @@ class _TrendBucket {
   final String label;
   int totalCents = 0;
   int ordersCount = 0;
+}
+
+class _SalesFilterSql {
+  const _SalesFilterSql({
+    this.sql = '',
+    this.variables = const <Variable<Object>>[],
+  });
+
+  final String sql;
+  final List<Variable<Object>> variables;
+}
+
+class _ManualIpvPreviousReport {
+  const _ManualIpvPreviousReport({
+    required this.id,
+    required this.reportDate,
+  });
+
+  final String id;
+  final DateTime reportDate;
 }

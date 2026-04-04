@@ -195,6 +195,26 @@ class _ManualSyncPageState extends ConsumerState<ManualSyncPage> {
     }
   }
 
+  Future<void> _pickPackageFromDevice() async {
+    try {
+      final String? pickedPath = await ref
+          .read(manualSyncLocalDataSourceProvider)
+          .pickSyncPackageFileWithSystemExplorer();
+      if (!mounted || pickedPath == null || pickedPath.trim().isEmpty) {
+        return;
+      }
+      setState(() {
+        _selectedFilePath = null;
+        _preview = null;
+        _lastImportResult = null;
+      });
+      _pathController.text = pickedPath;
+      _show('Archivo seleccionado desde el gestor de archivos.');
+    } catch (e) {
+      _show('No se pudo seleccionar archivo: $e');
+    }
+  }
+
   void _onFileSelected(String? path) {
     setState(() {
       _selectedFilePath = path;
@@ -310,6 +330,7 @@ class _ManualSyncPageState extends ConsumerState<ManualSyncPage> {
                       onSelectedFileChanged: _onFileSelected,
                       pathController: _pathController,
                       onPathChanged: _onPathChanged,
+                      onPickFromDevice: _pickPackageFromDevice,
                       onRefreshFiles: _loadData,
                       onPreview: _previewPackage,
                       onImport: _importPackage,

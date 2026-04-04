@@ -46,6 +46,9 @@ class PosPaymentResult {
     required this.isConsignmentSale,
     this.cancelOrderRequested = false,
     this.selectedCustomer,
+    this.receivedCents = 0,
+    this.changeCents = 0,
+    this.changeReturned = true,
   });
 
   final Map<String, int> paymentByMethod;
@@ -54,6 +57,9 @@ class PosPaymentResult {
   final bool isConsignmentSale;
   final bool cancelOrderRequested;
   final PosSelectedCustomer? selectedCustomer;
+  final int receivedCents;
+  final int changeCents;
+  final bool changeReturned;
 }
 
 class PosPaymentLine {

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -113,6 +114,24 @@ class ManualSyncLocalDataSource {
 
   final AppDatabase _db;
   final OfflineLicenseService _licenseService;
+  static const MethodChannel _nativeChannel =
+      MethodChannel('com.example.posipv/device_identity');
+
+  Future<String?> pickSyncPackageFileWithSystemExplorer() async {
+    try {
+      final String? selectedPath =
+          await _nativeChannel.invokeMethod<String>('pickSyncFile');
+      final String cleaned = (selectedPath ?? '').trim();
+      if (cleaned.isEmpty) {
+        return null;
+      }
+      return cleaned;
+    } on PlatformException catch (e) {
+      throw Exception(
+        e.message ?? 'No se pudo abrir el explorador de archivos.',
+      );
+    }
+  }
 
   Future<ManualSyncExportResult> exportClosedSessionPackage({
     required String sessionId,
@@ -193,7 +212,7 @@ class ManualSyncLocalDataSource {
               ]))
             .get();
 
-    final List<StockMovement> movements = saleIds.isEmpty
+    final List<StockMovement> saleLinkedMovements = saleIds.isEmpty
         ? <StockMovement>[]
         : await (_db.select(_db.stockMovements)
               ..where((StockMovements tbl) => tbl.refId.isIn(saleIds))
@@ -201,6 +220,43 @@ class ManualSyncLocalDataSource {
                 (StockMovements tbl) => OrderingTerm.asc(tbl.createdAt),
               ]))
             .get();
+    final DateTime sessionClosedAt = session.closedAt ?? DateTime.now();
+    final DateTime sessionEndExclusive =
+        sessionClosedAt.add(const Duration(milliseconds: 1));
+    final List<StockMovement> manualSessionMovements =
+        await (_db.select(_db.stockMovements)
+              ..where(
+                (StockMovements tbl) =>
+                    tbl.warehouseId.equals(warehouse.id) &
+                    tbl.createdBy.equals(session.userId) &
+                    tbl.movementSource.equals('manual') &
+                    tbl.createdAt.isBiggerOrEqualValue(session.openedAt) &
+                    tbl.createdAt.isSmallerThanValue(sessionEndExclusive),
+              )
+              ..orderBy(<OrderingTerm Function(StockMovements)>[
+                (StockMovements tbl) => OrderingTerm.asc(tbl.createdAt),
+              ]))
+            .get();
+    final Map<String, StockMovement> movementById = <String, StockMovement>{
+      for (final StockMovement row in saleLinkedMovements) row.id: row,
+    };
+    for (final StockMovement row in manualSessionMovements) {
+      final String refType = (row.refType ?? '').trim().toLowerCase();
+      if (_isSaleRefType(refType)) {
+        continue;
+      }
+      movementById.putIfAbsent(row.id, () => row);
+    }
+    final List<StockMovement> movements = movementById.values.toList()
+      ..sort(
+        (StockMovement a, StockMovement b) {
+          final int byTime = a.createdAt.compareTo(b.createdAt);
+          if (byTime != 0) {
+            return byTime;
+          }
+          return a.id.compareTo(b.id);
+        },
+      );
 
     final Set<String> productIds = <String>{
       ...saleItems.map((SaleItem row) => row.productId),
@@ -858,15 +914,12 @@ class ManualSyncLocalDataSource {
           continue;
         }
 
-        final Sale? byFolio = await (_db.select(_db.sales)
-              ..where((Sales tbl) => tbl.folio.equals(folio)))
-            .getSingleOrNull();
-        if (byFolio != null) {
-          saleIdMap[remoteId] = byFolio.id;
+        final String folioToInsert =
+            await _nextAvailableImportedFolio(baseFolio: folio);
+        if (folioToInsert != folio) {
           warnings.add(
-            'Venta folio "$folio" ya existía con otro ID; se reutilizó.',
+            'Venta folio "$folio" ya existía; se importó como "$folioToInsert".',
           );
-          continue;
         }
 
         final String resolvedWarehouseId =
@@ -894,7 +947,7 @@ class ManualSyncLocalDataSource {
         await _db.into(_db.sales).insert(
               SalesCompanion.insert(
                 id: remoteId,
-                folio: folio,
+                folio: folioToInsert,
                 warehouseId: resolvedWarehouseId,
                 cashierId: resolvedCashierId,
                 customerId: Value(resolvedCustomerId),
@@ -1135,15 +1188,41 @@ class ManualSyncLocalDataSource {
       return null;
     }
     final String cleanRefType = (refType ?? '').trim().toLowerCase();
-    if (cleanRefType == 'sale' ||
+    if (_isSaleRefType(cleanRefType)) {
+      return saleIdMap[cleanRefId] ?? cleanRefId;
+    }
+    return cleanRefId;
+  }
+
+  bool _isSaleRefType(String refType) {
+    final String cleanRefType = refType.trim().toLowerCase();
+    return cleanRefType == 'sale' ||
         cleanRefType == 'sale_pos' ||
         cleanRefType == 'sale_direct' ||
         cleanRefType == 'consignment_sale' ||
         cleanRefType == 'consignment_sale_pos' ||
-        cleanRefType == 'consignment_sale_direct') {
-      return saleIdMap[cleanRefId] ?? cleanRefId;
+        cleanRefType == 'consignment_sale_direct';
+  }
+
+  Future<String> _nextAvailableImportedFolio({
+    required String baseFolio,
+  }) async {
+    String candidate = baseFolio.trim();
+    if (candidate.isEmpty) {
+      return candidate;
     }
-    return cleanRefId;
+
+    int attempt = 1;
+    while (true) {
+      final Sale? existing = await (_db.select(_db.sales)
+            ..where((Sales tbl) => tbl.folio.equals(candidate)))
+          .getSingleOrNull();
+      if (existing == null) {
+        return candidate;
+      }
+      candidate = '$baseFolio-R$attempt';
+      attempt += 1;
+    }
   }
 
   String? _resolveNullableMappedId({

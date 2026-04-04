@@ -257,9 +257,9 @@ class SaleService {
           0,
           (int sum, PaymentInput payment) => sum + payment.amountCents,
         );
-        if (!isConsignmentSale && totalPayments != totalCents) {
+        if (!isConsignmentSale && totalPayments < totalCents) {
           throw _SaleException(
-            'El total de pagos ($totalPayments) no coincide con el total de la venta ($totalCents).',
+            'El total de pagos ($totalPayments) debe cubrir al menos el total de la venta ($totalCents).',
           );
         }
         if (isConsignmentSale && totalPayments != 0) {
@@ -538,9 +538,9 @@ class SaleService {
         0,
         (int sum, PaymentInput payment) => sum + payment.amountCents,
       );
-      if (!isConsignmentSale && totalPayments != totalCents) {
+      if (!isConsignmentSale && totalPayments < totalCents) {
         throw _SaleException(
-          'El total de pagos ($totalPayments) no coincide con el total de la venta ($totalCents).',
+          'El total de pagos ($totalPayments) debe cubrir al menos el total de la venta ($totalCents).',
         );
       }
       if (isConsignmentSale && totalPayments != 0) {

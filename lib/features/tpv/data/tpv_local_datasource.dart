@@ -114,6 +114,46 @@ class TpvSessionCashBreakdown {
   int get subtotalCents => denominationCents * unitCount;
 }
 
+class TpvSessionSalesSummary {
+  const TpvSessionSalesSummary({
+    required this.postedSalesCount,
+    required this.postedSubtotalCents,
+    required this.postedTaxCents,
+    required this.postedTotalCents,
+    required this.archivedSalesCount,
+  });
+
+  final int postedSalesCount;
+  final int postedSubtotalCents;
+  final int postedTaxCents;
+  final int postedTotalCents;
+  final int archivedSalesCount;
+}
+
+class TpvSessionSaleView {
+  const TpvSessionSaleView({
+    required this.saleId,
+    required this.folio,
+    required this.createdAt,
+    required this.subtotalCents,
+    required this.taxCents,
+    required this.totalCents,
+    required this.status,
+    required this.customerName,
+    required this.paymentMethods,
+  });
+
+  final String saleId;
+  final String folio;
+  final DateTime createdAt;
+  final int subtotalCents;
+  final int taxCents;
+  final int totalCents;
+  final String status;
+  final String? customerName;
+  final List<String> paymentMethods;
+}
+
 class TpvLocalDataSource {
   TpvLocalDataSource(
     this._db, {
@@ -1580,6 +1620,118 @@ class TpvLocalDataSource {
       result[method] = (result[method] ?? 0) + amount;
     }
     return result;
+  }
+
+  Future<TpvSessionSalesSummary> getSessionSalesSummary(
+      String sessionId) async {
+    final String safeSessionId = sessionId.trim();
+    if (safeSessionId.isEmpty) {
+      return const TpvSessionSalesSummary(
+        postedSalesCount: 0,
+        postedSubtotalCents: 0,
+        postedTaxCents: 0,
+        postedTotalCents: 0,
+        archivedSalesCount: 0,
+      );
+    }
+
+    final QueryRow? row = await _db.customSelect(
+      '''
+      SELECT
+        COALESCE(SUM(CASE WHEN LOWER(COALESCE(s.status, '')) = 'posted' THEN 1 ELSE 0 END), 0) AS posted_count,
+        COALESCE(SUM(CASE WHEN LOWER(COALESCE(s.status, '')) = 'posted' THEN s.subtotal_cents ELSE 0 END), 0) AS posted_subtotal_cents,
+        COALESCE(SUM(CASE WHEN LOWER(COALESCE(s.status, '')) = 'posted' THEN s.tax_cents ELSE 0 END), 0) AS posted_tax_cents,
+        COALESCE(SUM(CASE WHEN LOWER(COALESCE(s.status, '')) = 'posted' THEN s.total_cents ELSE 0 END), 0) AS posted_total_cents,
+        COALESCE(SUM(CASE WHEN LOWER(COALESCE(s.status, '')) = 'archived' THEN 1 ELSE 0 END), 0) AS archived_count
+      FROM sales s
+      WHERE s.terminal_session_id = ?
+      ''',
+      variables: <Variable<Object>>[Variable<String>(safeSessionId)],
+    ).getSingleOrNull();
+
+    return TpvSessionSalesSummary(
+      postedSalesCount: (row?.data['posted_count'] as num?)?.toInt() ?? 0,
+      postedSubtotalCents:
+          (row?.data['posted_subtotal_cents'] as num?)?.toInt() ?? 0,
+      postedTaxCents: (row?.data['posted_tax_cents'] as num?)?.toInt() ?? 0,
+      postedTotalCents: (row?.data['posted_total_cents'] as num?)?.toInt() ?? 0,
+      archivedSalesCount: (row?.data['archived_count'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  Future<List<TpvSessionSaleView>> listSessionSales(
+    String sessionId, {
+    int limit = 200,
+    int offset = 0,
+  }) async {
+    final String safeSessionId = sessionId.trim();
+    if (safeSessionId.isEmpty) {
+      return <TpvSessionSaleView>[];
+    }
+    final int safeLimit = limit < 1 ? 1 : limit;
+    final int safeOffset = offset < 0 ? 0 : offset;
+    final List<QueryRow> rows = await _db.customSelect(
+      '''
+      SELECT
+        s.id AS sale_id,
+        COALESCE(s.folio, '-') AS folio,
+        s.created_at AS created_at,
+        COALESCE(s.subtotal_cents, 0) AS subtotal_cents,
+        COALESCE(s.tax_cents, 0) AS tax_cents,
+        COALESCE(s.total_cents, 0) AS total_cents,
+        LOWER(COALESCE(s.status, 'posted')) AS status,
+        c.full_name AS customer_name,
+        COALESCE(GROUP_CONCAT(DISTINCT LOWER(COALESCE(p.method, ''))), '') AS methods
+      FROM sales s
+      LEFT JOIN customers c ON c.id = s.customer_id
+      LEFT JOIN payments p ON p.sale_id = s.id
+      WHERE s.terminal_session_id = ?
+      GROUP BY
+        s.id,
+        s.folio,
+        s.created_at,
+        s.subtotal_cents,
+        s.tax_cents,
+        s.total_cents,
+        s.status,
+        c.full_name
+      ORDER BY s.created_at DESC
+      LIMIT ?
+      OFFSET ?
+      ''',
+      variables: <Variable<Object>>[
+        Variable<String>(safeSessionId),
+        Variable<int>(safeLimit),
+        Variable<int>(safeOffset),
+      ],
+    ).get();
+
+    return rows.map((QueryRow row) {
+      final String rawMethods =
+          (row.readNullable<String>('methods') ?? '').trim();
+      final List<String> methods = rawMethods.isEmpty
+          ? const <String>[]
+          : rawMethods
+              .split(',')
+              .map((String value) => value.trim())
+              .where((String value) => value.isNotEmpty)
+              .toSet()
+              .toList()
+        ..sort();
+      final String customerName =
+          (row.readNullable<String>('customer_name') ?? '').trim();
+      return TpvSessionSaleView(
+        saleId: (row.readNullable<String>('sale_id') ?? '').trim(),
+        folio: (row.readNullable<String>('folio') ?? '-').trim(),
+        createdAt: row.readNullable<DateTime>('created_at') ?? DateTime.now(),
+        subtotalCents: (row.data['subtotal_cents'] as num?)?.toInt() ?? 0,
+        taxCents: (row.data['tax_cents'] as num?)?.toInt() ?? 0,
+        totalCents: (row.data['total_cents'] as num?)?.toInt() ?? 0,
+        status: (row.readNullable<String>('status') ?? 'posted').trim(),
+        customerName: customerName.isEmpty ? null : customerName,
+        paymentMethods: methods,
+      );
+    }).toList(growable: false);
   }
 
   Future<void> reconcileIpvReport({

@@ -44,12 +44,15 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
 
   final List<_PaymentDraft> _payments = <_PaymentDraft>[];
   final TextEditingController _amountCtrl = TextEditingController();
+  final FocusNode _amountFocusNode = FocusNode();
   final TextEditingController _transactionCtrl = TextEditingController();
   final List<PosCartLine> _editableLines = <PosCartLine>[];
   late List<ClienteListItem> _customers;
   PosSelectedCustomer? _selectedCustomer;
   String _selectedMethod = 'cash';
   bool _reloadingCustomers = false;
+  bool _amountSelectAllArmed = true;
+  bool _changeReturned = true;
 
   @override
   void initState() {
@@ -69,10 +72,14 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
             .map((PosCartLine line) => line.copyWith()),
       );
     _amountCtrl.text = _total.toStringAsFixed(2);
+    _amountFocusNode.addListener(_onAmountFocusChanged);
   }
 
   @override
   void dispose() {
+    _amountFocusNode
+      ..removeListener(_onAmountFocusChanged)
+      ..dispose();
     _amountCtrl.dispose();
     _transactionCtrl.dispose();
     for (final _PaymentDraft p in _payments) {
@@ -113,17 +120,42 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
     return (_toAmount(raw) * 100).round();
   }
 
-  double get _paidAmount {
-    double total = _toAmount(_amountCtrl.text);
+  int get _paidCents {
+    int total = _toCents(_amountCtrl.text);
     for (final _PaymentDraft p in _payments) {
-      total += _toAmount(p.controller.text);
+      total += _toCents(p.controller.text);
     }
     return total;
   }
 
-  double get _pendingAmount {
-    final double pending = _total - _paidAmount;
+  double get _paidAmount {
+    return _paidCents / 100;
+  }
+
+  int get _pendingCents {
+    final int pending = _totalCents - _paidCents;
     return pending > 0 ? pending : 0;
+  }
+
+  double get _pendingAmount {
+    return _pendingCents / 100;
+  }
+
+  int get _overpayCents {
+    final int delta = _paidCents - _totalCents;
+    return delta > 0 ? delta : 0;
+  }
+
+  bool get _hasCashInDraft {
+    if (_isCashMethod(_selectedMethod) && _toCents(_amountCtrl.text) > 0) {
+      return true;
+    }
+    for (final _PaymentDraft row in _payments) {
+      if (_isCashMethod(row.method) && _toCents(row.controller.text) > 0) {
+        return true;
+      }
+    }
+    return false;
   }
 
   void _syncMainAmount() {
@@ -141,6 +173,79 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
 
   bool _isConsignmentMethod(String method) {
     return method.trim().toLowerCase() == _consignmentCode;
+  }
+
+  bool _isCashMethod(String method) {
+    return method.trim().toLowerCase() == 'cash';
+  }
+
+  void _onAmountFocusChanged() {
+    if (!_amountFocusNode.hasFocus) {
+      _amountSelectAllArmed = true;
+    }
+  }
+
+  void _handleAmountFieldTap() {
+    if (!_amountFocusNode.hasFocus) {
+      return;
+    }
+    if (!_amountSelectAllArmed) {
+      return;
+    }
+    _amountCtrl.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: _amountCtrl.text.length,
+    );
+    _amountSelectAllArmed = false;
+  }
+
+  String _moneyFromCents(int cents) {
+    final int safe = cents < 0 ? 0 : cents;
+    return '${widget.currencySymbol}${(safe / 100).toStringAsFixed(2)}';
+  }
+
+  List<PosPaymentLine> _applyChangeToCashLines(
+    List<PosPaymentLine> lines,
+    int changeCents,
+  ) {
+    int remaining = changeCents;
+    final List<PosPaymentLine> adjusted = <PosPaymentLine>[];
+    for (final PosPaymentLine line in lines) {
+      if (_isCashMethod(line.method) && remaining > 0) {
+        final int deduction =
+            remaining > line.amountCents ? line.amountCents : remaining;
+        final int nextAmount = line.amountCents - deduction;
+        remaining -= deduction;
+        if (nextAmount > 0) {
+          adjusted.add(
+            PosPaymentLine(
+              method: line.method,
+              amountCents: nextAmount,
+              transactionId: line.transactionId,
+            ),
+          );
+        }
+        continue;
+      }
+      adjusted.add(line);
+    }
+    if (remaining > 0) {
+      throw Exception(
+        'El cambio a devolver supera el efectivo recibido.',
+      );
+    }
+    return adjusted;
+  }
+
+  Map<String, int> _paymentByMethodFromLines(List<PosPaymentLine> lines) {
+    final Map<String, int> result = <String, int>{};
+    for (final PosPaymentLine line in lines) {
+      if (line.amountCents <= 0) {
+        continue;
+      }
+      result[line.method] = (result[line.method] ?? 0) + line.amountCents;
+    }
+    return result;
   }
 
   void _selectMethod(String method) {
@@ -287,7 +392,6 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
     }
 
     final List<PosPaymentLine> paymentLines = <PosPaymentLine>[];
-    final Map<String, int> finalPayments = <String, int>{};
     final int mainCents = _toCents(_amountCtrl.text);
     if (mainCents > 0) {
       if (_isConsignmentMethod(_selectedMethod)) {
@@ -301,8 +405,6 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
         _show('Debes ingresar el ID de transaccion para este metodo.');
         return;
       }
-      finalPayments[_selectedMethod] =
-          (finalPayments[_selectedMethod] ?? 0) + mainCents;
       paymentLines.add(
         PosPaymentLine(
           method: _selectedMethod,
@@ -321,7 +423,6 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
         _show('Una linea de pago online no tiene ID de transaccion.');
         return;
       }
-      finalPayments[p.method] = (finalPayments[p.method] ?? 0) + cents;
       paymentLines.add(
         PosPaymentLine(
           method: p.method,
@@ -333,17 +434,43 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
       );
     }
 
-    final int paidCents = finalPayments.values.fold<int>(
+    final int receivedCents = paymentLines.fold<int>(
       0,
-      (int sum, int value) => sum + value,
+      (int sum, PosPaymentLine line) => sum + line.amountCents,
     );
-    if (!isConsignmentSale && paidCents != _totalCents) {
+    final int changeCents =
+        receivedCents > _totalCents ? receivedCents - _totalCents : 0;
+
+    List<PosPaymentLine> finalLines = paymentLines;
+    if (!isConsignmentSale && receivedCents < _totalCents) {
       _show(
-        'La suma de pagos debe ser exacta: ${widget.currencySymbol}${_total.toStringAsFixed(2)}',
+        'La suma de pagos debe cubrir al menos: ${widget.currencySymbol}${_total.toStringAsFixed(2)}',
       );
       return;
     }
-    if (isConsignmentSale && paidCents != 0) {
+    if (!isConsignmentSale && changeCents > 0) {
+      final bool hasCash = paymentLines.any(
+        (PosPaymentLine line) =>
+            _isCashMethod(line.method) && line.amountCents > 0,
+      );
+      if (!hasCash) {
+        _show('El sobrepago solo se permite cuando hay efectivo en la venta.');
+        return;
+      }
+      if (_changeReturned) {
+        try {
+          finalLines = _applyChangeToCashLines(paymentLines, changeCents);
+        } catch (_) {
+          _show('No se pudo aplicar el cambio sobre las líneas de efectivo.');
+          return;
+        }
+      }
+    }
+
+    final Map<String, int> finalPayments =
+        _paymentByMethodFromLines(finalLines);
+
+    if (isConsignmentSale && receivedCents != 0) {
       _show('En consignación la venta se registra sin pagos iniciales.');
       return;
     }
@@ -352,11 +479,14 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
       context,
       PosPaymentResult(
         paymentByMethod: finalPayments,
-        paymentLines: paymentLines,
+        paymentLines: finalLines,
         cartLines:
             _editableLines.map((PosCartLine line) => line.copyWith()).toList(),
         isConsignmentSale: isConsignmentSale,
         selectedCustomer: _selectedCustomer,
+        receivedCents: receivedCents,
+        changeCents: changeCents,
+        changeReturned: changeCents > 0 ? _changeReturned : true,
       ),
     );
   }
@@ -861,6 +991,7 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
     final bool isConsignmentSelected = _isConsignmentMethod(_selectedMethod);
     final bool canValidate = _editableLines.isNotEmpty &&
         (isConsignmentSelected || _pendingAmount <= 0.01);
+    final int overpayCents = _overpayCents;
     return Column(
       children: <Widget>[
         Container(
@@ -974,11 +1105,39 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
               const SizedBox(height: 8),
               TextField(
                 controller: _amountCtrl,
+                focusNode: _amountFocusNode,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
                 onChanged: (_) => setState(() {}),
+                onTap: _handleAmountFieldTap,
                 decoration: InputDecoration(
                   prefixText: '${widget.currencySymbol} ',
+                  suffixIcon: overpayCents > 0
+                      ? Align(
+                          widthFactor: 1,
+                          heightFactor: 1,
+                          alignment: Alignment.topRight,
+                          child: Padding(
+                            padding: const EdgeInsets.only(
+                              top: 8,
+                              right: 10,
+                              left: 6,
+                            ),
+                            child: Text(
+                              'Cambio ${_moneyFromCents(overpayCents)}',
+                              style: const TextStyle(
+                                color: Color(0xFFB91C1C),
+                                fontWeight: FontWeight.w800,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                        )
+                      : null,
+                  suffixIconConstraints: const BoxConstraints(
+                    minHeight: 24,
+                    minWidth: 24,
+                  ),
                   filled: true,
                   fillColor: isDark
                       ? const Color(0xFF0F172A)
@@ -998,6 +1157,49 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
                 ),
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
+              if (overpayCents > 0) ...<Widget>[
+                const SizedBox(height: 6),
+                CheckboxListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  value: _changeReturned,
+                  onChanged: (bool? value) {
+                    if (value == null) {
+                      return;
+                    }
+                    setState(() => _changeReturned = value);
+                  },
+                  title: const Text(
+                    'Cambio devuelto al cliente',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                if (!_changeReturned)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      'El ticket registrará que el cliente no recibió ${_moneyFromCents(overpayCents)} de cambio.',
+                      style: const TextStyle(
+                        color: Color(0xFFB45309),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+              ],
+              if (overpayCents > 0 && !_hasCashInDraft)
+                const Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Text(
+                    'El sobrepago solo es válido cuando hay efectivo en la venta.',
+                    style: TextStyle(
+                      color: Color(0xFFB91C1C),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
               if (_requiresTransactionId(_selectedMethod)) ...<Widget>[
                 const SizedBox(height: 12),
                 const Text(

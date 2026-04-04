@@ -10,6 +10,7 @@ class ManualSyncImportCard extends StatelessWidget {
     required this.onSelectedFileChanged,
     required this.pathController,
     required this.onPathChanged,
+    required this.onPickFromDevice,
     required this.onRefreshFiles,
     required this.onPreview,
     required this.onImport,
@@ -24,6 +25,7 @@ class ManualSyncImportCard extends StatelessWidget {
   final ValueChanged<String?> onSelectedFileChanged;
   final TextEditingController pathController;
   final ValueChanged<String> onPathChanged;
+  final VoidCallback onPickFromDevice;
   final VoidCallback onRefreshFiles;
   final VoidCallback onPreview;
   final VoidCallback onImport;
@@ -111,6 +113,15 @@ class ManualSyncImportCard extends StatelessWidget {
               border: OutlineInputBorder(),
             ),
             onChanged: onPathChanged,
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: previewing || importing ? null : onPickFromDevice,
+              icon: const Icon(Icons.folder_open_rounded),
+              label: const Text('Explorar archivo (.json)'),
+            ),
           ),
           const SizedBox(height: 12),
           Row(

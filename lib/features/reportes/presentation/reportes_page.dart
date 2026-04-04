@@ -6,6 +6,7 @@ import '../../../core/licensing/license_providers.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../configuracion/data/configuracion_local_datasource.dart';
 import '../../configuracion/presentation/configuracion_providers.dart';
+import '../../tpv/presentation/tpv_providers.dart';
 import '../data/reportes_local_datasource.dart';
 import 'reportes_providers.dart';
 import 'widgets/analytics_period_tabs.dart';
@@ -30,6 +31,9 @@ class ReportesPage extends ConsumerStatefulWidget {
 
 class _ReportesPageState extends ConsumerState<ReportesPage> {
   static const String _allPaymentMethodsToken = '__all__';
+  static const String _allSalesSourceToken = '__all_sales_source__';
+  static const String _directSalesSourceToken = '__direct_sales_source__';
+  static const String _tpvSalesSourcePrefix = 'tpv:';
   static const List<int> _paymentPageSizes = <int>[25, 50, 100];
 
   SalesAnalyticsSnapshot? _analytics;
@@ -40,6 +44,9 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
   int _paymentPageSize = _paymentPageSizes.first;
   int _paymentTotalCount = 0;
   bool _loadingPaymentPage = false;
+  List<_AnalyticsSalesSourceOption> _salesSourceOptions =
+      _defaultSalesSourceOptions();
+  String _selectedSalesSourceKey = _allSalesSourceToken;
   String _currencySymbol = AppConfig.defaultCurrencySymbol;
   bool _loading = true;
   bool _exportingAnalytics = false;
@@ -91,6 +98,8 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
 
     String currencySymbol = _currencySymbol;
     SalesAnalyticsSnapshot? snapshot;
+    List<_AnalyticsSalesSourceOption> sourceOptions = _salesSourceOptions;
+    String selectedSourceKey = _selectedSalesSourceKey;
     String? warningMessage;
 
     try {
@@ -100,11 +109,30 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
     }
 
     try {
+      sourceOptions = await _loadSalesSourceOptions();
+      final bool hasSelection = sourceOptions.any(
+        (_AnalyticsSalesSourceOption row) => row.key == selectedSourceKey,
+      );
+      if (!hasSelection) {
+        selectedSourceKey = _allSalesSourceToken;
+      }
+    } catch (e) {
+      final String message = 'Filtros de origen: $e';
+      warningMessage =
+          warningMessage == null ? message : '$warningMessage\n$message';
+    }
+
+    final _ResolvedSalesSourceFilter sourceFilter =
+        _resolveSalesSourceFilter(selectedSourceKey);
+
+    try {
       snapshot = await reportesDs.loadSalesAnalytics(
         fromDate: _range.start,
         toDate: _range.end,
         granularity: _granularity,
         topLimit: 20,
+        channel: sourceFilter.channel,
+        terminalId: sourceFilter.terminalId,
       );
     } catch (e) {
       final String message = 'Analiticas: $e';
@@ -119,6 +147,8 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
     setState(() {
       _currencySymbol = currencySymbol;
       _analytics = snapshot;
+      _salesSourceOptions = sourceOptions;
+      _selectedSalesSourceKey = selectedSourceKey;
       _loading = false;
     });
 
@@ -160,6 +190,8 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
     String currencySymbol = _currencySymbol;
     List<SalesPaymentReportRow> rows = <SalesPaymentReportRow>[];
     List<String> methodKeys = _paymentMethodKeys;
+    List<_AnalyticsSalesSourceOption> sourceOptions = _salesSourceOptions;
+    String selectedSourceKey = _selectedSalesSourceKey;
     int totalCount = 0;
     int effectivePage = _paymentCurrentPage < 1 ? 1 : _paymentCurrentPage;
     String? effectiveMethod = _selectedPaymentMethodKey;
@@ -172,10 +204,29 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
     }
 
     try {
+      sourceOptions = await _loadSalesSourceOptions();
+      final bool hasSelection = sourceOptions.any(
+        (_AnalyticsSalesSourceOption row) => row.key == selectedSourceKey,
+      );
+      if (!hasSelection) {
+        selectedSourceKey = _allSalesSourceToken;
+      }
+    } catch (e) {
+      final String message = 'Filtros de origen: $e';
+      warningMessage =
+          warningMessage == null ? message : '$warningMessage\n$message';
+    }
+
+    final _ResolvedSalesSourceFilter sourceFilter =
+        _resolveSalesSourceFilter(selectedSourceKey);
+
+    try {
       if (refreshMethodKeys) {
         methodKeys = await reportesDs.listPaymentMethodKeysForRange(
           fromDate: _range.start,
           toDate: _range.end,
+          channel: sourceFilter.channel,
+          terminalId: sourceFilter.terminalId,
         );
       }
 
@@ -187,6 +238,8 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
       totalCount = await reportesDs.countSalesPaymentsReport(
         fromDate: _range.start,
         toDate: _range.end,
+        channel: sourceFilter.channel,
+        terminalId: sourceFilter.terminalId,
         paymentMethodKey: effectiveMethod,
       );
 
@@ -201,6 +254,8 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
         rows = await reportesDs.listSalesPaymentsReport(
           fromDate: _range.start,
           toDate: _range.end,
+          channel: sourceFilter.channel,
+          terminalId: sourceFilter.terminalId,
           paymentMethodKey: effectiveMethod,
           limit: _paymentPageSize,
           offset: (effectivePage - 1) * _paymentPageSize,
@@ -218,6 +273,8 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
 
     setState(() {
       _currencySymbol = currencySymbol;
+      _salesSourceOptions = sourceOptions;
+      _selectedSalesSourceKey = selectedSourceKey;
       _paymentMethodKeys = methodKeys;
       _paymentReportRows = rows;
       _paymentTotalCount = totalCount;
@@ -321,6 +378,8 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
             granularity: _granularity,
             currencySymbol: _currencySymbol,
             topLimit: 20,
+            channel: _currentSalesSourceFilter.channel,
+            terminalId: _currentSalesSourceFilter.terminalId,
           );
       if (!mounted) {
         return;
@@ -478,6 +537,77 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
     await _loadCurrentReport(showLoader: true);
   }
 
+  static List<_AnalyticsSalesSourceOption> _defaultSalesSourceOptions() {
+    return const <_AnalyticsSalesSourceOption>[
+      _AnalyticsSalesSourceOption(
+        key: _allSalesSourceToken,
+        label: 'Todos los canales',
+      ),
+      _AnalyticsSalesSourceOption(
+        key: _directSalesSourceToken,
+        label: 'Ventas directas',
+      ),
+    ];
+  }
+
+  Future<List<_AnalyticsSalesSourceOption>> _loadSalesSourceOptions() async {
+    final List<_AnalyticsSalesSourceOption> defaults =
+        _defaultSalesSourceOptions();
+    final terminals =
+        await ref.read(tpvLocalDataSourceProvider).listActiveTerminalOptions();
+    if (terminals.isEmpty) {
+      return defaults;
+    }
+    return <_AnalyticsSalesSourceOption>[
+      ...defaults,
+      ...terminals.map(
+        (terminal) => _AnalyticsSalesSourceOption(
+          key: '$_tpvSalesSourcePrefix${terminal.id}',
+          label: 'TPV • ${terminal.name}',
+        ),
+      ),
+    ];
+  }
+
+  _ResolvedSalesSourceFilter _resolveSalesSourceFilter(String selectedKey) {
+    final String key = selectedKey.trim();
+    if (key.isEmpty || key == _allSalesSourceToken) {
+      return const _ResolvedSalesSourceFilter();
+    }
+    if (key == _directSalesSourceToken) {
+      return const _ResolvedSalesSourceFilter(channel: 'directa');
+    }
+    if (key.startsWith(_tpvSalesSourcePrefix)) {
+      final String terminalId = key.substring(_tpvSalesSourcePrefix.length);
+      if (terminalId.trim().isNotEmpty) {
+        return _ResolvedSalesSourceFilter(
+          channel: 'pos',
+          terminalId: terminalId.trim(),
+        );
+      }
+    }
+    return const _ResolvedSalesSourceFilter();
+  }
+
+  _ResolvedSalesSourceFilter get _currentSalesSourceFilter {
+    return _resolveSalesSourceFilter(_selectedSalesSourceKey);
+  }
+
+  Future<void> _changeSalesSourceFilter(String? value) async {
+    final String raw = (value ?? _allSalesSourceToken).trim();
+    final String next = raw.isEmpty ? _allSalesSourceToken : raw;
+    if (_selectedSalesSourceKey == next) {
+      return;
+    }
+    setState(() {
+      _selectedSalesSourceKey = next;
+      _showAllTopProducts = false;
+      _paymentCurrentPage = 1;
+      _selectedPaymentMethodKey = null;
+    });
+    await _loadCurrentReport(showLoader: true);
+  }
+
   Future<void> _changePaymentMethodFilter(String? value) async {
     final String? next =
         value == null || value == _allPaymentMethodsToken ? null : value;
@@ -557,9 +687,20 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
   Future<void> _openSalesList({
     String title = 'Ventas del período',
     String? channel,
+    String? terminalId,
     String? paymentMethodKey,
     String? dependentKey,
   }) async {
+    final _ResolvedSalesSourceFilter activeFilter = _currentSalesSourceFilter;
+    final String? effectiveChannel = channel ?? activeFilter.channel;
+    String? effectiveTerminalId = terminalId ?? activeFilter.terminalId;
+    if (effectiveChannel == 'directa') {
+      effectiveTerminalId = null;
+    }
+    if ((effectiveTerminalId ?? '').trim().isNotEmpty) {
+      // If a terminal is selected, the channel is always POS.
+      effectiveTerminalId = effectiveTerminalId!.trim();
+    }
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => AnalyticsSalesListPage(
@@ -567,7 +708,8 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
           toDate: _range.end,
           currencySymbol: _currencySymbol,
           title: title,
-          channel: channel,
+          channel: effectiveTerminalId == null ? effectiveChannel : 'pos',
+          terminalId: effectiveTerminalId,
           paymentMethodKey: paymentMethodKey,
           dependentKey: dependentKey,
         ),
@@ -606,6 +748,14 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
           (int size) => DropdownMenuItem<int>(
             value: size,
             child: Text('$size filas'),
+          ),
+        )
+        .toList(growable: false);
+    final List<DropdownMenuItem<String>> sourceItems = _salesSourceOptions
+        .map(
+          (_AnalyticsSalesSourceOption row) => DropdownMenuItem<String>(
+            value: row.key,
+            child: Text(row.label),
           ),
         )
         .toList(growable: false);
@@ -687,6 +837,48 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
     }
 
     final List<Widget> sections = <Widget>[
+      Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF0F172A) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isDark ? const Color(0xFF263244) : const Color(0xFFD8E0EC),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              'ORIGEN DE VENTA',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.8,
+                color:
+                    isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+              ),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              key: ValueKey<String>(
+                'payment-sales-source-$_selectedSalesSourceKey-${_salesSourceOptions.length}',
+              ),
+              initialValue: _selectedSalesSourceKey,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                isDense: true,
+                border: OutlineInputBorder(),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+              items: sourceItems,
+              onChanged: _changeSalesSourceFilter,
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 12),
       Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
@@ -976,6 +1168,60 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
                           ),
                         ],
                       ),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color:
+                              isDark ? const Color(0xFF0F172A) : Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: isDark
+                                ? const Color(0xFF263244)
+                                : const Color(0xFFD8E0EC),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text(
+                              'ORIGEN DE VENTA',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.8,
+                                color: isDark
+                                    ? const Color(0xFF94A3B8)
+                                    : const Color(0xFF64748B),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            DropdownButtonFormField<String>(
+                              key: ValueKey<String>(
+                                'sales-source-$_selectedSalesSourceKey-${_salesSourceOptions.length}',
+                              ),
+                              initialValue: _selectedSalesSourceKey,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                border: OutlineInputBorder(),
+                                contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 10),
+                              ),
+                              items: _salesSourceOptions
+                                  .map(
+                                    (_AnalyticsSalesSourceOption row) =>
+                                        DropdownMenuItem<String>(
+                                      value: row.key,
+                                      child: Text(row.label),
+                                    ),
+                                  )
+                                  .toList(growable: false),
+                              onChanged: _changeSalesSourceFilter,
+                            ),
+                          ],
+                        ),
+                      ),
                       const SizedBox(height: 14),
                       if (analytics == null)
                         const Card(
@@ -1210,6 +1456,26 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
             ),
     );
   }
+}
+
+class _AnalyticsSalesSourceOption {
+  const _AnalyticsSalesSourceOption({
+    required this.key,
+    required this.label,
+  });
+
+  final String key;
+  final String label;
+}
+
+class _ResolvedSalesSourceFilter {
+  const _ResolvedSalesSourceFilter({
+    this.channel,
+    this.terminalId,
+  });
+
+  final String? channel;
+  final String? terminalId;
 }
 
 class _ReportSelectorCard extends StatelessWidget {

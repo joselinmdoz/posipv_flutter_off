@@ -747,6 +747,9 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       paymentLines: result.paymentLines,
       linesOverride: finalLines,
       isConsignmentSale: result.isConsignmentSale,
+      receivedCents: result.receivedCents,
+      changeCents: result.changeCents,
+      changeReturned: result.changeReturned,
     );
   }
 
@@ -771,6 +774,9 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     required List<PosPaymentLine> paymentLines,
     List<_CartLine>? linesOverride,
     bool isConsignmentSale = false,
+    int? receivedCents,
+    int changeCents = 0,
+    bool changeReturned = true,
   }) async {
     final session = ref.read(currentSessionProvider);
     if (session == null) {
@@ -809,8 +815,8 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       0,
       (int sum, PosPaymentLine value) => sum + value.amountCents,
     );
-    if (!isConsignmentSale && paymentsTotal != totalCents) {
-      _show('La suma de pagos no coincide con el total de la venta.');
+    if (!isConsignmentSale && paymentsTotal < totalCents) {
+      _show('La suma de pagos debe cubrir al menos el total de la venta.');
       return;
     }
     if (isConsignmentSale && paymentsTotal != 0) {
@@ -903,6 +909,9 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
                   )
                   .toList(),
           paidCents: paymentsTotal,
+          receivedCents: receivedCents ?? paymentsTotal,
+          changeCents: changeCents,
+          changeReturned: changeReturned,
           isDemoMode: !licenseStatus.isFull,
         );
 

@@ -597,6 +597,9 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
       paymentLines: result.paymentLines,
       linesOverride: finalLines,
       isConsignmentSale: result.isConsignmentSale,
+      receivedPrimaryCents: result.receivedPrimaryCents,
+      changePrimaryCents: result.changePrimaryCents,
+      changeReturned: result.changeReturned,
     );
   }
 
@@ -623,6 +626,9 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
         const <DirectSalesPaymentLine>[],
     List<_DirectCartLine>? linesOverride,
     bool isConsignmentSale = false,
+    int? receivedPrimaryCents,
+    int changePrimaryCents = 0,
+    bool changeReturned = true,
   }) async {
     final session = ref.read(currentSessionProvider);
     if (session == null) {
@@ -661,8 +667,8 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
             (int sum, DirectSalesPaymentLine line) =>
                 sum + line.primaryAmountCents,
           );
-    if (!isConsignmentSale && paymentsTotal != totalCents) {
-      _show('La suma de pagos no coincide con el total de la venta.');
+    if (!isConsignmentSale && paymentsTotal < totalCents) {
+      _show('La suma de pagos debe cubrir al menos el total de la venta.');
       return;
     }
     if (isConsignmentSale && paymentsTotal != 0) {
@@ -785,6 +791,9 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
                 ]
               : receiptPayments,
           paidCents: paymentsTotal,
+          receivedCents: receivedPrimaryCents ?? paymentsTotal,
+          changeCents: changePrimaryCents,
+          changeReturned: changeReturned,
           isDemoMode: !licenseStatus.isFull,
         );
 

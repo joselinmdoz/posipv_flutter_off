@@ -140,6 +140,21 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
     }
   }
 
+  Future<void> _refreshWarehousesCatalog() async {
+    final List<Warehouse> warehouses =
+        await ref.read(almacenesLocalDataSourceProvider).listActiveWarehouses();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _warehouses = warehouses;
+      if (_selectedWarehouseId != null &&
+          warehouses.every((Warehouse row) => row.id != _selectedWarehouseId)) {
+        _selectedWarehouseId = warehouses.isEmpty ? null : warehouses.first.id;
+      }
+    });
+  }
+
   Future<void> _reloadInventory({bool showLoader = false}) async {
     if (showLoader) {
       setState(() => _loading = true);
@@ -244,6 +259,10 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
   }
 
   Future<void> _openWarehouseFilters() async {
+    await _refreshWarehousesCatalog();
+    if (!mounted) {
+      return;
+    }
     String? draftWarehouse = _selectedWarehouseId;
     final bool? apply = await showModalBottomSheet<bool>(
       context: context,
@@ -380,7 +399,7 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
       if (previous == null || previous == next || !mounted) {
         return;
       }
-      unawaited(_reloadInventory());
+      unawaited(_bootstrap());
     });
     ref.listen<int>(productosCatalogRevisionProvider,
         (int? previous, int next) {

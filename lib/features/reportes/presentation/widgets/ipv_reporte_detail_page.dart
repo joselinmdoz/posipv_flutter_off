@@ -21,6 +21,7 @@ class IpvReporteDetailPage extends ConsumerStatefulWidget {
 class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
   bool _loading = true;
   bool _reconciling = false;
+  bool _includeAdminProfitColumns = false;
   IpvReportDetailStat? _detail;
 
   @override
@@ -60,9 +61,15 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
   Future<void> _exportFormat(String format) async {
     final ReportesLocalDataSource ds =
         ref.read(reportesLocalDataSourceProvider);
+    final bool canIncludeAdminProfitColumns =
+        (ref.read(currentSessionProvider)?.isAdmin ?? false) &&
+            _includeAdminProfitColumns;
     try {
       final String path = format == 'pdf'
-          ? await ds.exportIpvReportPdf(widget.summary.reportId)
+          ? await ds.exportIpvReportPdf(
+              widget.summary.reportId,
+              includeAdminProfitColumns: canIncludeAdminProfitColumns,
+            )
           : await ds.exportIpvReportCsv(widget.summary.reportId);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -114,6 +121,25 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
       total += _lineTotalAmountCents(line);
     }
     return total;
+  }
+
+  int _tableTotalRealProfitCents(IpvReportDetailStat detail) {
+    int total = 0;
+    for (final IpvReportLineStat line in detail.lines) {
+      total += line.realProfitCents;
+    }
+    return total;
+  }
+
+  int _tableMarginCents(IpvReportDetailStat detail) {
+    double totalSalesQty = 0;
+    for (final IpvReportLineStat line in detail.lines) {
+      totalSalesQty += line.salesQty;
+    }
+    if (totalSalesQty <= 0) {
+      return 0;
+    }
+    return (_tableTotalRealProfitCents(detail) / totalSalesQty).round();
   }
 
   Future<void> _reconcileIpv() async {
@@ -188,6 +214,7 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
     final bool isDark = theme.brightness == Brightness.dark;
     final session = ref.watch(currentSessionProvider);
     final bool canReconcile = session?.isAdmin ?? false;
+    final bool canSeeAdminProfitColumns = session?.isAdmin ?? false;
 
     return Scaffold(
       backgroundColor:
@@ -258,13 +285,21 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
           ? const Center(child: CircularProgressIndicator())
           : _detail == null
               ? const Center(child: Text('No se encontraron detalles'))
-              : _buildContent(context, isDark),
+              : _buildContent(context, isDark, canSeeAdminProfitColumns),
     );
   }
 
-  Widget _buildContent(BuildContext context, bool isDark) {
+  Widget _buildContent(
+    BuildContext context,
+    bool isDark,
+    bool canSeeAdminProfitColumns,
+  ) {
     final IpvReportDetailStat detail = _detail!;
     final int tableTotalAmountCents = _tableTotalAmountCents(detail);
+    final int tableTotalRealProfitCents = _tableTotalRealProfitCents(detail);
+    final int tableMarginCents = _tableMarginCents(detail);
+    final bool showAdminProfitColumns =
+        canSeeAdminProfitColumns && _includeAdminProfitColumns;
     final bool canExportIpv = ref.watch(currentLicenseStatusProvider).isFull;
 
     return ListView(
@@ -470,6 +505,52 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
             ),
           ),
         ),
+        if (canSeeAdminProfitColumns)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? const Color(0xFF1E293B).withValues(alpha: 0.45)
+                    : const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isDark
+                      ? const Color(0xFF334155)
+                      : const Color(0xFFE2E8F0),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.insights_rounded,
+                    size: 18,
+                    color: isDark
+                        ? const Color(0xFF60A5FA)
+                        : const Color(0xFF1152D4),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Agregar margen unitario y ganancia real',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white : const Color(0xFF0F172A),
+                      ),
+                    ),
+                  ),
+                  Switch.adaptive(
+                    value: _includeAdminProfitColumns,
+                    onChanged: (bool value) {
+                      setState(() => _includeAdminProfitColumns = value);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
         const SizedBox(height: 12),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -494,101 +575,141 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
                   columnSpacing: 24,
                   horizontalMargin: 16,
                   dividerThickness: 1,
-                  columns: const [
-                    DataColumn(
+                  columns: [
+                    const DataColumn(
                         label: Text('SKU / PRODUCTO',
                             style: TextStyle(
                                 fontWeight: FontWeight.bold, fontSize: 12))),
-                    DataColumn(
+                    const DataColumn(
                         label: Text('STOCK INIC.',
                             style: TextStyle(
                                 fontWeight: FontWeight.bold, fontSize: 12)),
                         numeric: true),
-                    DataColumn(
+                    const DataColumn(
                         label: Text('ENTRADAS',
                             style: TextStyle(
                                 fontWeight: FontWeight.bold, fontSize: 12)),
                         numeric: true),
-                    DataColumn(
+                    const DataColumn(
                         label: Text('SALIDAS',
                             style: TextStyle(
                                 fontWeight: FontWeight.bold, fontSize: 12)),
                         numeric: true),
-                    DataColumn(
+                    const DataColumn(
                         label: Text('VENTAS',
                             style: TextStyle(
                                 fontWeight: FontWeight.bold, fontSize: 12)),
                         numeric: true),
-                    DataColumn(
+                    const DataColumn(
                         label: Text('STOCK FINAL',
                             style: TextStyle(
                                 fontWeight: FontWeight.bold, fontSize: 12)),
                         numeric: true),
-                    DataColumn(
+                    const DataColumn(
                         label: Text('PRECIO',
                             style: TextStyle(
                                 fontWeight: FontWeight.bold, fontSize: 12)),
                         numeric: true),
-                    DataColumn(
+                    const DataColumn(
                         label: Text('TOTAL',
                             style: TextStyle(
                                 fontWeight: FontWeight.bold, fontSize: 12)),
                         numeric: true),
+                    if (showAdminProfitColumns)
+                      const DataColumn(
+                        label: Text('MARGEN',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 12)),
+                        numeric: true,
+                      ),
+                    if (showAdminProfitColumns)
+                      const DataColumn(
+                        label: Text('GANANCIA',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 12)),
+                        numeric: true,
+                      ),
                   ],
                   rows: detail.lines.map((line) {
                     final int lineTotalAmountCents =
                         _lineTotalAmountCents(line);
-                    return DataRow(
-                      cells: [
-                        DataCell(Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(line.productName,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold, fontSize: 14)),
-                            Text(line.sku,
-                                style: const TextStyle(
-                                    fontSize: 12, color: Colors.grey)),
-                          ],
-                        )),
-                        DataCell(Text(line.startQty.toStringAsFixed(0))),
-                        DataCell(Text(
-                            line.entriesQty == 0
-                                ? '-'
-                                : '+${line.entriesQty.toStringAsFixed(0)}',
-                            style: const TextStyle(
-                                color: Colors.green,
-                                fontWeight: FontWeight.bold))),
-                        DataCell(Text(
-                            line.outputsQty == 0
-                                ? '-'
-                                : '-${line.outputsQty.toStringAsFixed(0)}',
-                            style: const TextStyle(
-                                color: Colors.red,
-                                fontWeight: FontWeight.bold))),
-                        DataCell(Text(line.salesQty.toStringAsFixed(0),
-                            style:
-                                const TextStyle(fontWeight: FontWeight.bold))),
-                        DataCell(Text(line.finalQty.toStringAsFixed(0),
-                            style:
-                                const TextStyle(fontWeight: FontWeight.w500))),
-                        DataCell(Text(_moneyWithSymbol(line.salePriceCents,
-                            widget.summary.currencySymbol))),
-                        DataCell(Text(
-                            _moneyWithSymbol(lineTotalAmountCents,
-                                widget.summary.currencySymbol),
-                            style:
-                                const TextStyle(fontWeight: FontWeight.bold))),
-                      ],
-                    );
+                    final List<DataCell> cells = <DataCell>[
+                      DataCell(Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(line.productName,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 14)),
+                          Text(line.sku,
+                              style: const TextStyle(
+                                  fontSize: 12, color: Colors.grey)),
+                        ],
+                      )),
+                      DataCell(Text(line.startQty.toStringAsFixed(0))),
+                      DataCell(Text(
+                          line.entriesQty == 0
+                              ? '-'
+                              : '+${line.entriesQty.toStringAsFixed(0)}',
+                          style: const TextStyle(
+                              color: Colors.green,
+                              fontWeight: FontWeight.bold))),
+                      DataCell(Text(
+                          line.outputsQty == 0
+                              ? '-'
+                              : '-${line.outputsQty.toStringAsFixed(0)}',
+                          style: const TextStyle(
+                              color: Colors.red, fontWeight: FontWeight.bold))),
+                      DataCell(Text(line.salesQty.toStringAsFixed(0),
+                          style: const TextStyle(fontWeight: FontWeight.bold))),
+                      DataCell(Text(line.finalQty.toStringAsFixed(0),
+                          style: const TextStyle(fontWeight: FontWeight.w500))),
+                      DataCell(Text(_moneyWithSymbol(
+                          line.salePriceCents, widget.summary.currencySymbol))),
+                      DataCell(Text(
+                          _moneyWithSymbol(lineTotalAmountCents,
+                              widget.summary.currencySymbol),
+                          style: const TextStyle(fontWeight: FontWeight.bold))),
+                    ];
+                    if (showAdminProfitColumns) {
+                      final Color profitColor = line.realProfitCents >= 0
+                          ? const Color(0xFF15803D)
+                          : const Color(0xFFB91C1C);
+                      cells.addAll(<DataCell>[
+                        DataCell(
+                          Text(
+                            _moneyWithSymbol(
+                              line.profitMarginCents,
+                              widget.summary.currencySymbol,
+                            ),
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: profitColor,
+                            ),
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            _moneyWithSymbol(
+                              line.realProfitCents,
+                              widget.summary.currencySymbol,
+                            ),
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: profitColor,
+                            ),
+                          ),
+                        ),
+                      ]);
+                    }
+                    return DataRow(cells: cells);
                   }).toList()
                     ..add(
                       DataRow(
                         color: WidgetStateProperty.all(isDark
                             ? const Color(0xFF1E293B)
                             : const Color(0xFFF8FAFC)),
-                        cells: [
+                        cells: <DataCell>[
                           const DataCell(Text('TOTAL GENERAL',
                               style: TextStyle(
                                   fontWeight: FontWeight.bold,
@@ -607,6 +728,32 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
                                 color: Color(0xFF1152D4),
                                 fontSize: 16),
                           )),
+                          if (showAdminProfitColumns)
+                            DataCell(
+                              Text(
+                                _moneyWithSymbol(
+                                  tableMarginCents,
+                                  widget.summary.currencySymbol,
+                                ),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF15803D),
+                                ),
+                              ),
+                            ),
+                          if (showAdminProfitColumns)
+                            DataCell(
+                              Text(
+                                _moneyWithSymbol(
+                                  tableTotalRealProfitCents,
+                                  widget.summary.currencySymbol,
+                                ),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: Color(0xFF15803D),
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                     ),

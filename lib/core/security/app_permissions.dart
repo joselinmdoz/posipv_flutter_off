@@ -238,6 +238,7 @@ class AppPermissionsCatalog {
     '/almacenes': AppPermissionKeys.warehousesView,
     '/reportes': AppPermissionKeys.reportsGeneral,
     '/ipv-reportes': AppPermissionKeys.reportsIpv,
+    '/ipv-manual': AppPermissionKeys.reportsIpv,
     '/configuracion': AppPermissionKeys.settingsView,
     '/configuracion-seguridad': AppPermissionKeys.settingsSecurity,
     '/configuracion-monedas': AppPermissionKeys.settingsCurrency,
@@ -270,6 +271,7 @@ class AppPermissionsCatalog {
     '/productos',
     '/almacenes',
     '/ipv-reportes',
+    '/ipv-manual',
     '/configuracion',
   ];
 }

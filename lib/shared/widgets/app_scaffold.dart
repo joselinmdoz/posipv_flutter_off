@@ -118,6 +118,12 @@ class AppScaffold extends ConsumerWidget {
       AppPermissionKeys.reportsIpv,
     ),
     _NavItem(
+      'IPV Manual',
+      '/ipv-manual',
+      Icons.edit_note_rounded,
+      AppPermissionKeys.reportsIpv,
+    ),
+    _NavItem(
       'Usuarios y Roles',
       '/configuracion-usuarios',
       Icons.manage_accounts_outlined,
@@ -774,6 +780,7 @@ class AppScaffold extends ConsumerWidget {
       case '/perfil-empleado':
       case '/ventas-directas':
       case '/consignaciones':
+      case '/ipv-manual':
         candidate = '/home';
         break;
       case '/ventas-pos':

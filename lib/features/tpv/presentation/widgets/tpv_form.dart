@@ -9,6 +9,7 @@ import '../../../../core/security/app_permissions.dart';
 import '../../../auth/presentation/auth_providers.dart';
 import '../../../configuracion/data/configuracion_local_datasource.dart';
 import '../../../configuracion/presentation/configuracion_providers.dart';
+import '../../../inventario/presentation/inventario_providers.dart';
 import '../../data/tpv_local_datasource.dart';
 import '../tpv_providers.dart';
 import 'tpv_employee_avatar.dart';
@@ -267,6 +268,7 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
         return;
       }
       ref.invalidate(tpvTerminalsProvider);
+      ref.read(inventoryRefreshSignalProvider.notifier).state += 1;
       Navigator.of(context).pop(true);
     } catch (e) {
       _show('Error al guardar: $e');

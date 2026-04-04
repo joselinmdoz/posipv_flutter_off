@@ -12,6 +12,9 @@ class DirectSalesPaymentResult {
     required this.cartLines,
     required this.isConsignmentSale,
     this.cancelOrderRequested = false,
+    this.receivedPrimaryCents = 0,
+    this.changePrimaryCents = 0,
+    this.changeReturned = true,
   });
 
   final int discountCents;
@@ -20,6 +23,9 @@ class DirectSalesPaymentResult {
   final List<PosCartLine> cartLines;
   final bool isConsignmentSale;
   final bool cancelOrderRequested;
+  final int receivedPrimaryCents;
+  final int changePrimaryCents;
+  final bool changeReturned;
 }
 
 class DirectSalesPaymentLine {
@@ -85,10 +91,13 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
   final List<PosCartLine> _editableLines = <PosCartLine>[];
   final TextEditingController _discountCtrl = TextEditingController();
   final TextEditingController _lineAmountCtrl = TextEditingController();
+  final FocusNode _lineAmountFocusNode = FocusNode();
   final TextEditingController _lineTransactionCtrl = TextEditingController();
   final List<_PaymentDraft> _payments = <_PaymentDraft>[];
   late String _selectedMethod;
   late String _selectedCurrencyCode;
+  bool _lineAmountSelectAllArmed = true;
+  bool _changeReturned = true;
 
   @override
   void initState() {
@@ -104,10 +113,14 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
     _selectedMethod = _defaultPaymentMethod;
     _selectedCurrencyCode = widget.currencyConfig.primaryCurrencyCode;
     _syncSuggestedPaymentAmount();
+    _lineAmountFocusNode.addListener(_onLineAmountFocusChanged);
   }
 
   @override
   void dispose() {
+    _lineAmountFocusNode
+      ..removeListener(_onLineAmountFocusChanged)
+      ..dispose();
     _discountCtrl.dispose();
     _lineAmountCtrl.dispose();
     _lineTransactionCtrl.dispose();
@@ -187,7 +200,46 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
 
   int get _deltaPrimaryCents => _paidPrimaryCents - _totalCents;
 
-  bool get _settled => _deltaPrimaryCents.abs() <= 1;
+  int get _currentLineEnteredPrimaryCents {
+    final int enteredCents = _moneyTextToCents(_lineAmountCtrl.text) ?? 0;
+    if (enteredCents <= 0) {
+      return 0;
+    }
+    return _toPrimaryCents(
+      amountCents: enteredCents,
+      currencyCode: _selectedCurrencyCode,
+    );
+  }
+
+  int get _currentLinePendingPrimaryCents {
+    return (_totalCents - _paidPrimaryCents).clamp(0, _totalCents);
+  }
+
+  int get _currentLineChangePrimaryCents {
+    final int delta =
+        _currentLineEnteredPrimaryCents - _currentLinePendingPrimaryCents;
+    return delta > 0 ? delta : 0;
+  }
+
+  void _onLineAmountFocusChanged() {
+    if (!_lineAmountFocusNode.hasFocus) {
+      _lineAmountSelectAllArmed = true;
+    }
+  }
+
+  void _handleLineAmountTap() {
+    if (!_lineAmountFocusNode.hasFocus) {
+      return;
+    }
+    if (!_lineAmountSelectAllArmed) {
+      return;
+    }
+    _lineAmountCtrl.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: _lineAmountCtrl.text.length,
+    );
+    _lineAmountSelectAllArmed = false;
+  }
 
   int _unitPricePrimaryCents(PosCartLine line) {
     return _toPrimaryCents(
@@ -419,33 +471,76 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
       _show('Debes agregar al menos una linea de pago.');
       return;
     }
-    if (!isConsignmentSale && !_settled) {
-      _show('La suma de pagos debe coincidir con el total de la venta.');
-      return;
-    }
     if (isConsignmentSale && _paidPrimaryCents != 0) {
       _show('En consignación la venta se registra sin pagos iniciales.');
       return;
     }
 
-    List<DirectSalesPaymentLine> paymentLines = _paymentLines;
+    final List<DirectSalesPaymentLine> originalLines = _paymentLines;
+    List<DirectSalesPaymentLine> paymentLines = originalLines;
     if (!isConsignmentSale && paymentLines.isEmpty) {
       _show('Debes ingresar al menos un pago valido.');
       return;
     }
 
-    final int delta = _deltaPrimaryCents;
-    if (!isConsignmentSale && delta != 0) {
-      final DirectSalesPaymentLine firstLine = paymentLines.first;
-      final int adjustedPrimary = firstLine.primaryAmountCents - delta;
-      if (adjustedPrimary <= 0) {
-        _show('Ajusta los montos de pago para cubrir el total de la venta.');
+    final int receivedPrimaryCents = originalLines.fold<int>(
+      0,
+      (int sum, DirectSalesPaymentLine line) => sum + line.primaryAmountCents,
+    );
+    final int delta = receivedPrimaryCents - _totalCents;
+    final int changePrimaryCents = delta > 0 ? delta : 0;
+    if (!isConsignmentSale && delta < 0) {
+      _show('La suma de pagos debe cubrir el total de la venta.');
+      return;
+    }
+    if (!isConsignmentSale && changePrimaryCents > 0) {
+      final bool hasCash = paymentLines.any(
+        (DirectSalesPaymentLine line) =>
+            line.method.trim().toLowerCase() == 'cash' &&
+            line.primaryAmountCents > 0,
+      );
+      if (!hasCash) {
+        _show('El sobrepago solo se permite cuando hay efectivo en la venta.');
         return;
       }
-      paymentLines = <DirectSalesPaymentLine>[
-        firstLine.copyWith(primaryAmountCents: adjustedPrimary),
-        ...paymentLines.skip(1),
-      ];
+      if (_changeReturned) {
+        int remainingChange = changePrimaryCents;
+        final List<DirectSalesPaymentLine> adjusted =
+            <DirectSalesPaymentLine>[];
+        for (final DirectSalesPaymentLine line in paymentLines) {
+          if (line.method.trim().toLowerCase() == 'cash' &&
+              remainingChange > 0) {
+            final int deductionPrimary =
+                remainingChange > line.primaryAmountCents
+                    ? line.primaryAmountCents
+                    : remainingChange;
+            final int deductionEntered = _fromPrimaryCents(
+              amountCents: deductionPrimary,
+              currencyCode: line.currencyCode,
+            );
+            final int nextPrimary = line.primaryAmountCents - deductionPrimary;
+            final int nextEnteredRaw =
+                line.enteredAmountCents - deductionEntered;
+            final int nextEntered = nextEnteredRaw > 0 ? nextEnteredRaw : 0;
+            remainingChange -= deductionPrimary;
+            if (nextPrimary > 0) {
+              adjusted.add(
+                line.copyWith(
+                  primaryAmountCents: nextPrimary,
+                  enteredAmountCents: nextEntered,
+                ),
+              );
+            }
+            continue;
+          }
+          adjusted.add(line);
+        }
+        if (remainingChange > 0) {
+          _show('El cambio a devolver supera el efectivo recibido.');
+          return;
+        }
+        paymentLines = adjusted;
+      }
     }
 
     final Map<String, int> byMethod = <String, int>{};
@@ -467,6 +562,9 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
         cartLines:
             _editableLines.map((PosCartLine line) => line.copyWith()).toList(),
         isConsignmentSale: isConsignmentSale,
+        receivedPrimaryCents: receivedPrimaryCents,
+        changePrimaryCents: changePrimaryCents,
+        changeReturned: changePrimaryCents > 0 ? _changeReturned : true,
       ),
     );
   }
@@ -739,6 +837,9 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
     required int pending,
     required int overpaid,
   }) {
+    final int draftChangePrimary = _currentLineChangePrimaryCents;
+    final int visualChangePrimary =
+        overpaid > 0 ? overpaid : draftChangePrimary;
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -872,13 +973,42 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
             builder: (BuildContext context, BoxConstraints constraints) {
               final Widget amountField = TextField(
                 controller: _lineAmountCtrl,
+                focusNode: _lineAmountFocusNode,
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
+                onTap: _handleLineAmountTap,
+                onChanged: (_) => setState(() {}),
                 decoration: InputDecoration(
                   hintText: '0.00',
                   prefixText:
                       '${widget.currencyConfig.symbolForCode(_selectedCurrencyCode)} ',
+                  suffixIcon: draftChangePrimary > 0
+                      ? Align(
+                          alignment: Alignment.centerRight,
+                          widthFactor: 1,
+                          heightFactor: 1,
+                          child: Padding(
+                            padding: const EdgeInsets.only(
+                              top: 8,
+                              right: 10,
+                              left: 6,
+                            ),
+                            child: Text(
+                              'Cambio ${_moneyPrimary(draftChangePrimary)}',
+                              style: const TextStyle(
+                                color: Color(0xFFB91C1C),
+                                fontWeight: FontWeight.w800,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                        )
+                      : null,
+                  suffixIconConstraints: const BoxConstraints(
+                    minHeight: 24,
+                    minWidth: 24,
+                  ),
                 ),
               );
               final Widget addButton = FilledButton.icon(
@@ -904,6 +1034,34 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
               );
             },
           ),
+          if (visualChangePrimary > 0) ...<Widget>[
+            const SizedBox(height: 6),
+            CheckboxListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              value: _changeReturned,
+              onChanged: (bool? value) {
+                if (value == null) {
+                  return;
+                }
+                setState(() => _changeReturned = value);
+              },
+              title: const Text(
+                'Cambio devuelto al cliente',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+            ),
+            if (!_changeReturned)
+              Text(
+                'El ticket registrará que el cliente no recibió ${_moneyPrimary(visualChangePrimary)} de cambio.',
+                style: const TextStyle(
+                  color: Color(0xFFB45309),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+          ],
           if (_payments.isNotEmpty) ...<Widget>[
             const SizedBox(height: 12),
             ListView.separated(
@@ -987,9 +1145,11 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
           ),
           if (overpaid > 0)
             _summaryRow(
-              'Sobrepago',
+              _changeReturned ? 'Cambio a devolver' : 'Cambio no devuelto',
               _moneyPrimary(overpaid),
-              valueColor: const Color(0xFFB13B5A),
+              valueColor: _changeReturned
+                  ? const Color(0xFFB13B5A)
+                  : const Color(0xFFB45309),
             ),
           const SizedBox(height: 14),
           SizedBox(

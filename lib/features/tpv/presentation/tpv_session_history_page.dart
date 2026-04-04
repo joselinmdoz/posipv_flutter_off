@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../auth/presentation/auth_providers.dart';
-import '../../reportes/presentation/reportes_providers.dart';
-import '../../reportes/presentation/widgets/ipv_reporte_detail_page.dart';
 import '../data/tpv_local_datasource.dart';
+import 'tpv_session_detail_page.dart';
 import 'tpv_providers.dart';
 import 'widgets/tpv_history_bottom_navigation.dart';
 
@@ -141,47 +139,19 @@ class _TpvSessionHistoryPageState extends ConsumerState<TpvSessionHistoryPage> {
   }
 
   Future<void> _openDetails(_SessionHistoryRecord record) async {
-    if (record.row.session.status == 'open') {
-      final current = ref.read(currentSessionProvider);
-      if (current != null) {
-        ref.read(currentSessionProvider.notifier).state =
-            current.copyWith(activeTerminalId: widget.terminal.terminal.id);
-      }
-      context.push('/ventas-pos');
-      return;
-    }
-
-    final reportesDs = ref.read(reportesLocalDataSourceProvider);
-    try {
-      final report =
-          await reportesDs.findIpvReportBySessionId(record.row.session.id);
-      if (!mounted) return;
-      if (report == null) {
-        _showFallbackDetail(record);
-        return;
-      }
-      Navigator.of(context).push(
-        MaterialPageRoute(
-            builder: (_) => IpvReporteDetailPage(summary: report)),
-      );
-    } catch (e) {
-      _show('Error: $e');
-    }
-  }
-
-  void _showFallbackDetail(_SessionHistoryRecord record) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Turno ${_sessionCode(record.row.session.id)}'),
-        content: Text(
-            'Apertura: ${_formatDate(record.row.session.openedAt)}\nResponsable: ${record.row.user.username}'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('Cerrar'))
-        ],
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => TpvSessionDetailPage(
+          terminal: widget.terminal,
+          sessionRow: record.row,
+          initialBreakdown: record.breakdown,
+        ),
       ),
     );
+    if (!mounted) {
+      return;
+    }
+    await _loadHistory();
   }
 
   @override
@@ -189,7 +159,7 @@ class _TpvSessionHistoryPageState extends ConsumerState<TpvSessionHistoryPage> {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final Color bgColor =
         isDark ? const Color(0xFF101622) : const Color(0xFFF1F5F9);
-    final Color primaryColor = const Color(0xFF1152D4);
+    const Color primaryColor = Color(0xFF1152D4);
     final Color cardBg = isDark ? const Color(0xFF1A202E) : Colors.white;
     final Color mutedText = isDark ? Colors.white60 : Colors.black54;
 
@@ -368,6 +338,15 @@ class _TpvSessionHistoryPageState extends ConsumerState<TpvSessionHistoryPage> {
 
   Widget _buildTab(String label, int index) {
     final bool isSelected = _selectedTabIndex == index;
+    final List<BoxShadow>? selectedShadows = isSelected
+        ? const <BoxShadow>[
+            BoxShadow(
+              color: Colors.black12,
+              blurRadius: 4,
+              offset: Offset(0, 2),
+            ),
+          ]
+        : null;
     return Expanded(
       child: GestureDetector(
         onTap: () => setState(() => _selectedTabIndex = index),
@@ -376,14 +355,7 @@ class _TpvSessionHistoryPageState extends ConsumerState<TpvSessionHistoryPage> {
           decoration: BoxDecoration(
             color: isSelected ? Colors.white : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
-            boxShadow: isSelected
-                ? [
-                    BoxShadow(
-                        color: Colors.black12,
-                        blurRadius: 4,
-                        offset: const Offset(0, 2))
-                  ]
-                : null,
+            boxShadow: selectedShadows,
           ),
           child: Text(
             label,
@@ -489,6 +461,10 @@ class _TpvSessionHistoryPageState extends ConsumerState<TpvSessionHistoryPage> {
                       Text(
                         'Apertura: ${_formatDate(record.row.session.openedAt)}',
                         style: TextStyle(color: mutedText, fontSize: 12),
+                      ),
+                      Text(
+                        'Toca para ver detalle completo del turno',
+                        style: TextStyle(color: mutedText, fontSize: 11),
                       ),
                     ],
                   ),

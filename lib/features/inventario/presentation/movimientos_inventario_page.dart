@@ -50,7 +50,7 @@ class _MovimientosInventarioPageState
         if (!mounted) {
           return;
         }
-        unawaited(_reloadMovements());
+        unawaited(_bootstrap());
       },
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -73,8 +73,7 @@ class _MovimientosInventarioPageState
     final PerfTrace trace = PerfTrace('movimientos.bootstrap');
     setState(() => _loading = true);
     try {
-      final Future<List<Warehouse>> warehousesFuture =
-          ref.read(almacenesLocalDataSourceProvider).listActiveWarehouses();
+      final Future<List<Warehouse>> warehousesFuture = _listActiveWarehouses();
       final Future<List<InventoryMovementReason>> reasonsFuture =
           ref.read(inventarioLocalDataSourceProvider).listMovementReasons();
 
@@ -113,6 +112,27 @@ class _MovimientosInventarioPageState
     }
   }
 
+  Future<List<Warehouse>> _listActiveWarehouses() {
+    return ref.read(almacenesLocalDataSourceProvider).listActiveWarehouses();
+  }
+
+  Future<void> _refreshWarehousesCatalog({
+    bool normalizeSelection = true,
+  }) async {
+    final List<Warehouse> warehouses = await _listActiveWarehouses();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _warehouses = warehouses;
+      if (normalizeSelection &&
+          _selectedWarehouseId != null &&
+          warehouses.every((Warehouse row) => row.id != _selectedWarehouseId)) {
+        _selectedWarehouseId = warehouses.isEmpty ? null : warehouses.first.id;
+      }
+    });
+  }
+
   Future<void> _reloadMovements() async {
     final List<InventoryMovementView> movements = await _fetchMovements();
     if (!mounted) {
@@ -144,6 +164,10 @@ class _MovimientosInventarioPageState
   }
 
   Future<void> _openMovementForm({InventoryMovementView? movement}) async {
+    await _refreshWarehousesCatalog(normalizeSelection: false);
+    if (!mounted) {
+      return;
+    }
     final UserSession? session = ref.read(currentSessionProvider);
     if (session == null) {
       _show('Debes iniciar sesion.');
@@ -450,6 +474,10 @@ class _MovimientosInventarioPageState
   }
 
   Future<void> _openQuickFilters() async {
+    await _refreshWarehousesCatalog();
+    if (!mounted) {
+      return;
+    }
     String? draftWarehouse = _selectedWarehouseId;
     String draftReason = _selectedReasonCode;
     final license = ref.read(currentLicenseStatusProvider);

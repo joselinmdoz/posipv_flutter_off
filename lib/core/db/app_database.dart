@@ -345,6 +345,52 @@ class IpvReportLines extends Table {
   Set<Column> get primaryKey => <Column>{reportId, productId};
 }
 
+class ManualIpvReports extends Table {
+  TextColumn get id => text()();
+  DateTimeColumn get reportDate => dateTime()();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get updatedAt => dateTime().nullable()();
+  TextColumn get createdBy => text().references(Users, #id).nullable()();
+  TextColumn get employeeIdsJson => text().withDefault(const Constant('[]'))();
+  TextColumn get employeeNamesJson =>
+      text().withDefault(const Constant('[]'))();
+  TextColumn get paymentTotalsJson =>
+      text().withDefault(const Constant('{}'))();
+  TextColumn get currencySymbol => text().withDefault(const Constant(r'$'))();
+  TextColumn get note => text().nullable()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{id};
+
+  @override
+  List<Set<Column>> get uniqueKeys => <Set<Column>>[
+        <Column>{reportDate},
+      ];
+}
+
+class ManualIpvReportLines extends Table {
+  TextColumn get id => text()();
+  TextColumn get reportId => text().references(ManualIpvReports, #id)();
+  TextColumn get productId => text().references(Products, #id).nullable()();
+  BoolColumn get isCustom => boolean().withDefault(const Constant(false))();
+  TextColumn get productNameSnapshot => text()();
+  TextColumn get productSkuSnapshot =>
+      text().withDefault(const Constant('-'))();
+  RealColumn get startQty => real().withDefault(const Constant(0))();
+  RealColumn get entriesQty => real().withDefault(const Constant(0))();
+  RealColumn get outputsQty => real().withDefault(const Constant(0))();
+  RealColumn get salesQty => real().withDefault(const Constant(0))();
+  RealColumn get finalQty => real().withDefault(const Constant(0))();
+  IntColumn get salePriceCents => integer().withDefault(const Constant(0))();
+  IntColumn get unitCostCents => integer().withDefault(const Constant(0))();
+  IntColumn get totalAmountCents => integer().withDefault(const Constant(0))();
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+  DateTimeColumn get updatedAt => dateTime().nullable()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{id};
+}
+
 class AppSettings extends Table {
   TextColumn get key => text()();
   TextColumn get value => text()();
@@ -391,6 +437,8 @@ class AuditLogs extends Table {
     Payments,
     IpvReports,
     IpvReportLines,
+    ManualIpvReports,
+    ManualIpvReportLines,
     AppSettings,
     AuditLogs,
   ],
@@ -400,7 +448,7 @@ class AppDatabase extends _$AppDatabase {
   final Uuid _uuid = const Uuid();
 
   @override
-  int get schemaVersion => 24;
+  int get schemaVersion => 25;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -721,6 +769,15 @@ class AppDatabase extends _$AppDatabase {
               )
               ''',
             );
+          }
+          if (from < 25) {
+            if (!await _tableExists('manual_ipv_reports')) {
+              await m.createTable(manualIpvReports);
+            }
+            if (!await _tableExists('manual_ipv_report_lines')) {
+              await m.createTable(manualIpvReportLines);
+            }
+            await _createPerformanceIndexes();
           }
         },
       );
@@ -1121,6 +1178,24 @@ class AppDatabase extends _$AppDatabase {
       '''
       CREATE INDEX IF NOT EXISTS idx_ipv_reports_terminal_status_closed_at
       ON ipv_reports (terminal_id, status, closed_at)
+      ''',
+    );
+    await customStatement(
+      '''
+      CREATE INDEX IF NOT EXISTS idx_manual_ipv_reports_report_date
+      ON manual_ipv_reports (report_date DESC)
+      ''',
+    );
+    await customStatement(
+      '''
+      CREATE INDEX IF NOT EXISTS idx_manual_ipv_report_lines_report_sort
+      ON manual_ipv_report_lines (report_id, sort_order)
+      ''',
+    );
+    await customStatement(
+      '''
+      CREATE INDEX IF NOT EXISTS idx_manual_ipv_report_lines_report_product
+      ON manual_ipv_report_lines (report_id, product_id)
       ''',
     );
   }

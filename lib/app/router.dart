@@ -29,6 +29,7 @@ import '../features/licencia/presentation/licencia_page.dart';
 import '../features/productos/presentation/productos_page.dart';
 import '../features/reportes/presentation/reportes_page.dart';
 import '../features/reportes/presentation/ipv_reportes_page.dart';
+import '../features/reportes/presentation/ipv_manual_page.dart';
 import '../features/sync_manual/presentation/manual_sync_page.dart';
 import '../features/tpv/presentation/tpv_page.dart';
 import '../features/tpv/presentation/tpv_employees_page.dart';
@@ -171,6 +172,10 @@ final Provider<GoRouter> appRouterProvider = Provider<GoRouter>((Ref ref) {
           _branch(
             path: '/ipv-reportes',
             builder: (context, state) => const IpvReportesPage(),
+          ),
+          _branch(
+            path: '/ipv-manual',
+            builder: (context, state) => const IpvManualPage(),
           ),
           _branch(
             path: '/configuracion',
