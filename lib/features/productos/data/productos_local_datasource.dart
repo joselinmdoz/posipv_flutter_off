@@ -1202,9 +1202,15 @@ class ProductosLocalDataSource {
           CAST((SELECT COUNT(*) FROM sale_items WHERE product_id = ?) AS INTEGER) AS sale_items_count,
           CAST((SELECT COUNT(*) FROM ipv_report_lines WHERE product_id = ?) AS INTEGER) AS ipv_lines_count,
           CAST((SELECT COUNT(*) FROM stock_movements WHERE product_id = ?) AS INTEGER) AS movements_count,
-          CAST((SELECT COUNT(*) FROM stock_balances WHERE product_id = ?) AS INTEGER) AS balances_count
+          CAST((SELECT COUNT(*) FROM stock_balances WHERE product_id = ?) AS INTEGER) AS balances_count,
+          CAST((SELECT COUNT(*) FROM purchase_items WHERE product_id = ?) AS INTEGER) AS purchase_items_count,
+          CAST((SELECT COUNT(*) FROM stock_lots WHERE product_id = ?) AS INTEGER) AS stock_lots_count,
+          CAST((SELECT COUNT(*) FROM sale_item_lot_allocations WHERE product_id = ?) AS INTEGER) AS allocations_count
         ''',
         variables: <Variable<Object>>[
+          Variable<String>(safeProductId),
+          Variable<String>(safeProductId),
+          Variable<String>(safeProductId),
           Variable<String>(safeProductId),
           Variable<String>(safeProductId),
           Variable<String>(safeProductId),
@@ -1220,6 +1226,14 @@ class ProductosLocalDataSource {
           'Primero archiva y elimina definitivamente esas ventas.',
         );
       }
+      final int purchaseItemsCount =
+          (refs?.data['purchase_items_count'] as num?)?.toInt() ?? 0;
+      if (purchaseItemsCount > 0) {
+        throw Exception(
+          'Este producto tiene historial en compras. '
+          'No se puede eliminar para conservar la trazabilidad de costos.',
+        );
+      }
 
       final int ipvLinesCount =
           (refs?.data['ipv_lines_count'] as num?)?.toInt() ?? 0;
@@ -1227,10 +1241,21 @@ class ProductosLocalDataSource {
           (refs?.data['movements_count'] as num?)?.toInt() ?? 0;
       final int balancesCount =
           (refs?.data['balances_count'] as num?)?.toInt() ?? 0;
+      final int stockLotsCount =
+          (refs?.data['stock_lots_count'] as num?)?.toInt() ?? 0;
+      final int allocationsCount =
+          (refs?.data['allocations_count'] as num?)?.toInt() ?? 0;
 
       await (_db.delete(_db.ipvReportLines)
             ..where(
                 (IpvReportLines tbl) => tbl.productId.equals(safeProductId)))
+          .go();
+      await (_db.delete(_db.saleItemLotAllocations)
+            ..where((SaleItemLotAllocations tbl) =>
+                tbl.productId.equals(safeProductId)))
+          .go();
+      await (_db.delete(_db.stockLots)
+            ..where((StockLots tbl) => tbl.productId.equals(safeProductId)))
           .go();
       await (_db.delete(_db.stockMovements)
             ..where(
@@ -1256,6 +1281,8 @@ class ProductosLocalDataSource {
                 'ipvLinesDeleted': ipvLinesCount,
                 'movementsDeleted': movementsCount,
                 'balancesDeleted': balancesCount,
+                'stockLotsDeleted': stockLotsCount,
+                'allocationsDeleted': allocationsCount,
               }),
             ),
           );
@@ -1339,6 +1366,32 @@ class ProductosLocalDataSource {
             'No se puede modificar el precio mientras haya un turno TPV abierto '
             'donde este producto tenga stock.',
       );
+    }
+
+    if (costPriceChanged) {
+      final QueryRow? activeLotsRow = await _db.customSelect(
+        '''
+        SELECT CAST(COUNT(*) AS INTEGER) AS total
+        FROM stock_lots l
+        WHERE l.product_id = ?
+          AND COALESCE(l.qty_remaining, 0) > 0
+        LIMIT 1
+        ''',
+        variables: <Variable<Object>>[
+          Variable<String>(safeProductId),
+        ],
+      ).getSingleOrNull();
+      final int activeLots =
+          (activeLotsRow?.data['total'] as num?)?.toInt() ?? 0;
+      if (activeLots > 0) {
+        return const ProductPriceEditionCheck(
+          allowed: false,
+          hasPriceChanges: true,
+          blockReason:
+              'No se puede modificar manualmente el costo mientras existan lotes activos. '
+              'El costo se toma del lote FIFO vigente.',
+        );
+      }
     }
 
     return const ProductPriceEditionCheck(

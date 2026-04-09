@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../configuracion/data/configuracion_local_datasource.dart';
 import '../../../ventas_pos/presentation/widgets/pos_order_summary_line.dart';
+import '../../../ventas_pos/presentation/widgets/payment_amount_calculator_dialog.dart';
 import '../../../ventas_pos/presentation/widgets/pos_payment_models.dart';
 
 class DirectSalesPaymentResult {
@@ -70,6 +71,7 @@ class DirectSalesPaymentDialog extends StatefulWidget {
     required this.paymentMethods,
     required this.paymentMethodLabel,
     required this.onlinePaymentMethodCodes,
+    required this.cashDenominationsCents,
   });
 
   final List<PosCartLine> cartLines;
@@ -79,6 +81,7 @@ class DirectSalesPaymentDialog extends StatefulWidget {
   final List<String> paymentMethods;
   final String Function(String) paymentMethodLabel;
   final Set<String> onlinePaymentMethodCodes;
+  final List<int> cashDenominationsCents;
 
   @override
   State<DirectSalesPaymentDialog> createState() =>
@@ -575,6 +578,22 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Future<void> _openLineAmountCalculator() async {
+    final int? result = await PaymentAmountCalculatorDialog.show(
+      context: context,
+      currencySymbol:
+          widget.currencyConfig.symbolForCode(_selectedCurrencyCode),
+      denominationsCents: widget.cashDenominationsCents,
+      initialAmountCents: _moneyTextToCents(_lineAmountCtrl.text) ?? 0,
+    );
+    if (!mounted || result == null || result < 0) {
+      return;
+    }
+    setState(() {
+      _lineAmountCtrl.text = (result / 100).toStringAsFixed(2);
+    });
+  }
+
   Future<void> _cancelOrderFromCheckout() async {
     final bool? confirm = await showDialog<bool>(
       context: context,
@@ -1016,18 +1035,31 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
                 icon: const Icon(Icons.add_rounded, size: 18),
                 label: const Text('Agregar'),
               );
+              final Widget calculatorButton = IconButton.filledTonal(
+                tooltip: 'Calculadora',
+                onPressed: _openLineAmountCalculator,
+                icon: const Icon(Icons.calculate_rounded),
+              );
               if (constraints.maxWidth < 420) {
                 return Column(
                   children: <Widget>[
                     amountField,
                     const SizedBox(height: 8),
-                    SizedBox(width: double.infinity, child: addButton),
+                    Row(
+                      children: <Widget>[
+                        calculatorButton,
+                        const SizedBox(width: 8),
+                        Expanded(child: addButton),
+                      ],
+                    ),
                   ],
                 );
               }
               return Row(
                 children: <Widget>[
                   Expanded(child: amountField),
+                  const SizedBox(width: 8),
+                  calculatorButton,
                   const SizedBox(width: 8),
                   addButton,
                 ],

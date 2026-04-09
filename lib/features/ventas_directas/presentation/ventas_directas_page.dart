@@ -49,7 +49,12 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
   final Map<String, Product> _productsById = <String, Product>{};
   String? _selectedWarehouseId;
   AppCurrencyConfig _currencyConfig = AppCurrencyConfig.defaults;
-  Set<String> _onlinePaymentMethodCodes = <String>{'transfer', 'wallet'};
+  Set<String> _onlinePaymentMethodCodes = <String>{'transfer'};
+  List<String> _paymentMethods = <String>[
+    'cash',
+    'transfer',
+  ];
+  Map<String, String> _paymentMethodLabelsByCode = <String, String>{};
   bool _allowNegativeStock = false;
   bool _loading = true;
   bool _posting = false;
@@ -58,14 +63,6 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
   final Map<String, double> _qtyByProductId = <String, double>{};
   final Map<String, double> _stockByProductId = <String, double>{};
   final Set<String> _warehouseProductIds = <String>{};
-
-  static const List<String> _paymentMethods = <String>[
-    'cash',
-    'card',
-    'transfer',
-    'wallet',
-    'consignment',
-  ];
 
   @override
   void initState() {
@@ -122,9 +119,9 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
           whDs.listActiveWarehouses();
       final Future<AppConfig> configFuture =
           ref.read(configuracionLocalDataSourceProvider).loadConfig();
-      final Future<Set<String>> onlineMethodsFuture = ref
+      final Future<List<AppPaymentMethodSetting>> paymentSettingsFuture = ref
           .read(configuracionLocalDataSourceProvider)
-          .loadOnlinePaymentMethodCodes();
+          .loadPaymentMethodSettings();
 
       final List<Warehouse> warehouses = (await warehousesFuture)
           .where(
@@ -134,7 +131,22 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
           .toList()
         ..sort((Warehouse a, Warehouse b) => a.name.compareTo(b.name));
       final AppConfig config = await configFuture;
-      final Set<String> onlineMethods = await onlineMethodsFuture;
+      List<AppPaymentMethodSetting> paymentSettings =
+          const <AppPaymentMethodSetting>[];
+      try {
+        paymentSettings = await paymentSettingsFuture;
+      } catch (_) {}
+      final List<String> paymentMethods = paymentSettings
+          .map((AppPaymentMethodSetting row) => row.code.trim().toLowerCase())
+          .where((String code) => code.isNotEmpty)
+          .toList(growable: false);
+      final Set<String> onlineMethods = paymentSettings
+          .where((AppPaymentMethodSetting row) => row.isOnline)
+          .map((AppPaymentMethodSetting row) => row.code.trim().toLowerCase())
+          .where((String code) => code.isNotEmpty)
+          .toSet();
+      final Map<String, String> paymentLabels =
+          buildPaymentMethodLabelMap(paymentSettings);
 
       String? warehouseId = _selectedWarehouseId;
       if (warehouseId == null ||
@@ -162,7 +174,12 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
           availableIds: warehouseData.availableIds,
         );
         _currencyConfig = config.currencyConfig.normalized();
-        _onlinePaymentMethodCodes = onlineMethods;
+        _paymentMethods = paymentMethods.isEmpty
+            ? <String>['cash', 'transfer']
+            : paymentMethods;
+        _onlinePaymentMethodCodes =
+            onlineMethods.isEmpty ? <String>{'transfer'} : onlineMethods;
+        _paymentMethodLabelsByCode = paymentLabels;
         _allowNegativeStock = config.allowNegativeStock;
         _loading = false;
       });
@@ -557,6 +574,14 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
             paymentMethods: _paymentMethods,
             paymentMethodLabel: _paymentMethodLabel,
             onlinePaymentMethodCodes: _onlinePaymentMethodCodes,
+            cashDenominationsCents: const <int>[
+              10000,
+              5000,
+              2000,
+              1000,
+              500,
+              100,
+            ],
           );
         },
       ),
@@ -878,20 +903,11 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
   }
 
   String _paymentMethodLabel(String method) {
-    switch (method) {
-      case 'cash':
-        return 'Efectivo';
-      case 'card':
-        return 'Tarjeta';
-      case 'transfer':
-        return 'Transferencia';
-      case 'wallet':
-        return 'Billetera';
-      case 'consignment':
-        return 'Consignación';
-      default:
-        return method;
+    final String code = method.trim().toLowerCase();
+    if (code.isEmpty) {
+      return 'Metodo';
     }
+    return _paymentMethodLabelsByCode[code] ?? defaultPaymentMethodLabel(code);
   }
 
   String _formatPaymentLineLabel(DirectSalesPaymentLine line) {

@@ -10,6 +10,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_service.dart';
+import '../../configuracion/data/configuracion_local_datasource.dart';
 
 class SalesSummary {
   const SalesSummary({
@@ -604,6 +605,7 @@ class ReportesLocalDataSource {
   final AppDatabase _db;
   final OfflineLicenseService _licenseService;
   final Uuid _uuid = const Uuid();
+  Map<String, String> _paymentMethodLabelsByCode = <String, String>{};
   static const String _demoIpvExportBlockedMessage =
       'Modo demo: la exportacion de IPV (CSV/PDF) esta disponible solo con licencia activa.';
   static const String _demoAnalyticsExportBlockedMessage =
@@ -747,6 +749,7 @@ class ReportesLocalDataSource {
     String? channel,
     String? terminalId,
   }) async {
+    await _refreshPaymentMethodLabelCache();
     final DateTime from = _startOfDay(fromDate);
     DateTime toExclusive = _startOfDay(toDate).add(const Duration(days: 1));
     if (!toExclusive.isAfter(from)) {
@@ -2524,19 +2527,24 @@ class ReportesLocalDataSource {
                   )
                   AND NOT (
                     (
-                      LOWER(COALESCE(sm.reason_code, '')) = 'sale'
-                      OR LOWER(COALESCE(sm.ref_type, '')) IN ('sale', 'sale_pos', 'sale_direct')
-                      OR LOWER(COALESCE(sm.movement_source, '')) IN ('pos', 'direct_sale')
-                    )
-                    AND LOWER(COALESCE(sm.reason_code, '')) <> 'consignment_sale'
-                    AND LOWER(COALESCE(sm.ref_type, '')) NOT IN (
-                      'consignment_sale',
-                      'consignment_sale_pos',
-                      'consignment_sale_direct'
-                    )
-                    AND LOWER(COALESCE(sm.movement_source, '')) NOT IN (
-                      'pos_consignment',
-                      'direct_consignment'
+                      LOWER(COALESCE(sm.reason_code, '')) IN (
+                        'sale',
+                        'consignment_sale'
+                      )
+                      OR LOWER(COALESCE(sm.ref_type, '')) IN (
+                        'sale',
+                        'sale_pos',
+                        'sale_direct',
+                        'consignment_sale',
+                        'consignment_sale_pos',
+                        'consignment_sale_direct'
+                      )
+                      OR LOWER(COALESCE(sm.movement_source, '')) IN (
+                        'pos',
+                        'direct_sale',
+                        'pos_consignment',
+                        'direct_consignment'
+                      )
                     )
                   )
                     THEN ABS(sm.qty)
@@ -2551,19 +2559,24 @@ class ReportesLocalDataSource {
                   )
                   AND (
                     (
-                      LOWER(COALESCE(sm.reason_code, '')) = 'sale'
-                      OR LOWER(COALESCE(sm.ref_type, '')) IN ('sale', 'sale_pos', 'sale_direct')
-                      OR LOWER(COALESCE(sm.movement_source, '')) IN ('pos', 'direct_sale')
-                    )
-                    AND LOWER(COALESCE(sm.reason_code, '')) <> 'consignment_sale'
-                    AND LOWER(COALESCE(sm.ref_type, '')) NOT IN (
-                      'consignment_sale',
-                      'consignment_sale_pos',
-                      'consignment_sale_direct'
-                    )
-                    AND LOWER(COALESCE(sm.movement_source, '')) NOT IN (
-                      'pos_consignment',
-                      'direct_consignment'
+                      LOWER(COALESCE(sm.reason_code, '')) IN (
+                        'sale',
+                        'consignment_sale'
+                      )
+                      OR LOWER(COALESCE(sm.ref_type, '')) IN (
+                        'sale',
+                        'sale_pos',
+                        'sale_direct',
+                        'consignment_sale',
+                        'consignment_sale_pos',
+                        'consignment_sale_direct'
+                      )
+                      OR LOWER(COALESCE(sm.movement_source, '')) IN (
+                        'pos',
+                        'direct_sale',
+                        'pos_consignment',
+                        'direct_consignment'
+                      )
                     )
                   )
                     THEN ABS(sm.qty)
@@ -2915,6 +2928,7 @@ class ReportesLocalDataSource {
     await _licenseService.requireFullAccess(
       message: _demoIpvExportBlockedMessage,
     );
+    await _refreshPaymentMethodLabelCache();
     try {
       final IpvReportDetailStat? detail = await loadIpvReportDetail(reportId);
       if (detail == null) {
@@ -2999,6 +3013,7 @@ class ReportesLocalDataSource {
     await _licenseService.requireFullAccess(
       message: _demoIpvExportBlockedMessage,
     );
+    await _refreshPaymentMethodLabelCache();
     try {
       final IpvReportDetailStat? loaded = await loadIpvReportDetail(reportId);
       if (loaded == null) {
@@ -3818,10 +3833,7 @@ class ReportesLocalDataSource {
   Future<List<String>> listManualIpvPaymentMethods() async {
     const List<String> defaults = <String>[
       'cash',
-      'card',
       'transfer',
-      'wallet',
-      'consignment',
     ];
     final AppSetting? row = await (_db.select(_db.appSettings)
           ..where((AppSettings tbl) =>
@@ -4231,6 +4243,135 @@ class ReportesLocalDataSource {
     });
   }
 
+  Future<void> deleteManualIpvReport({
+    required String reportId,
+  }) async {
+    final String cleanReportId = reportId.trim();
+    if (cleanReportId.isEmpty) {
+      throw Exception('ID de IPV manual inválido.');
+    }
+    await _db.transaction(() async {
+      final int deletedLines = await (_db.delete(_db.manualIpvReportLines)
+            ..where((ManualIpvReportLines tbl) =>
+                tbl.reportId.equals(cleanReportId)))
+          .go();
+      final int deletedReports = await (_db.delete(_db.manualIpvReports)
+            ..where((ManualIpvReports tbl) => tbl.id.equals(cleanReportId)))
+          .go();
+      if (deletedReports < 1) {
+        throw Exception('No se encontró el IPV manual para eliminar.');
+      }
+      if (deletedLines < 0) {
+        throw Exception('No se pudieron eliminar las líneas del IPV manual.');
+      }
+    });
+  }
+
+  Future<void> recalculateManualIpvStarts({
+    required DateTime fromDate,
+  }) async {
+    final DateTime normalizedFromDate = _startOfDay(fromDate);
+    await _db.transaction(() async {
+      final List<ManualIpvReport> targetReports =
+          await (_db.select(_db.manualIpvReports)
+                ..where((ManualIpvReports tbl) =>
+                    tbl.reportDate.isBiggerOrEqualValue(normalizedFromDate))
+                ..orderBy(<OrderingTerm Function(ManualIpvReports)>[
+                  (ManualIpvReports tbl) => OrderingTerm.asc(tbl.reportDate),
+                  (ManualIpvReports tbl) => OrderingTerm.asc(tbl.createdAt),
+                ]))
+              .get();
+      if (targetReports.isEmpty) {
+        return;
+      }
+
+      final _ManualIpvPreviousReport? previous = await _manualIpvPreviousReport(
+        beforeDate: normalizedFromDate,
+      );
+      Map<String, double> previousFinalByProduct = previous == null
+          ? <String, double>{}
+          : await _manualIpvFinalQtyByProduct(previous.id);
+      Map<String, double> previousFinalByCustomKey = previous == null
+          ? <String, double>{}
+          : await _manualIpvFinalQtyByCustomKey(previous.id);
+
+      for (final ManualIpvReport report in targetReports) {
+        final List<ManualIpvReportLine> lines = await (_db
+                .select(_db.manualIpvReportLines)
+              ..where(
+                  (ManualIpvReportLines tbl) => tbl.reportId.equals(report.id))
+              ..orderBy(<OrderingTerm Function(ManualIpvReportLines)>[
+                (ManualIpvReportLines tbl) => OrderingTerm.asc(tbl.sortOrder),
+                (ManualIpvReportLines tbl) =>
+                    OrderingTerm.asc(tbl.productNameSnapshot),
+              ]))
+            .get();
+
+        final Map<String, double> currentFinalByProduct = <String, double>{};
+        final Map<String, double> currentFinalByCustomKey = <String, double>{};
+
+        for (final ManualIpvReportLine row in lines) {
+          double startQty = row.startQty;
+          final String productId = (row.productId ?? '').trim();
+          final String customKey = _manualIpvCustomKey(
+            productName: row.productNameSnapshot,
+            sku: row.productSkuSnapshot,
+          );
+
+          if (productId.isNotEmpty) {
+            startQty = previousFinalByProduct[productId] ?? 0;
+          } else if (customKey.isNotEmpty) {
+            startQty = previousFinalByCustomKey[customKey] ?? 0;
+          }
+
+          final ManualIpvEditableLineStat recomputed =
+              _recalculateManualIpvLine(
+            ManualIpvEditableLineStat(
+              lineId: row.id,
+              productId: row.productId,
+              isCustom: row.isCustom,
+              productName: row.productNameSnapshot.trim().isEmpty
+                  ? 'Producto'
+                  : row.productNameSnapshot.trim(),
+              sku: row.productSkuSnapshot.trim().isEmpty
+                  ? '-'
+                  : row.productSkuSnapshot.trim(),
+              startQty: startQty,
+              entriesQty: row.entriesQty,
+              outputsQty: row.outputsQty,
+              salesQty: row.salesQty,
+              finalQty: row.finalQty,
+              salePriceCents: row.salePriceCents,
+              unitCostCents: row.unitCostCents,
+              totalAmountCents: row.totalAmountCents,
+              sortOrder: row.sortOrder,
+            ),
+          );
+
+          await (_db.update(_db.manualIpvReportLines)
+                ..where((ManualIpvReportLines tbl) => tbl.id.equals(row.id)))
+              .write(
+            ManualIpvReportLinesCompanion(
+              startQty: Value(recomputed.startQty),
+              finalQty: Value(recomputed.finalQty),
+              totalAmountCents: Value(recomputed.totalAmountCents),
+              updatedAt: Value(DateTime.now()),
+            ),
+          );
+
+          if (productId.isNotEmpty) {
+            currentFinalByProduct[productId] = recomputed.finalQty;
+          } else if (customKey.isNotEmpty) {
+            currentFinalByCustomKey[customKey] = recomputed.finalQty;
+          }
+        }
+
+        previousFinalByProduct = currentFinalByProduct;
+        previousFinalByCustomKey = currentFinalByCustomKey;
+      }
+    });
+  }
+
   ManualIpvEditableLineStat _recalculateManualIpvLine(
     ManualIpvEditableLineStat line,
   ) {
@@ -4489,6 +4630,39 @@ class ReportesLocalDataSource {
     return out;
   }
 
+  Future<Map<String, double>> _manualIpvFinalQtyByCustomKey(
+    String reportId,
+  ) async {
+    final List<ManualIpvReportLine> rows = await (_db
+            .select(_db.manualIpvReportLines)
+          ..where((ManualIpvReportLines tbl) => tbl.reportId.equals(reportId)))
+        .get();
+    final Map<String, double> out = <String, double>{};
+    for (final ManualIpvReportLine row in rows) {
+      final String key = _manualIpvCustomKey(
+        productName: row.productNameSnapshot,
+        sku: row.productSkuSnapshot,
+      );
+      if (key.isEmpty) {
+        continue;
+      }
+      out[key] = row.finalQty;
+    }
+    return out;
+  }
+
+  String _manualIpvCustomKey({
+    required String productName,
+    required String sku,
+  }) {
+    final String name = productName.trim().toLowerCase();
+    final String code = sku.trim().toLowerCase();
+    if (name.isEmpty && code.isEmpty) {
+      return '';
+    }
+    return '$name|$code';
+  }
+
   Future<String> _manualIpvCurrencySymbolFromSettings() async {
     final AppSetting? row = await (_db.select(_db.appSettings)
           ..where((AppSettings tbl) => tbl.key.equals('currency_symbol'))
@@ -4599,24 +4773,45 @@ class ReportesLocalDataSource {
   }
 
   String _paymentMethodLabel(String method) {
-    switch (method.trim().toLowerCase()) {
-      case 'cash':
-        return 'Efectivo';
-      case 'card':
-        return 'Tarjeta';
-      case 'transfer':
-        return 'Transferencia';
-      case 'wallet':
-        return 'Billetera';
-      case 'consignment':
-        return 'Consignación';
-      default:
-        return method;
+    final String code = method.trim().toLowerCase();
+    if (code.isEmpty) {
+      return 'Metodo';
     }
+    return _paymentMethodLabelsByCode[code] ?? defaultPaymentMethodLabel(code);
   }
 
   String paymentMethodLabel(String method) {
     return _paymentMethodLabel(method);
+  }
+
+  Future<void> _refreshPaymentMethodLabelCache() async {
+    try {
+      final AppSetting? row = await (_db.select(_db.appSettings)
+            ..where((AppSettings tbl) =>
+                tbl.key.equals('payment_methods_config_json_v1')))
+          .getSingleOrNull();
+      if (row == null || row.value.trim().isEmpty) {
+        _paymentMethodLabelsByCode = <String, String>{};
+        return;
+      }
+      final Object? decoded = jsonDecode(row.value);
+      if (decoded is! List) {
+        _paymentMethodLabelsByCode = <String, String>{};
+        return;
+      }
+      final List<AppPaymentMethodSetting> methods = <AppPaymentMethodSetting>[];
+      for (final Object? item in decoded) {
+        if (item is! Map) {
+          continue;
+        }
+        methods.add(
+          AppPaymentMethodSetting.fromJson(item.cast<String, Object?>()),
+        );
+      }
+      _paymentMethodLabelsByCode = buildPaymentMethodLabelMap(methods);
+    } catch (_) {
+      _paymentMethodLabelsByCode = <String, String>{};
+    }
   }
 
   List<Sale> _filterSalesForAnalytics(

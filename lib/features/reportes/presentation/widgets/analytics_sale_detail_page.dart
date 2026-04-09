@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/db/app_database.dart';
 import '../../../../shared/widgets/app_scaffold.dart';
 import '../../../auth/presentation/auth_providers.dart';
+import '../../../configuracion/data/configuracion_local_datasource.dart';
+import '../../../configuracion/presentation/configuracion_providers.dart';
 import '../../../productos/presentation/productos_providers.dart';
 import '../../data/reportes_local_datasource.dart';
 import '../../../ventas_pos/presentation/ventas_pos_providers.dart';
@@ -31,6 +33,7 @@ class _AnalyticsSaleDetailPageState
   bool _loading = false;
   SalesAnalyticsSaleDetailStat? detail;
   bool _savingEdit = false;
+  Map<String, String> _paymentMethodLabelsByCode = <String, String>{};
 
   @override
   void initState() {
@@ -41,12 +44,22 @@ class _AnalyticsSaleDetailPageState
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final SalesAnalyticsSaleDetailStat? result = await ref
+      final Future<SalesAnalyticsSaleDetailStat?> detailFuture = ref
           .read(reportesLocalDataSourceProvider)
           .getSaleDetailForAnalytics(widget.saleId);
+      final Future<List<AppPaymentMethodSetting>> paymentMethodsFuture = ref
+          .read(configuracionLocalDataSourceProvider)
+          .loadPaymentMethodSettings();
+
+      final SalesAnalyticsSaleDetailStat? result = await detailFuture;
+      Map<String, String> paymentLabels = _paymentMethodLabelsByCode;
+      try {
+        paymentLabels = buildPaymentMethodLabelMap(await paymentMethodsFuture);
+      } catch (_) {}
       if (mounted) {
         setState(() {
           detail = result;
+          _paymentMethodLabelsByCode = paymentLabels;
           _loading = false;
         });
       }
@@ -135,15 +148,22 @@ class _AnalyticsSaleDetailPageState
       _show('No hay productos disponibles para editar esta venta.');
       return;
     }
-    final List<_PaymentMethodOption> paymentOptions =
-        (await ref.read(paymentMethodOptionsProvider.future))
-            .map(
-              (method) => _PaymentMethodOption(
-                key: method.code,
-                label: _paymentMethodLabel(method.code),
-              ),
-            )
-            .toList(growable: false);
+    final List<AppPaymentMethodSetting> paymentSettings = await ref
+        .read(configuracionLocalDataSourceProvider)
+        .loadPaymentMethodSettings();
+    final Map<String, String> paymentLabels =
+        buildPaymentMethodLabelMap(paymentSettings);
+    if (mounted) {
+      setState(() => _paymentMethodLabelsByCode = paymentLabels);
+    }
+    final List<_PaymentMethodOption> paymentOptions = paymentSettings
+        .map(
+          (AppPaymentMethodSetting method) => _PaymentMethodOption(
+            key: method.code,
+            label: method.label,
+          ),
+        )
+        .toList(growable: false);
     final List<_PaymentMethodOption> safePaymentOptions = paymentOptions.isEmpty
         ? const <_PaymentMethodOption>[
             _PaymentMethodOption(key: 'cash', label: 'Efectivo'),
@@ -194,21 +214,11 @@ class _AnalyticsSaleDetailPageState
   }
 
   String _paymentMethodLabel(String method) {
-    switch (method.trim().toLowerCase()) {
-      case 'cash':
-        return 'Efectivo';
-      case 'card':
-        return 'Tarjeta';
-      case 'transfer':
-        return 'Transferencia';
-      case 'wallet':
-        return 'Billetera';
-      case 'consignment':
-        return 'Consignación';
-      default:
-        final String clean = method.trim();
-        return clean.isEmpty ? 'Método' : clean;
+    final String code = method.trim().toLowerCase();
+    if (code.isEmpty) {
+      return 'Metodo';
     }
+    return _paymentMethodLabelsByCode[code] ?? defaultPaymentMethodLabel(code);
   }
 
   @override

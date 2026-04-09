@@ -75,6 +75,8 @@ class TpvTerminalConfig {
     required this.currencySymbol,
     required this.paymentMethods,
     required this.cashDenominationsCents,
+    required this.useCashDenominationsOnClose,
+    required this.allowDiscounts,
   });
 
   static const TpvTerminalConfig defaults = TpvTerminalConfig(
@@ -82,12 +84,16 @@ class TpvTerminalConfig {
     currencySymbol: r'$',
     paymentMethods: <String>['cash', 'consignment'],
     cashDenominationsCents: <int>[10000, 5000, 2000, 1000, 500, 100],
+    useCashDenominationsOnClose: true,
+    allowDiscounts: false,
   );
 
   final String currencyCode;
   final String currencySymbol;
   final List<String> paymentMethods;
   final List<int> cashDenominationsCents;
+  final bool useCashDenominationsOnClose;
+  final bool allowDiscounts;
 }
 
 class TpvTerminalView {
@@ -362,7 +368,7 @@ class TpvLocalDataSource {
                 jsonEncode(safeConfig.paymentMethods),
               ),
               cashDenominationsJson: Value(
-                jsonEncode(safeConfig.cashDenominationsCents),
+                _encodeCashDenominationsConfig(safeConfig),
               ),
               imagePath: Value(imagePath),
             ),
@@ -440,7 +446,7 @@ class TpvLocalDataSource {
             jsonEncode(safeConfig.paymentMethods),
           ),
           cashDenominationsJson: Value(
-            jsonEncode(safeConfig.cashDenominationsCents),
+            _encodeCashDenominationsConfig(safeConfig),
           ),
           imagePath: Value(imagePath),
           updatedAt: Value(DateTime.now()),
@@ -611,8 +617,14 @@ class TpvLocalDataSource {
         _sanitizeCurrencySymbol(terminal.currencySymbol);
     final List<String> paymentMethods =
         _sanitizePaymentMethods(_decodeStringList(terminal.paymentMethodsJson));
+    final ({
+      List<int> denominations,
+      bool useOnClose,
+      bool allowDiscounts
+    }) cashConfig =
+        _decodeCashDenominationsConfig(terminal.cashDenominationsJson);
     final List<int> denominations = _sanitizeDenominations(
-      _decodeIntList(terminal.cashDenominationsJson),
+      cashConfig.denominations,
     );
 
     return TpvTerminalConfig(
@@ -620,6 +632,8 @@ class TpvLocalDataSource {
       currencySymbol: currencySymbol,
       paymentMethods: paymentMethods,
       cashDenominationsCents: denominations,
+      useCashDenominationsOnClose: cashConfig.useOnClose,
+      allowDiscounts: cashConfig.allowDiscounts,
     );
   }
 
@@ -2167,10 +2181,16 @@ class TpvLocalDataSource {
         await (_db.select(_db.ipvReportLines)
               ..where((IpvReportLines tbl) => tbl.reportId.equals(report.id)))
             .get();
+    final Map<String, double> resolvedStartQtyByProduct =
+        await _resolveStartQtyForReconciliation(
+      report: report,
+      existingLines: existingLines,
+    );
     final Map<String, _IpvLineAccumulator> byProduct =
         <String, _IpvLineAccumulator>{
-      for (final IpvReportLine line in existingLines)
-        line.productId: _IpvLineAccumulator(startQty: line.startQty),
+      for (final MapEntry<String, double> entry
+          in resolvedStartQtyByProduct.entries)
+        entry.key: _IpvLineAccumulator(startQty: entry.value),
     };
 
     final List<QueryRow> movementRows = await _db.customSelect(
@@ -2196,19 +2216,24 @@ class TpvLocalDataSource {
             )
             AND NOT (
               (
-                LOWER(COALESCE(sm.reason_code, '')) = 'sale'
-                OR LOWER(COALESCE(sm.ref_type, '')) IN ('sale', 'sale_pos', 'sale_direct')
-                OR LOWER(COALESCE(sm.movement_source, '')) IN ('pos', 'direct_sale')
-              )
-              AND LOWER(COALESCE(sm.reason_code, '')) <> 'consignment_sale'
-              AND LOWER(COALESCE(sm.ref_type, '')) NOT IN (
-                'consignment_sale',
-                'consignment_sale_pos',
-                'consignment_sale_direct'
-              )
-              AND LOWER(COALESCE(sm.movement_source, '')) NOT IN (
-                'pos_consignment',
-                'direct_consignment'
+                LOWER(COALESCE(sm.reason_code, '')) IN (
+                  'sale',
+                  'consignment_sale'
+                )
+                OR LOWER(COALESCE(sm.ref_type, '')) IN (
+                  'sale',
+                  'sale_pos',
+                  'sale_direct',
+                  'consignment_sale',
+                  'consignment_sale_pos',
+                  'consignment_sale_direct'
+                )
+                OR LOWER(COALESCE(sm.movement_source, '')) IN (
+                  'pos',
+                  'direct_sale',
+                  'pos_consignment',
+                  'direct_consignment'
+                )
               )
             )
               THEN ABS(sm.qty)
@@ -2223,19 +2248,24 @@ class TpvLocalDataSource {
             )
             AND (
               (
-                LOWER(COALESCE(sm.reason_code, '')) = 'sale'
-                OR LOWER(COALESCE(sm.ref_type, '')) IN ('sale', 'sale_pos', 'sale_direct')
-                OR LOWER(COALESCE(sm.movement_source, '')) IN ('pos', 'direct_sale')
-              )
-              AND LOWER(COALESCE(sm.reason_code, '')) <> 'consignment_sale'
-              AND LOWER(COALESCE(sm.ref_type, '')) NOT IN (
-                'consignment_sale',
-                'consignment_sale_pos',
-                'consignment_sale_direct'
-              )
-              AND LOWER(COALESCE(sm.movement_source, '')) NOT IN (
-                'pos_consignment',
-                'direct_consignment'
+                LOWER(COALESCE(sm.reason_code, '')) IN (
+                  'sale',
+                  'consignment_sale'
+                )
+                OR LOWER(COALESCE(sm.ref_type, '')) IN (
+                  'sale',
+                  'sale_pos',
+                  'sale_direct',
+                  'consignment_sale',
+                  'consignment_sale_pos',
+                  'consignment_sale_direct'
+                )
+                OR LOWER(COALESCE(sm.movement_source, '')) IN (
+                  'pos',
+                  'direct_sale',
+                  'pos_consignment',
+                  'direct_consignment'
+                )
               )
             )
               THEN ABS(sm.qty)
@@ -2347,6 +2377,57 @@ class TpvLocalDataSource {
     }
   }
 
+  Future<Map<String, double>> _resolveStartQtyForReconciliation({
+    required IpvReport report,
+    required List<IpvReportLine> existingLines,
+  }) async {
+    final Map<String, double> fallback = <String, double>{
+      for (final IpvReportLine line in existingLines)
+        line.productId: line.startQty,
+    };
+    final QueryRow? previousRow = await _db.customSelect(
+      '''
+      SELECT r.id AS report_id
+      FROM ipv_reports r
+      WHERE r.terminal_id = ?
+        AND r.status = 'closed'
+        AND r.closed_at IS NOT NULL
+        AND r.id <> ?
+        AND r.closed_at <= ?
+      ORDER BY r.closed_at DESC
+      LIMIT 1
+      ''',
+      variables: <Variable<Object>>[
+        Variable<String>(report.terminalId),
+        Variable<String>(report.id),
+        Variable<DateTime>(report.openedAt),
+      ],
+    ).getSingleOrNull();
+    final String previousReportId =
+        (previousRow?.readNullable<String>('report_id') ?? '').trim();
+    if (previousReportId.isEmpty) {
+      return fallback;
+    }
+
+    final List<IpvReportLine> previousLines = await (_db
+            .select(_db.ipvReportLines)
+          ..where(
+              (IpvReportLines tbl) => tbl.reportId.equals(previousReportId)))
+        .get();
+    if (previousLines.isEmpty) {
+      return fallback;
+    }
+
+    final Map<String, double> resolved = <String, double>{
+      for (final IpvReportLine line in previousLines)
+        line.productId: line.finalQty,
+    };
+    for (final IpvReportLine line in existingLines) {
+      resolved.putIfAbsent(line.productId, () => line.startQty);
+    }
+    return resolved;
+  }
+
   Future<DateTime> _resolveMovementStartForReport({
     required String terminalId,
     required DateTime openedAt,
@@ -2456,6 +2537,60 @@ class TpvLocalDataSource {
       paymentMethods: _sanitizePaymentMethods(safe.paymentMethods),
       cashDenominationsCents:
           _sanitizeDenominations(safe.cashDenominationsCents),
+      useCashDenominationsOnClose: safe.useCashDenominationsOnClose,
+      allowDiscounts: safe.allowDiscounts,
+    );
+  }
+
+  String _encodeCashDenominationsConfig(TpvTerminalConfig config) {
+    return jsonEncode(
+      <String, Object>{
+        'denominations': config.cashDenominationsCents,
+        'useOnClose': config.useCashDenominationsOnClose,
+        'allowDiscounts': config.allowDiscounts,
+      },
+    );
+  }
+
+  ({List<int> denominations, bool useOnClose, bool allowDiscounts})
+      _decodeCashDenominationsConfig(
+    String raw,
+  ) {
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is List<Object?>) {
+        return (
+          denominations: decoded
+              .whereType<num>()
+              .map((num item) => item.toInt())
+              .toList(growable: false),
+          useOnClose: true,
+          allowDiscounts: false,
+        );
+      }
+      if (decoded is Map<String, Object?>) {
+        final Object? rawDenominations = decoded['denominations'];
+        final List<int> denominations = rawDenominations is List<Object?>
+            ? rawDenominations
+                .whereType<num>()
+                .map((num item) => item.toInt())
+                .toList(growable: false)
+            : <int>[];
+        final bool useOnClose = decoded['useOnClose'] != false &&
+            decoded['useCashDenominationsOnClose'] != false;
+        final bool allowDiscounts = decoded['allowDiscounts'] == true ||
+            decoded['allowSaleDiscounts'] == true;
+        return (
+          denominations: denominations,
+          useOnClose: useOnClose,
+          allowDiscounts: allowDiscounts,
+        );
+      }
+    } catch (_) {}
+    return (
+      denominations: _decodeIntList(raw),
+      useOnClose: true,
+      allowDiscounts: false,
     );
   }
 

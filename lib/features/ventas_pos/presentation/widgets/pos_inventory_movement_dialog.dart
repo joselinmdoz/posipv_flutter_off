@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../../../shared/widgets/app_searchable_select_field.dart';
@@ -14,13 +15,20 @@ class InventoryMovementWarehouseOption {
 }
 
 class PosInventoryMovementDialog extends StatefulWidget {
+  static const String kindEntry = 'entry';
+  static const String kindOutput = 'output';
+  static const String kindTransfer = 'transfer';
+
   final List<InventoryView> adjustRows;
   final List<InventoryMovementReason> entryReasons;
   final List<InventoryMovementReason> outputReasons;
+  final bool allowTransfer;
+  final String? transferFixedDestinationWarehouseId;
   final String currencySymbol;
   final String Function(InventoryView row)? priceLabelBuilder;
   final List<InventoryMovementWarehouseOption> warehouseOptions;
   final String? initialWarehouseId;
+  final String? initialDestinationWarehouseId;
   final Future<List<InventoryView>> Function(String warehouseId)?
       loadAdjustRowsForWarehouse;
   final String? initialProductId;
@@ -36,10 +44,13 @@ class PosInventoryMovementDialog extends StatefulWidget {
     required this.adjustRows,
     required this.entryReasons,
     required this.outputReasons,
+    this.allowTransfer = false,
+    this.transferFixedDestinationWarehouseId,
     required this.currencySymbol,
     this.priceLabelBuilder,
     this.warehouseOptions = const <InventoryMovementWarehouseOption>[],
     this.initialWarehouseId,
+    this.initialDestinationWarehouseId,
     this.loadAdjustRowsForWarehouse,
     this.initialProductId,
     this.initialIsEntry,
@@ -60,13 +71,20 @@ class _PosInventoryMovementDialogState
   late List<InventoryView> _adjustRows;
   String? _selectedWarehouseId;
   late String _selectedProductId;
-  late bool _isEntry;
+  late String _movementKind;
   late String? _selectedReasonCode;
+  String? _selectedDestinationWarehouseId;
   final TextEditingController _qtyCtrl = TextEditingController();
   final TextEditingController _noteCtrl = TextEditingController();
   bool _loadingRows = false;
 
   final Map<String, InventoryView> _rowByProductId = {};
+
+  bool get _hasFixedTransferDestination =>
+      (widget.transferFixedDestinationWarehouseId ?? '').trim().isNotEmpty;
+
+  String get _resolvedFixedTransferDestinationId =>
+      (widget.transferFixedDestinationWarehouseId ?? '').trim();
 
   @override
   void initState() {
@@ -91,17 +109,28 @@ class _PosInventoryMovementDialogState
             ? desiredProductId
             : _adjustRows.first.productId);
 
-    _isEntry = widget.initialIsEntry ??
-        (widget.entryReasons.isNotEmpty || widget.outputReasons.isEmpty);
-    final List<InventoryMovementReason> reasons =
-        _isEntry ? widget.entryReasons : widget.outputReasons;
     final String initialReasonCode = (widget.initialReasonCode ?? '').trim();
-    final bool hasInitialReason = reasons.any(
-      (InventoryMovementReason row) => row.code == initialReasonCode,
-    );
-    _selectedReasonCode = hasInitialReason
-        ? initialReasonCode
-        : (reasons.isNotEmpty ? reasons.first.code : null);
+    final bool initialTransfer =
+        widget.allowTransfer && initialReasonCode == 'transfer';
+    if (initialTransfer) {
+      _movementKind = PosInventoryMovementDialog.kindTransfer;
+    } else {
+      final bool startsAsEntry = widget.initialIsEntry ??
+          (widget.entryReasons.isNotEmpty || widget.outputReasons.isEmpty);
+      _movementKind = startsAsEntry
+          ? PosInventoryMovementDialog.kindEntry
+          : PosInventoryMovementDialog.kindOutput;
+    }
+    _selectedReasonCode = null;
+    _ensureReasonForCurrentMode();
+    _selectedDestinationWarehouseId =
+        widget.initialDestinationWarehouseId?.trim().isEmpty ?? true
+            ? null
+            : widget.initialDestinationWarehouseId!.trim();
+    if (_hasFixedTransferDestination) {
+      _selectedDestinationWarehouseId = _resolvedFixedTransferDestinationId;
+    }
+    _ensureTransferDestinationWarehouse();
 
     if (widget.initialQty != null && widget.initialQty! > 0) {
       _qtyCtrl.text = widget.initialQty!.toStringAsFixed(2);
@@ -124,8 +153,17 @@ class _PosInventoryMovementDialogState
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
     const Color primaryColor = Color(0xFF1152D4);
 
+    final bool isEntryMovement =
+        _movementKind == PosInventoryMovementDialog.kindEntry;
+    final bool isTransferMovement =
+        _movementKind == PosInventoryMovementDialog.kindTransfer;
     final List<InventoryMovementReason> selectableReasons =
-        _isEntry ? widget.entryReasons : widget.outputReasons;
+        isEntryMovement ? widget.entryReasons : widget.outputReasons;
+    final List<InventoryMovementWarehouseOption> transferDestinations =
+        _availableDestinationWarehouses();
+    final String fixedDestinationName = _warehouseNameById(
+      _resolvedFixedTransferDestinationId,
+    );
 
     final InventoryView? selectedProduct = _rowByProductId[_selectedProductId];
     final double currentStock = selectedProduct?.qty ?? 0;
@@ -421,9 +459,11 @@ class _PosInventoryMovementDialogState
                             child: _MovementTypeBtn(
                               label: 'Entrada',
                               icon: Icons.add_circle_rounded,
-                              isSelected: _isEntry,
+                              isSelected: isEntryMovement,
                               color: const Color(0xFF10B981),
-                              onTap: () => _updateMovementType(true),
+                              onTap: () => _updateMovementKind(
+                                PosInventoryMovementDialog.kindEntry,
+                              ),
                               isDark: isDark,
                             ),
                           ),
@@ -431,94 +471,237 @@ class _PosInventoryMovementDialogState
                             child: _MovementTypeBtn(
                               label: 'Salida',
                               icon: Icons.remove_circle_rounded,
-                              isSelected: !_isEntry,
+                              isSelected: _movementKind ==
+                                  PosInventoryMovementDialog.kindOutput,
                               color: const Color(0xFFF43F5E),
-                              onTap: () => _updateMovementType(false),
+                              onTap: () => _updateMovementKind(
+                                PosInventoryMovementDialog.kindOutput,
+                              ),
                               isDark: isDark,
                             ),
                           ),
+                          if (widget.allowTransfer)
+                            Expanded(
+                              child: _MovementTypeBtn(
+                                label: 'Transferir',
+                                icon: Icons.compare_arrows_rounded,
+                                isSelected: isTransferMovement,
+                                color: const Color(0xFF2563EB),
+                                onTap: () => _updateMovementKind(
+                                  PosInventoryMovementDialog.kindTransfer,
+                                ),
+                                isDark: isDark,
+                              ),
+                            ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 24),
 
                     // Qty and Reason
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Cantidad',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.grey,
+                    if (!isTransferMovement)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Cantidad',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                TextField(
+                                  controller: _qtyCtrl,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                          decimal: true),
+                                  decoration: InputDecoration(
+                                    hintText: '0',
+                                    filled: true,
+                                    fillColor: isDark
+                                        ? const Color(0xFF1E293B)
+                                        : const Color(0xFFF8FAFC),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(
+                                        color: isDark
+                                            ? const Color(0xFF334155)
+                                            : const Color(0xFFE2E8F0),
+                                      ),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(
+                                        color: isDark
+                                            ? const Color(0xFF334155)
+                                            : const Color(0xFFE2E8F0),
+                                      ),
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 12),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                AppSearchableSelectField<String>(
+                                  label: 'Motivo',
+                                  value: _selectedReasonCode,
+                                  enableSearch: selectableReasons.length >= 8,
+                                  searchHintText: 'Buscar motivo',
+                                  hintText: 'Selecciona un motivo',
+                                  options: selectableReasons
+                                      .map((InventoryMovementReason reason) =>
+                                          AppSearchableSelectOption<String>(
+                                            value: reason.code,
+                                            label: reason.label,
+                                          ))
+                                      .toList(growable: false),
+                                  onChanged: (String value) {
+                                    setState(() => _selectedReasonCode = value);
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      )
+                    else
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Cantidad',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.grey,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _qtyCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            decoration: InputDecoration(
+                              hintText: '0',
+                              filled: true,
+                              fillColor: isDark
+                                  ? const Color(0xFF1E293B)
+                                  : const Color(0xFFF8FAFC),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(
+                                  color: isDark
+                                      ? const Color(0xFF334155)
+                                      : const Color(0xFFE2E8F0),
                                 ),
                               ),
-                              const SizedBox(height: 8),
-                              TextField(
-                                controller: _qtyCtrl,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                        decimal: true),
-                                decoration: InputDecoration(
-                                  hintText: '0',
-                                  filled: true,
-                                  fillColor: isDark
-                                      ? const Color(0xFF1E293B)
-                                      : const Color(0xFFF8FAFC),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide(
-                                      color: isDark
-                                          ? const Color(0xFF334155)
-                                          : const Color(0xFFE2E8F0),
-                                    ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(
+                                  color: isDark
+                                      ? const Color(0xFF334155)
+                                      : const Color(0xFFE2E8F0),
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    if (isTransferMovement) ...<Widget>[
+                      const SizedBox(height: 16),
+                      if (_hasFixedTransferDestination)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? const Color(0xFF1E293B)
+                                : const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isDark
+                                  ? const Color(0xFF334155)
+                                  : const Color(0xFFBFDBFE),
+                            ),
+                          ),
+                          child: Row(
+                            children: <Widget>[
+                              const Icon(
+                                Icons.storefront_outlined,
+                                size: 18,
+                                color: Color(0xFF1D4ED8),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Destino: ${fixedDestinationName.isEmpty ? _resolvedFixedTransferDestinationId : fixedDestinationName}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF1E3A8A),
                                   ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide(
-                                      color: isDark
-                                          ? const Color(0xFF334155)
-                                          : const Color(0xFFE2E8F0),
-                                    ),
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 16, vertical: 12),
                                 ),
                               ),
                             ],
                           ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              AppSearchableSelectField<String>(
-                                label: 'Motivo',
-                                value: _selectedReasonCode,
-                                enableSearch: selectableReasons.length >= 8,
-                                searchHintText: 'Buscar motivo',
-                                hintText: 'Selecciona un motivo',
-                                options: selectableReasons
-                                    .map((InventoryMovementReason reason) =>
-                                        AppSearchableSelectOption<String>(
-                                          value: reason.code,
-                                          label: reason.label,
-                                        ))
-                                    .toList(growable: false),
-                                onChanged: (String value) {
-                                  setState(() => _selectedReasonCode = value);
-                                },
-                              ),
-                            ],
+                        )
+                      else if (transferDestinations.isEmpty)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF2F2),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: const Color(0xFFFECACA),
+                            ),
                           ),
+                          child: const Text(
+                            'No hay otro almacén activo para transferir.',
+                            style: TextStyle(
+                              color: Color(0xFFB91C1C),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        )
+                      else
+                        AppSearchableSelectField<String>(
+                          label: 'Almacén destino',
+                          value: _selectedDestinationWarehouseId,
+                          enabled: !_loadingRows,
+                          hintText: 'Selecciona almacén destino',
+                          searchHintText: 'Buscar almacén',
+                          options: transferDestinations
+                              .map(
+                                (InventoryMovementWarehouseOption row) =>
+                                    AppSearchableSelectOption<String>(
+                                  value: row.id,
+                                  label: row.name,
+                                ),
+                              )
+                              .toList(growable: false),
+                          onChanged: (String value) {
+                            setState(
+                                () => _selectedDestinationWarehouseId = value);
+                          },
                         ),
-                      ],
-                    ),
+                    ],
                     const SizedBox(height: 24),
 
                     // Notes
@@ -621,17 +804,32 @@ class _PosInventoryMovementDialogState
     );
   }
 
-  void _updateMovementType(bool isEntry) {
-    if (_isEntry == isEntry) return;
+  void _updateMovementKind(String kind) {
+    if (_movementKind == kind) {
+      return;
+    }
     setState(() {
-      _isEntry = isEntry;
-      final reasons = _isEntry ? widget.entryReasons : widget.outputReasons;
-      if (reasons.isNotEmpty) {
-        _selectedReasonCode = reasons.first.code;
-      } else {
-        _selectedReasonCode = null;
-      }
+      _movementKind = kind;
+      _ensureReasonForCurrentMode();
+      _ensureTransferDestinationWarehouse();
     });
+    if (kind == PosInventoryMovementDialog.kindTransfer &&
+        _hasFixedTransferDestination) {
+      final String currentWarehouseId = (_selectedWarehouseId ?? '').trim();
+      if (currentWarehouseId == _resolvedFixedTransferDestinationId) {
+        String? fallbackWarehouseId;
+        for (final InventoryMovementWarehouseOption row
+            in widget.warehouseOptions) {
+          if (row.id != _resolvedFixedTransferDestinationId) {
+            fallbackWarehouseId = row.id;
+            break;
+          }
+        }
+        if (fallbackWarehouseId != null) {
+          unawaited(_onWarehouseChanged(fallbackWarehouseId));
+        }
+      }
+    }
   }
 
   void _reindexRows() {
@@ -653,6 +851,7 @@ class _PosInventoryMovementDialogState
     setState(() {
       _selectedWarehouseId = warehouseId;
       _loadingRows = true;
+      _ensureTransferDestinationWarehouse();
     });
 
     try {
@@ -673,6 +872,7 @@ class _PosInventoryMovementDialogState
             _selectedProductId = _adjustRows.first.productId;
           }
         }
+        _ensureTransferDestinationWarehouse();
       });
     } catch (_) {
       if (!mounted) {
@@ -715,23 +915,130 @@ class _PosInventoryMovementDialogState
       );
       return;
     }
-    if (_selectedReasonCode == null) {
+    final bool isTransferMovement =
+        _movementKind == PosInventoryMovementDialog.kindTransfer;
+    if (!isTransferMovement && _selectedReasonCode == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Selecciona un motivo.')),
       );
       return;
     }
+    if (isTransferMovement) {
+      final String sourceWarehouseId = (_selectedWarehouseId ?? '').trim();
+      final String destinationWarehouseId = _resolveTransferDestinationId();
+      if (destinationWarehouseId.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Selecciona el almacén destino de la transferencia.'),
+          ),
+        );
+        return;
+      }
+      if (destinationWarehouseId == sourceWarehouseId) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('El destino debe ser diferente al almacén origen.'),
+          ),
+        );
+        return;
+      }
+    }
 
     final double currentStock = _rowByProductId[_selectedProductId]?.qty ?? 0;
     Navigator.pop(context, {
       'warehouseId': _selectedWarehouseId,
+      'destinationWarehouseId': _selectedDestinationWarehouseId,
       'productId': _selectedProductId,
-      'isEntry': _isEntry,
+      'movementKind': _movementKind,
+      'isEntry': _movementKind == PosInventoryMovementDialog.kindEntry,
       'qty': qty,
       'currentStock': currentStock,
-      'reasonCode': _selectedReasonCode,
+      'reasonCode': isTransferMovement ? 'transfer' : _selectedReasonCode,
       'note': _noteCtrl.text.trim(),
     });
+  }
+
+  List<InventoryMovementWarehouseOption> _availableDestinationWarehouses() {
+    final String sourceWarehouseId = (_selectedWarehouseId ?? '').trim();
+    final String fixedDestination = _resolvedFixedTransferDestinationId;
+    return widget.warehouseOptions
+        .where((InventoryMovementWarehouseOption row) {
+      if (row.id == sourceWarehouseId) {
+        return false;
+      }
+      if (fixedDestination.isNotEmpty && row.id != fixedDestination) {
+        return false;
+      }
+      return true;
+    }).toList(growable: false);
+  }
+
+  void _ensureTransferDestinationWarehouse() {
+    final bool isTransferMovement =
+        _movementKind == PosInventoryMovementDialog.kindTransfer;
+    if (!isTransferMovement) {
+      _selectedDestinationWarehouseId = null;
+      return;
+    }
+    if (_hasFixedTransferDestination) {
+      _selectedDestinationWarehouseId = _resolvedFixedTransferDestinationId;
+      return;
+    }
+    final List<InventoryMovementWarehouseOption> options =
+        _availableDestinationWarehouses();
+    if (options.isEmpty) {
+      _selectedDestinationWarehouseId = null;
+      return;
+    }
+    final bool currentIsValid = options.any(
+      (InventoryMovementWarehouseOption row) =>
+          row.id == _selectedDestinationWarehouseId,
+    );
+    if (!currentIsValid) {
+      _selectedDestinationWarehouseId = options.first.id;
+    }
+  }
+
+  String _resolveTransferDestinationId() {
+    if (_hasFixedTransferDestination) {
+      return _resolvedFixedTransferDestinationId;
+    }
+    return (_selectedDestinationWarehouseId ?? '').trim();
+  }
+
+  String _warehouseNameById(String warehouseId) {
+    final String id = warehouseId.trim();
+    if (id.isEmpty) {
+      return '';
+    }
+    for (final InventoryMovementWarehouseOption row
+        in widget.warehouseOptions) {
+      if (row.id == id) {
+        return row.name;
+      }
+    }
+    return '';
+  }
+
+  void _ensureReasonForCurrentMode() {
+    if (_movementKind == PosInventoryMovementDialog.kindTransfer) {
+      _selectedReasonCode = 'transfer';
+      return;
+    }
+    final List<InventoryMovementReason> reasons =
+        _movementKind == PosInventoryMovementDialog.kindEntry
+            ? widget.entryReasons
+            : widget.outputReasons;
+    if (reasons.isEmpty) {
+      _selectedReasonCode = null;
+      return;
+    }
+    final bool hasCurrent = reasons.any(
+      (InventoryMovementReason row) => row.code == _selectedReasonCode,
+    );
+    if (!hasCurrent) {
+      _selectedReasonCode = reasons.first.code;
+    }
   }
 
   Widget _buildProductImage(InventoryView product) {

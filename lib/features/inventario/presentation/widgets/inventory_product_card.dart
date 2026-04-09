@@ -17,15 +17,12 @@ class InventoryProductCard extends StatelessWidget {
 
   static const double _lowStockThreshold = 10;
 
-  bool get _isOutOfStock => row.qty <= 0.000001;
+  bool get _isOutOfStock => row.totalQty <= 0.000001;
 
-  bool get _isLowStock => row.qty > 0 && row.qty <= _lowStockThreshold;
+  bool get _isLowStock =>
+      row.totalQty > 0 && row.totalQty <= _lowStockThreshold;
 
-  String get _stockLabel {
-    if (_isOutOfStock) return 'Agotado';
-    if (_isLowStock) return '${_formatQty(row.qty)} en stock';
-    return 'en stock';
-  }
+  String get _stockLabel => 'Stock total: ${_formatQty(row.totalQty)}';
 
   String _formatQty(double qty) {
     if (qty == qty.roundToDouble()) return qty.toStringAsFixed(0);
@@ -98,8 +95,10 @@ class InventoryProductCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final Color cardColor = isDark ? const Color(0xFF1E293B).withValues(alpha: 0.5) : Colors.white;
-    final Color borderColor = isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9);
+    final Color cardColor =
+        isDark ? const Color(0xFF1E293B).withValues(alpha: 0.5) : Colors.white;
+    final Color borderColor =
+        isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -179,7 +178,9 @@ class InventoryProductCard extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                              color: isDark
+                                  ? const Color(0xFF94A3B8)
+                                  : const Color(0xFF64748B),
                               fontSize: 12,
                             ),
                           ),
@@ -207,7 +208,9 @@ class InventoryProductCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Icon(
                     Icons.chevron_right_rounded,
-                    color: isDark ? const Color(0xFF475569) : const Color(0xFF94A3B8),
+                    color: isDark
+                        ? const Color(0xFF475569)
+                        : const Color(0xFF94A3B8),
                     size: 20,
                   ),
                 ],

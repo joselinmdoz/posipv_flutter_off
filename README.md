@@ -61,5 +61,50 @@ flutter --version
   - descuenta inventario
   - crea movimientos y auditoria
 
+## Guia manual de release Android
 
-  flutter run -d afc25562 --debug
+1. Cargar entorno y dependencias:
+
+```bash
+source scripts/flutter_env.sh
+flutter pub get
+```
+
+2. Subir version en `pubspec.yaml` (ejemplo):
+
+```yaml
+version: 0.3.2+5
+```
+
+3. Opcional: si muestras la version en UI, actualizar el texto en:
+   - `lib/features/auth/presentation/login_page.dart`
+
+4. Validar antes de compilar:
+
+```bash
+flutter analyze
+flutter test
+```
+
+5. Generar release APK universal (instalable directo):
+
+```bash
+flutter build apk --release
+```
+
+6. Generar release APK por arquitectura (mas livianos):
+
+```bash
+flutter build apk --release --split-per-abi
+```
+
+7. Generar AAB para Play Store:
+
+```bash
+flutter build appbundle --release
+```
+
+8. Artefactos generados:
+   - APK universal: `build/app/outputs/flutter-apk/app-release.apk`
+   - APKs split: `build/app/outputs/flutter-apk/app-*-release.apk`
+   - AAB: `build/app/outputs/bundle/release/app-release.aab`

@@ -391,6 +391,73 @@ class ManualIpvReportLines extends Table {
   Set<Column> get primaryKey => <Column>{id};
 }
 
+class Purchases extends Table {
+  TextColumn get id => text()();
+  TextColumn get folio => text().unique()();
+  TextColumn get warehouseId => text().references(Warehouses, #id)();
+  TextColumn get supplierName => text().nullable()();
+  TextColumn get supplierDoc => text().nullable()();
+  TextColumn get status => text().withDefault(const Constant('posted'))();
+  TextColumn get note => text().nullable()();
+  @ReferenceName('createdPurchases')
+  TextColumn get createdBy => text().references(Users, #id)();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column> get primaryKey => <Column>{id};
+}
+
+class PurchaseItems extends Table {
+  TextColumn get id => text()();
+  TextColumn get purchaseId => text().references(Purchases, #id)();
+  TextColumn get productId => text().references(Products, #id)();
+  RealColumn get qty => real()();
+  IntColumn get unitCostCents => integer().withDefault(const Constant(0))();
+  IntColumn get lineCostCents => integer().withDefault(const Constant(0))();
+  IntColumn get unitPriceSnapshotCents =>
+      integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => <Column>{id};
+}
+
+class StockLots extends Table {
+  TextColumn get id => text()();
+  TextColumn get productId => text().references(Products, #id)();
+  TextColumn get warehouseId => text().references(Warehouses, #id)();
+  TextColumn get purchaseItemId =>
+      text().references(PurchaseItems, #id).nullable()();
+  TextColumn get sourceType => text().withDefault(const Constant('purchase'))();
+  TextColumn get sourceId => text().nullable()();
+  RealColumn get qtyIn => real().withDefault(const Constant(0))();
+  RealColumn get qtyRemaining => real().withDefault(const Constant(0))();
+  IntColumn get unitCostCents => integer().withDefault(const Constant(0))();
+  DateTimeColumn get receivedAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  TextColumn get note => text().nullable()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{id};
+}
+
+class SaleItemLotAllocations extends Table {
+  TextColumn get id => text()();
+  TextColumn get saleId => text().references(Sales, #id)();
+  TextColumn get saleItemId => text().references(SaleItems, #id)();
+  TextColumn get productId => text().references(Products, #id)();
+  TextColumn get warehouseId => text().references(Warehouses, #id)();
+  TextColumn get lotId => text().references(StockLots, #id).nullable()();
+  RealColumn get qty => real().withDefault(const Constant(0))();
+  IntColumn get unitCostCents => integer().withDefault(const Constant(0))();
+  IntColumn get lineCostCents => integer().withDefault(const Constant(0))();
+  BoolColumn get isVoided => boolean().withDefault(const Constant(false))();
+  DateTimeColumn get voidedAt => dateTime().nullable()();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column> get primaryKey => <Column>{id};
+}
+
 class AppSettings extends Table {
   TextColumn get key => text()();
   TextColumn get value => text()();
@@ -439,6 +506,10 @@ class AuditLogs extends Table {
     IpvReportLines,
     ManualIpvReports,
     ManualIpvReportLines,
+    Purchases,
+    PurchaseItems,
+    StockLots,
+    SaleItemLotAllocations,
     AppSettings,
     AuditLogs,
   ],
@@ -448,7 +519,7 @@ class AppDatabase extends _$AppDatabase {
   final Uuid _uuid = const Uuid();
 
   @override
-  int get schemaVersion => 25;
+  int get schemaVersion => 26;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -779,6 +850,21 @@ class AppDatabase extends _$AppDatabase {
             }
             await _createPerformanceIndexes();
           }
+          if (from < 26) {
+            if (!await _tableExists('purchases')) {
+              await m.createTable(purchases);
+            }
+            if (!await _tableExists('purchase_items')) {
+              await m.createTable(purchaseItems);
+            }
+            if (!await _tableExists('stock_lots')) {
+              await m.createTable(stockLots);
+            }
+            if (!await _tableExists('sale_item_lot_allocations')) {
+              await m.createTable(saleItemLotAllocations);
+            }
+            await _createPerformanceIndexes();
+          }
         },
       );
 
@@ -1072,132 +1158,251 @@ class AppDatabase extends _$AppDatabase {
   }
 
   Future<void> _createPerformanceIndexes() async {
-    await customStatement(
-      '''
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'products',
+      requiredColumns: <String>['is_active', 'name'],
+      sql: '''
       CREATE INDEX IF NOT EXISTS idx_products_active_name
       ON products (is_active, name)
       ''',
     );
-    await customStatement(
-      '''
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'products',
+      requiredColumns: <String>['barcode'],
+      sql: '''
       CREATE INDEX IF NOT EXISTS idx_products_barcode
       ON products (barcode)
       ''',
     );
-    await customStatement(
-      '''
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'stock_balances',
+      requiredColumns: <String>['warehouse_id', 'product_id'],
+      sql: '''
       CREATE INDEX IF NOT EXISTS idx_stock_balances_warehouse_product
       ON stock_balances (warehouse_id, product_id)
       ''',
     );
-    await customStatement(
-      '''
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'stock_movements',
+      requiredColumns: <String>['warehouse_id', 'created_at'],
+      sql: '''
       CREATE INDEX IF NOT EXISTS idx_stock_movements_warehouse_created_at
       ON stock_movements (warehouse_id, created_at)
       ''',
     );
-    await customStatement(
-      '''
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'stock_movements',
+      requiredColumns: <String>['product_id', 'warehouse_id'],
+      sql: '''
       CREATE INDEX IF NOT EXISTS idx_stock_movements_product_warehouse
       ON stock_movements (product_id, warehouse_id)
       ''',
     );
-    await customStatement(
-      '''
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'stock_movements',
+      requiredColumns: <String>['is_voided', 'created_at'],
+      sql: '''
       CREATE INDEX IF NOT EXISTS idx_stock_movements_voided_created_at
       ON stock_movements (is_voided, created_at)
       ''',
     );
-    await customStatement(
-      '''
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'sales',
+      requiredColumns: <String>['status', 'created_at'],
+      sql: '''
       CREATE INDEX IF NOT EXISTS idx_sales_status_created_at
       ON sales (status, created_at)
       ''',
     );
-    await customStatement(
-      '''
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'sales',
+      requiredColumns: <String>['terminal_session_id', 'status'],
+      sql: '''
       CREATE INDEX IF NOT EXISTS idx_sales_terminal_session_status
       ON sales (terminal_session_id, status)
       ''',
     );
-    await customStatement(
-      '''
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'sales',
+      requiredColumns: <String>['customer_id', 'created_at'],
+      sql: '''
       CREATE INDEX IF NOT EXISTS idx_sales_customer_created_at
       ON sales (customer_id, created_at)
       ''',
     );
-    await customStatement(
-      '''
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'customers',
+      requiredColumns: <String>['is_active', 'customer_type', 'full_name'],
+      sql: '''
       CREATE INDEX IF NOT EXISTS idx_customers_active_type_name
       ON customers (is_active, customer_type, full_name)
       ''',
     );
-    await customStatement(
-      '''
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'sales',
+      requiredColumns: <String>['warehouse_id', 'created_at'],
+      sql: '''
       CREATE INDEX IF NOT EXISTS idx_sales_warehouse_created_at
       ON sales (warehouse_id, created_at)
       ''',
     );
-    await customStatement(
-      '''
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'sale_items',
+      requiredColumns: <String>['sale_id'],
+      sql: '''
       CREATE INDEX IF NOT EXISTS idx_sale_items_sale_id
       ON sale_items (sale_id)
       ''',
     );
-    await customStatement(
-      '''
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'payments',
+      requiredColumns: <String>['sale_id'],
+      sql: '''
       CREATE INDEX IF NOT EXISTS idx_payments_sale_id
       ON payments (sale_id)
       ''',
     );
-    await customStatement(
-      '''
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'pos_sessions',
+      requiredColumns: <String>['status', 'closed_at'],
+      sql: '''
       CREATE INDEX IF NOT EXISTS idx_pos_sessions_status_closed_at
       ON pos_sessions (status, closed_at)
       ''',
     );
-    await customStatement(
-      '''
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'pos_sessions',
+      requiredColumns: <String>['terminal_id', 'user_id', 'status'],
+      sql: '''
       CREATE INDEX IF NOT EXISTS idx_pos_sessions_terminal_user_status
       ON pos_sessions (terminal_id, user_id, status)
       ''',
     );
-    await customStatement(
-      '''
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'pos_terminal_employees',
+      requiredColumns: <String>['employee_id', 'terminal_id'],
+      sql: '''
       CREATE INDEX IF NOT EXISTS idx_pos_terminal_employees_employee_terminal
       ON pos_terminal_employees (employee_id, terminal_id)
       ''',
     );
-    await customStatement(
-      '''
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'ipv_reports',
+      requiredColumns: <String>['status', 'closed_at'],
+      sql: '''
       CREATE INDEX IF NOT EXISTS idx_ipv_reports_status_closed_at
       ON ipv_reports (status, closed_at)
       ''',
     );
-    await customStatement(
-      '''
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'ipv_reports',
+      requiredColumns: <String>['terminal_id', 'status', 'closed_at'],
+      sql: '''
       CREATE INDEX IF NOT EXISTS idx_ipv_reports_terminal_status_closed_at
       ON ipv_reports (terminal_id, status, closed_at)
       ''',
     );
-    await customStatement(
-      '''
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'manual_ipv_reports',
+      requiredColumns: <String>['report_date'],
+      sql: '''
       CREATE INDEX IF NOT EXISTS idx_manual_ipv_reports_report_date
       ON manual_ipv_reports (report_date DESC)
       ''',
     );
-    await customStatement(
-      '''
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'manual_ipv_report_lines',
+      requiredColumns: <String>['report_id', 'sort_order'],
+      sql: '''
       CREATE INDEX IF NOT EXISTS idx_manual_ipv_report_lines_report_sort
       ON manual_ipv_report_lines (report_id, sort_order)
       ''',
     );
-    await customStatement(
-      '''
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'manual_ipv_report_lines',
+      requiredColumns: <String>['report_id', 'product_id'],
+      sql: '''
       CREATE INDEX IF NOT EXISTS idx_manual_ipv_report_lines_report_product
       ON manual_ipv_report_lines (report_id, product_id)
       ''',
     );
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'purchases',
+      requiredColumns: <String>['warehouse_id', 'created_at'],
+      sql: '''
+      CREATE INDEX IF NOT EXISTS idx_purchases_warehouse_created_at
+      ON purchases (warehouse_id, created_at)
+      ''',
+    );
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'purchase_items',
+      requiredColumns: <String>['purchase_id', 'product_id'],
+      sql: '''
+      CREATE INDEX IF NOT EXISTS idx_purchase_items_purchase_product
+      ON purchase_items (purchase_id, product_id)
+      ''',
+    );
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'stock_lots',
+      requiredColumns: <String>[
+        'product_id',
+        'warehouse_id',
+        'received_at',
+        'id'
+      ],
+      sql: '''
+      CREATE INDEX IF NOT EXISTS idx_stock_lots_product_warehouse_received
+      ON stock_lots (product_id, warehouse_id, received_at, id)
+      ''',
+    );
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'stock_lots',
+      requiredColumns: <String>['purchase_item_id'],
+      sql: '''
+      CREATE INDEX IF NOT EXISTS idx_stock_lots_purchase_item
+      ON stock_lots (purchase_item_id)
+      ''',
+    );
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'sale_item_lot_allocations',
+      requiredColumns: <String>['sale_id', 'is_voided'],
+      sql: '''
+      CREATE INDEX IF NOT EXISTS idx_sale_item_lot_alloc_sale
+      ON sale_item_lot_allocations (sale_id, is_voided)
+      ''',
+    );
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'sale_item_lot_allocations',
+      requiredColumns: <String>['sale_item_id'],
+      sql: '''
+      CREATE INDEX IF NOT EXISTS idx_sale_item_lot_alloc_sale_item
+      ON sale_item_lot_allocations (sale_item_id)
+      ''',
+    );
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'sale_item_lot_allocations',
+      requiredColumns: <String>['lot_id'],
+      sql: '''
+      CREATE INDEX IF NOT EXISTS idx_sale_item_lot_alloc_lot
+      ON sale_item_lot_allocations (lot_id)
+      ''',
+    );
+  }
+
+  Future<void> _createIndexIfTableAndColumnsExist({
+    required String tableName,
+    required List<String> requiredColumns,
+    required String sql,
+  }) async {
+    if (!await _tableExists(tableName)) {
+      return;
+    }
+    for (final String column in requiredColumns) {
+      if (!await _tableHasColumn(tableName, column)) {
+        return;
+      }
+    }
+    await customStatement(sql);
   }
 
   Future<void> _bootstrapTerminalsForTpvWarehouses() async {

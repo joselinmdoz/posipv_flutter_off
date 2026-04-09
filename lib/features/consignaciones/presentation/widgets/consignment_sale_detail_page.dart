@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/licensing/license_providers.dart';
 import '../../../../shared/widgets/app_scaffold.dart';
 import '../../../auth/presentation/auth_providers.dart';
+import '../../../configuracion/data/configuracion_local_datasource.dart';
+import '../../../configuracion/presentation/configuracion_providers.dart';
 import '../../data/consignaciones_local_datasource.dart';
 import '../consignaciones_providers.dart';
 
@@ -31,6 +33,7 @@ class _ConsignmentSaleDetailPageState
   ConsignmentSaleDebtDetail? _detail;
   List<String> _methodCodes = <String>[];
   Set<String> _onlineMethodCodes = <String>{};
+  Map<String, String> _paymentMethodLabelsByCode = <String, String>{};
   String _selectedMethod = 'cash';
   bool _loading = true;
   bool _saving = false;
@@ -65,20 +68,30 @@ class _ConsignmentSaleDetailPageState
     try {
       final ConsignacionesLocalDataSource ds =
           ref.read(consignacionesLocalDataSourceProvider);
+      final Future<List<AppPaymentMethodSetting>> paymentMethodsFuture = ref
+          .read(configuracionLocalDataSourceProvider)
+          .loadPaymentMethodSettings();
       final ConsignmentSaleDebtDetail? detail =
           await ds.loadSaleDebtDetail(widget.saleId);
       final ConsignmentPaymentMethodsConfig paymentConfig =
           await ds.loadPaymentMethodsConfig();
+      List<AppPaymentMethodSetting> paymentSettings =
+          const <AppPaymentMethodSetting>[];
+      try {
+        paymentSettings = await paymentMethodsFuture;
+      } catch (_) {}
       if (!mounted) {
         return;
       }
       final List<String> methods = paymentConfig.methodCodes.isEmpty
-          ? <String>['cash', 'card', 'transfer', 'wallet']
+          ? <String>['cash', 'transfer']
           : paymentConfig.methodCodes;
       setState(() {
         _detail = detail;
         _methodCodes = methods;
         _onlineMethodCodes = paymentConfig.onlineMethodCodes;
+        _paymentMethodLabelsByCode =
+            buildPaymentMethodLabelMap(paymentSettings);
         if (!methods.contains(_selectedMethod)) {
           _selectedMethod = methods.first;
         }
@@ -185,20 +198,11 @@ class _ConsignmentSaleDetailPageState
   }
 
   String _methodLabel(String method) {
-    switch (method.trim().toLowerCase()) {
-      case 'cash':
-        return 'Efectivo';
-      case 'card':
-        return 'Tarjeta';
-      case 'transfer':
-        return 'Transferencia';
-      case 'wallet':
-        return 'Billetera';
-      case 'consignment':
-        return 'Consignación';
-      default:
-        return method;
+    final String code = method.trim().toLowerCase();
+    if (code.isEmpty) {
+      return 'Metodo';
     }
+    return _paymentMethodLabelsByCode[code] ?? defaultPaymentMethodLabel(code);
   }
 
   void _show(String message) {

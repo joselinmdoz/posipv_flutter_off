@@ -421,6 +421,11 @@ class _InventarioPageState extends ConsumerState<InventarioPage> {
       useDefaultActions: false,
       appBarActions: <Widget>[
         IconButton(
+          tooltip: 'Almacenes',
+          onPressed: () => context.go('/almacenes'),
+          icon: const Icon(Icons.warehouse_rounded),
+        ),
+        IconButton(
           tooltip: 'Movimientos',
           onPressed: () => context.go('/inventario-movimientos'),
           icon: const Icon(Icons.swap_horiz_rounded),

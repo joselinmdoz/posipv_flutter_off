@@ -6,6 +6,7 @@ import 'package:drift/drift.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_service.dart';
@@ -605,6 +606,8 @@ class ManualSyncLocalDataSource {
     final Map<String, String> customerIdMap = <String, String>{};
     final Map<String, String> sessionIdMap = <String, String>{};
     final Map<String, String> saleIdMap = <String, String>{};
+    final Map<String, String> saleWarehouseById = <String, String>{};
+    final Set<String> newlyImportedSaleIds = <String>{};
 
     await _db.transaction(() async {
       for (final Map<String, dynamic> row in warehousesRaw) {
@@ -911,6 +914,7 @@ class ManualSyncLocalDataSource {
             .getSingleOrNull();
         if (byId != null) {
           saleIdMap[remoteId] = byId.id;
+          saleWarehouseById[byId.id] = byId.warehouseId;
           continue;
         }
 
@@ -963,6 +967,8 @@ class ManualSyncLocalDataSource {
               ),
             );
         saleIdMap[remoteId] = remoteId;
+        saleWarehouseById[remoteId] = resolvedWarehouseId;
+        newlyImportedSaleIds.add(remoteId);
         importedSales += 1;
       }
 
@@ -980,25 +986,76 @@ class ManualSyncLocalDataSource {
           continue;
         }
         final double qty = _readDouble(row['qty']);
-        final int unitCostCents = _readIntOrNull(row['unitCostCents']) ?? 0;
-        final int lineCostCents = _readIntOrNull(row['lineCostCents']) ??
-            (qty * unitCostCents).round();
-        await _db.into(_db.saleItems).insert(
+        if (qty <= 0) {
+          continue;
+        }
+
+        final int incomingUnitCostCents =
+            _readIntOrNull(row['unitCostCents']) ?? 0;
+        final int incomingLineCostCents =
+            _readIntOrNull(row['lineCostCents']) ??
+                (qty * incomingUnitCostCents).round();
+        final int fallbackUnitCostCents = incomingUnitCostCents > 0
+            ? incomingUnitCostCents
+            : (qty > 0 ? (incomingLineCostCents / qty).round() : 0);
+
+        final String saleWarehouseId = saleWarehouseById[resolvedSaleId] ?? '';
+        final bool shouldAllocateFifo = newlyImportedSaleIds.contains(
+              resolvedSaleId,
+            ) &&
+            saleWarehouseId.isNotEmpty;
+
+        final int inserted = await _db.into(_db.saleItems).insert(
               SaleItemsCompanion.insert(
                 id: remoteId,
                 saleId: resolvedSaleId,
                 productId: resolvedProductId,
                 qty: qty,
                 unitPriceCents: _readInt(row['unitPriceCents']),
-                unitCostCents: Value(unitCostCents),
+                unitCostCents: Value(fallbackUnitCostCents),
                 taxRateBps: _readInt(row['taxRateBps']),
                 lineSubtotalCents: _readInt(row['lineSubtotalCents']),
                 lineTaxCents: _readInt(row['lineTaxCents']),
-                lineCostCents: Value(lineCostCents),
+                lineCostCents: Value(incomingLineCostCents),
                 lineTotalCents: _readInt(row['lineTotalCents']),
               ),
               mode: InsertMode.insertOrIgnore,
             );
+        if (inserted <= 0 || !shouldAllocateFifo) {
+          continue;
+        }
+
+        final List<_ManualSyncFifoAllocation> allocations =
+            await _reserveFifoAllocations(
+          productId: resolvedProductId,
+          warehouseId: saleWarehouseId,
+          qty: qty,
+          fallbackUnitCostCents: fallbackUnitCostCents,
+        );
+        if (allocations.isNotEmpty) {
+          final int storedLineCostCents = allocations.fold<int>(
+            0,
+            (int sum, _ManualSyncFifoAllocation item) =>
+                sum + item.lineCostCents,
+          );
+          final int storedUnitCostCents =
+              qty > 0 ? (storedLineCostCents / qty).round() : 0;
+          await (_db.update(_db.saleItems)
+                ..where((SaleItems tbl) => tbl.id.equals(remoteId)))
+              .write(
+            SaleItemsCompanion(
+              unitCostCents: Value(storedUnitCostCents),
+              lineCostCents: Value(storedLineCostCents),
+            ),
+          );
+          await _insertSaleItemAllocations(
+            saleId: resolvedSaleId,
+            saleItemId: remoteId,
+            productId: resolvedProductId,
+            warehouseId: saleWarehouseId,
+            allocations: allocations,
+          );
+        }
       }
 
       for (final Map<String, dynamic> row in paymentsRaw) {
@@ -1162,6 +1219,112 @@ class ManualSyncLocalDataSource {
         updatedAt: Value(DateTime.now()),
       ),
     );
+  }
+
+  Future<List<_ManualSyncFifoAllocation>> _reserveFifoAllocations({
+    required String productId,
+    required String warehouseId,
+    required double qty,
+    required int fallbackUnitCostCents,
+  }) async {
+    if (qty <= 0) {
+      return const <_ManualSyncFifoAllocation>[];
+    }
+
+    const double epsilon = 0.000001;
+    double remaining = qty;
+    final List<_ManualSyncFifoAllocation> out = <_ManualSyncFifoAllocation>[];
+
+    final List<QueryRow> lotRows = await _db.customSelect(
+      '''
+      SELECT
+        l.id AS lot_id,
+        COALESCE(l.qty_remaining, 0) AS qty_remaining,
+        COALESCE(l.unit_cost_cents, 0) AS unit_cost_cents
+      FROM stock_lots l
+      WHERE l.product_id = ?
+        AND l.warehouse_id = ?
+        AND COALESCE(l.qty_remaining, 0) > 0
+      ORDER BY l.received_at ASC, l.created_at ASC, l.id ASC
+      ''',
+      variables: <Variable<Object>>[
+        Variable<String>(productId),
+        Variable<String>(warehouseId),
+      ],
+    ).get();
+
+    for (final QueryRow row in lotRows) {
+      if (remaining <= epsilon) {
+        break;
+      }
+      final String lotId = (row.readNullable<String>('lot_id') ?? '').trim();
+      if (lotId.isEmpty) {
+        continue;
+      }
+      final double lotRemaining =
+          (row.data['qty_remaining'] as num?)?.toDouble() ?? 0;
+      if (lotRemaining <= epsilon) {
+        continue;
+      }
+      final double take = lotRemaining < remaining ? lotRemaining : remaining;
+      final int unitCostCents =
+          (row.data['unit_cost_cents'] as num?)?.toInt() ??
+              fallbackUnitCostCents;
+      final int lineCostCents = (take * unitCostCents).round();
+
+      await (_db.update(_db.stockLots)
+            ..where((StockLots tbl) => tbl.id.equals(lotId)))
+          .write(
+        StockLotsCompanion(
+          qtyRemaining: Value(lotRemaining - take),
+        ),
+      );
+      out.add(
+        _ManualSyncFifoAllocation(
+          lotId: lotId,
+          qty: take,
+          unitCostCents: unitCostCents,
+          lineCostCents: lineCostCents,
+        ),
+      );
+      remaining -= take;
+    }
+
+    if (remaining > epsilon) {
+      out.add(
+        _ManualSyncFifoAllocation(
+          lotId: null,
+          qty: remaining,
+          unitCostCents: fallbackUnitCostCents,
+          lineCostCents: (remaining * fallbackUnitCostCents).round(),
+        ),
+      );
+    }
+    return out;
+  }
+
+  Future<void> _insertSaleItemAllocations({
+    required String saleId,
+    required String saleItemId,
+    required String productId,
+    required String warehouseId,
+    required List<_ManualSyncFifoAllocation> allocations,
+  }) async {
+    for (final _ManualSyncFifoAllocation allocation in allocations) {
+      await _db.into(_db.saleItemLotAllocations).insert(
+            SaleItemLotAllocationsCompanion.insert(
+              id: const Uuid().v4(),
+              saleId: saleId,
+              saleItemId: saleItemId,
+              productId: productId,
+              warehouseId: warehouseId,
+              lotId: Value(allocation.lotId),
+              qty: Value(allocation.qty),
+              unitCostCents: Value(allocation.unitCostCents),
+              lineCostCents: Value(allocation.lineCostCents),
+            ),
+          );
+    }
   }
 
   double _movementDelta({
@@ -1579,4 +1742,18 @@ class ManualSyncLocalDataSource {
       'createdAt': row.createdAt.toIso8601String(),
     };
   }
+}
+
+class _ManualSyncFifoAllocation {
+  const _ManualSyncFifoAllocation({
+    required this.lotId,
+    required this.qty,
+    required this.unitCostCents,
+    required this.lineCostCents,
+  });
+
+  final String? lotId;
+  final double qty;
+  final int unitCostCents;
+  final int lineCostCents;
 }

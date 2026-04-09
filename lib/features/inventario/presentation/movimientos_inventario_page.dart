@@ -27,6 +27,10 @@ class MovimientosInventarioPage extends ConsumerStatefulWidget {
       _MovimientosInventarioPageState();
 }
 
+enum _MovementMoreMenuAction { exportFiltered }
+
+enum _MovementExportFormat { csv, pdf }
+
 class _MovimientosInventarioPageState
     extends ConsumerState<MovimientosInventarioPage> {
   final TextEditingController _searchCtrl = TextEditingController();
@@ -35,8 +39,13 @@ class _MovimientosInventarioPageState
   List<Warehouse> _warehouses = <Warehouse>[];
   List<InventoryMovementReason> _reasons = <InventoryMovementReason>[];
   List<InventoryMovementView> _movements = <InventoryMovementView>[];
+  List<InventoryMovementProductOption> _movementProducts =
+      <InventoryMovementProductOption>[];
 
   String? _selectedWarehouseId;
+  String? _selectedProductId;
+  DateTime? _selectedDateFrom;
+  DateTime? _selectedDateTo;
   String _selectedType = 'all';
   String _selectedReasonCode = 'all';
   bool _loading = true;
@@ -73,21 +82,42 @@ class _MovimientosInventarioPageState
     final PerfTrace trace = PerfTrace('movimientos.bootstrap');
     setState(() => _loading = true);
     try {
+      final InventarioLocalDataSource ds =
+          ref.read(inventarioLocalDataSourceProvider);
       final Future<List<Warehouse>> warehousesFuture = _listActiveWarehouses();
       final Future<List<InventoryMovementReason>> reasonsFuture =
-          ref.read(inventarioLocalDataSourceProvider).listMovementReasons();
+          ds.listMovementReasons();
 
       final List<Warehouse> warehouses = await warehousesFuture;
       final List<InventoryMovementReason> reasons = await reasonsFuture;
       trace.mark('catalogos cargados');
+      final String? selectedWarehouse = _selectedWarehouseId != null &&
+              warehouses.every(
+                (Warehouse row) => row.id != _selectedWarehouseId,
+              )
+          ? null
+          : _selectedWarehouseId;
       final String selectedReason = _selectedReasonCode == 'all' ||
               reasons.any((InventoryMovementReason row) {
                 return row.code == _selectedReasonCode;
               })
           ? _selectedReasonCode
           : 'all';
+      final List<InventoryMovementProductOption> products =
+          await ds.listMovementProducts(
+        warehouseId: selectedWarehouse,
+      );
+      final String? selectedProduct = _selectedProductId != null &&
+              products.every(
+                (InventoryMovementProductOption row) =>
+                    row.productId != _selectedProductId,
+              )
+          ? null
+          : _selectedProductId;
       final List<InventoryMovementView> movements = await _fetchMovements(
         selectedReasonCode: selectedReason,
+        selectedWarehouseId: selectedWarehouse,
+        selectedProductId: selectedProduct,
       );
       trace.mark('movimientos cargados');
       if (!mounted) {
@@ -97,6 +127,9 @@ class _MovimientosInventarioPageState
       setState(() {
         _warehouses = warehouses;
         _reasons = reasons;
+        _movementProducts = products;
+        _selectedWarehouseId = selectedWarehouse;
+        _selectedProductId = selectedProduct;
         _selectedReasonCode = selectedReason;
         _movements = movements;
         _loading = false;
@@ -143,16 +176,165 @@ class _MovimientosInventarioPageState
     });
   }
 
+  List<InventoryMovementView> _currentFilteredMovements() {
+    final String query = _searchCtrl.text.trim().toLowerCase();
+    if (query.isEmpty) {
+      return _movements;
+    }
+    return _movements
+        .where(
+          (InventoryMovementView movement) => _matchesSearch(movement, query),
+        )
+        .toList(growable: false);
+  }
+
+  String _movementTypeFilterLabel() {
+    switch (_selectedType) {
+      case 'in':
+        return 'Entradas';
+      case 'out':
+        return 'Salidas';
+      case 'adjust':
+        return 'Ajustes';
+      default:
+        return 'Todos';
+    }
+  }
+
+  String _warehouseFilterLabel() {
+    final String selected = (_selectedWarehouseId ?? '').trim();
+    if (selected.isEmpty) {
+      return 'Todos';
+    }
+    for (final Warehouse row in _warehouses) {
+      if (row.id == selected) {
+        return row.name;
+      }
+    }
+    return 'Todos';
+  }
+
+  String _reasonFilterLabel() {
+    final String selected = _selectedReasonCode.trim();
+    if (selected == 'all' || selected.isEmpty) {
+      return 'Todos';
+    }
+    for (final InventoryMovementReason row in _reasons) {
+      if (row.code == selected) {
+        return row.label;
+      }
+    }
+    return 'Todos';
+  }
+
+  Future<void> _handleMoreMenuAction(_MovementMoreMenuAction action) async {
+    switch (action) {
+      case _MovementMoreMenuAction.exportFiltered:
+        await _openExportFormatsSheet();
+        break;
+    }
+  }
+
+  Future<void> _openExportFormatsSheet() async {
+    final _MovementExportFormat? format =
+        await showModalBottomSheet<_MovementExportFormat>(
+      context: context,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const ListTile(
+                title: Text('Exportar movimientos filtrados'),
+                subtitle: Text('Selecciona un formato'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.table_chart_rounded),
+                title: const Text('Exportar CSV'),
+                onTap: () =>
+                    Navigator.of(context).pop(_MovementExportFormat.csv),
+              ),
+              ListTile(
+                leading: const Icon(Icons.picture_as_pdf_rounded),
+                title: const Text('Exportar PDF'),
+                onTap: () =>
+                    Navigator.of(context).pop(_MovementExportFormat.pdf),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+    if (format == null || !mounted) {
+      return;
+    }
+    await _exportFilteredMovements(format);
+  }
+
+  Future<void> _exportFilteredMovements(_MovementExportFormat format) async {
+    final List<InventoryMovementView> rows = _currentFilteredMovements();
+    if (rows.isEmpty) {
+      _show('No hay movimientos filtrados para exportar.');
+      return;
+    }
+    try {
+      final InventarioLocalDataSource ds =
+          ref.read(inventarioLocalDataSourceProvider);
+      final String query = _searchCtrl.text.trim();
+      final InventoryMovementExportFilters filters =
+          InventoryMovementExportFilters(
+        warehouse: _warehouseFilterLabel(),
+        movementType: _movementTypeFilterLabel(),
+        reason: _reasonFilterLabel(),
+        product: _selectedProductLabel(),
+        dateFrom: _selectedDateFrom == null
+            ? '-'
+            : _formatDateOnly(_selectedDateFrom!),
+        dateTo:
+            _selectedDateTo == null ? '-' : _formatDateOnly(_selectedDateTo!),
+        search: query.isEmpty ? '-' : query,
+      );
+      final String path = format == _MovementExportFormat.csv
+          ? await ds.exportMovementsCsv(
+              movements: rows,
+              filters: filters,
+            )
+          : await ds.exportMovementsPdf(
+              movements: rows,
+              filters: filters,
+            );
+      _show(
+        format == _MovementExportFormat.csv
+            ? 'CSV exportado: $path'
+            : 'PDF exportado: $path',
+      );
+    } catch (e) {
+      _show('No se pudo exportar movimientos: $e');
+    }
+  }
+
   Future<List<InventoryMovementView>> _fetchMovements({
     String? selectedReasonCode,
+    String? selectedWarehouseId,
+    String? selectedProductId,
   }) async {
     final String reasonCode = selectedReasonCode ?? _selectedReasonCode;
     final String queryType = _selectedType == 'adjust' ? 'all' : _selectedType;
+    final DateTime? createdFrom =
+        _selectedDateFrom == null ? null : _startOfDay(_selectedDateFrom!);
+    final DateTime? createdTo = _selectedDateTo == null
+        ? null
+        : _startOfDay(_selectedDateTo!).add(const Duration(days: 1));
     final List<InventoryMovementView> rows =
         await ref.read(inventarioLocalDataSourceProvider).listMovements(
-              warehouseId: _selectedWarehouseId,
+              warehouseId: selectedWarehouseId ?? _selectedWarehouseId,
               movementType: queryType,
               reasonCode: reasonCode,
+              productId: selectedProductId ?? _selectedProductId,
+              createdFrom: createdFrom,
+              createdTo: createdTo,
+              limit: 5000,
             );
     if (_selectedType != 'adjust') {
       return rows;
@@ -210,7 +392,8 @@ class _MovimientosInventarioPageState
         await ds.listManualMovementReasons(movementType: 'in');
     final List<InventoryMovementReason> outputReasons =
         await ds.listManualMovementReasons(movementType: 'out');
-    if (entryReasons.isEmpty && outputReasons.isEmpty) {
+    final bool allowTransfer = !isEdit && _warehouses.length > 1;
+    if (entryReasons.isEmpty && outputReasons.isEmpty && !allowTransfer) {
       _show('No hay motivos disponibles para registrar movimientos.');
       return;
     }
@@ -227,6 +410,7 @@ class _MovimientosInventarioPageState
           adjustRows: adjustRows,
           entryReasons: entryReasons,
           outputReasons: outputReasons,
+          allowTransfer: allowTransfer,
           currencySymbol: config.currencySymbol,
           title: isEdit ? 'Editar Movimiento' : 'Movimiento de Inventario',
           confirmLabel: isEdit ? 'Guardar cambios' : 'Aplicar',
@@ -264,12 +448,21 @@ class _MovimientosInventarioPageState
     }
 
     final String safeProductId = result['productId'] as String;
-    final bool isEntry = result['isEntry'] as bool;
+    final String movementKind =
+        ((result['movementKind'] as String?) ?? '').trim();
+    final bool isTransfer = movementKind == 'transfer';
+    final bool isEntry = !isTransfer
+        ? (movementKind == 'entry' || result['isEntry'] == true)
+        : false;
     final double qty = result['qty'] as double;
-    final String safeReasonCode = result['reasonCode'] as String;
+    final String safeReasonCode =
+        ((result['reasonCode'] as String?) ?? (isTransfer ? 'transfer' : ''))
+            .trim();
     final String note = (result['note'] as String).trim();
     final String safeWarehouseId =
         ((result['warehouseId'] as String?) ?? selectedWarehouseId).trim();
+    final String safeDestinationWarehouseId =
+        ((result['destinationWarehouseId'] as String?) ?? '').trim();
     final double currentQty = (result['currentStock'] as double?) ?? 0;
 
     if (!isEdit && !isEntry && qty > currentQty) {
@@ -294,19 +487,30 @@ class _MovimientosInventarioPageState
               : note,
         );
       } else {
-        await ds.createManualMovement(
-          productId: safeProductId,
-          warehouseId: safeWarehouseId,
-          type: isEntry ? 'in' : 'out',
-          qty: qty,
-          reasonCode: safeReasonCode,
-          userId: session.userId,
-          note: note.isEmpty
-              ? (isEntry
-                  ? 'Entrada manual inventario'
-                  : 'Salida manual inventario')
-              : note,
-        );
+        if (isTransfer) {
+          await ds.createWarehouseTransfer(
+            productId: safeProductId,
+            sourceWarehouseId: safeWarehouseId,
+            destinationWarehouseId: safeDestinationWarehouseId,
+            qty: qty,
+            userId: session.userId,
+            note: note.isEmpty ? 'Transferencia manual de inventario' : note,
+          );
+        } else {
+          await ds.createManualMovement(
+            productId: safeProductId,
+            warehouseId: safeWarehouseId,
+            type: isEntry ? 'in' : 'out',
+            qty: qty,
+            reasonCode: safeReasonCode,
+            userId: session.userId,
+            note: note.isEmpty
+                ? (isEntry
+                    ? 'Entrada manual inventario'
+                    : 'Salida manual inventario')
+                : note,
+          );
+        }
       }
       ref.read(inventoryRefreshSignalProvider.notifier).state += 1;
       await _reloadMovements();
@@ -478,8 +682,26 @@ class _MovimientosInventarioPageState
     if (!mounted) {
       return;
     }
+    final InventarioLocalDataSource ds =
+        ref.read(inventarioLocalDataSourceProvider);
     String? draftWarehouse = _selectedWarehouseId;
     String draftReason = _selectedReasonCode;
+    String? draftProduct = _selectedProductId;
+    DateTime? draftFrom = _selectedDateFrom;
+    DateTime? draftTo = _selectedDateTo;
+    List<InventoryMovementProductOption> draftProducts =
+        await ds.listMovementProducts(
+      warehouseId: draftWarehouse,
+    );
+    if (!mounted) {
+      return;
+    }
+    if (draftProduct != null &&
+        draftProducts.every(
+          (InventoryMovementProductOption row) => row.productId != draftProduct,
+        )) {
+      draftProduct = null;
+    }
     final license = ref.read(currentLicenseStatusProvider);
 
     final bool? apply = await showModalBottomSheet<bool>(
@@ -516,6 +738,25 @@ class _MovimientosInventarioPageState
                       ],
                       onChanged: (String? value) {
                         setModalState(() => draftWarehouse = value);
+                        unawaited(() async {
+                          final List<InventoryMovementProductOption> options =
+                              await ds.listMovementProducts(
+                            warehouseId: value,
+                          );
+                          if (!context.mounted) {
+                            return;
+                          }
+                          setModalState(() {
+                            draftProducts = options;
+                            if (draftProduct != null &&
+                                options.every(
+                                  (InventoryMovementProductOption row) =>
+                                      row.productId != draftProduct,
+                                )) {
+                              draftProduct = null;
+                            }
+                          });
+                        }());
                       },
                     ),
                     const SizedBox(height: 10),
@@ -542,6 +783,118 @@ class _MovimientosInventarioPageState
                         }
                         setModalState(() => draftReason = value);
                       },
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String?>(
+                      initialValue: draftProduct,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: 'Producto'),
+                      items: <DropdownMenuItem<String?>>[
+                        const DropdownMenuItem<String?>(
+                          value: null,
+                          child: Text('Todos'),
+                        ),
+                        ...draftProducts.map(
+                          (InventoryMovementProductOption row) =>
+                              DropdownMenuItem<String?>(
+                            value: row.productId,
+                            child: Text(
+                              '${row.productName} • ${row.sku}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                      ],
+                      onChanged: (String? value) {
+                        setModalState(() => draftProduct = value);
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () async {
+                              final DateTime now = DateTime.now();
+                              final DateTime? picked = await showDatePicker(
+                                context: context,
+                                initialDate: draftFrom ?? draftTo ?? now,
+                                firstDate: DateTime(2000),
+                                lastDate: DateTime(2100),
+                                helpText: 'Desde',
+                              );
+                              if (picked == null) {
+                                return;
+                              }
+                              if (!context.mounted) {
+                                return;
+                              }
+                              setModalState(() {
+                                draftFrom = _startOfDay(picked);
+                                if (draftTo != null &&
+                                    draftTo!.isBefore(draftFrom!)) {
+                                  draftTo = draftFrom;
+                                }
+                              });
+                            },
+                            icon: const Icon(Icons.date_range_rounded),
+                            label: Text(
+                              draftFrom == null
+                                  ? 'Desde'
+                                  : _formatDateOnly(draftFrom!),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () async {
+                              final DateTime now = DateTime.now();
+                              final DateTime? picked = await showDatePicker(
+                                context: context,
+                                initialDate: draftTo ?? draftFrom ?? now,
+                                firstDate: DateTime(2000),
+                                lastDate: DateTime(2100),
+                                helpText: 'Hasta',
+                              );
+                              if (picked == null) {
+                                return;
+                              }
+                              if (!context.mounted) {
+                                return;
+                              }
+                              setModalState(() {
+                                draftTo = _startOfDay(picked);
+                                if (draftFrom != null &&
+                                    draftFrom!.isAfter(draftTo!)) {
+                                  draftFrom = draftTo;
+                                }
+                              });
+                            },
+                            icon: const Icon(Icons.event_rounded),
+                            label: Text(
+                              draftTo == null
+                                  ? 'Hasta'
+                                  : _formatDateOnly(draftTo!),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: () {
+                          setModalState(() {
+                            draftProduct = null;
+                            draftFrom = null;
+                            draftTo = null;
+                          });
+                        },
+                        child: const Text('Limpiar producto/fecha'),
+                      ),
                     ),
                     const SizedBox(height: 12),
                     Row(
@@ -590,6 +943,10 @@ class _MovimientosInventarioPageState
     setState(() {
       _selectedWarehouseId = draftWarehouse;
       _selectedReasonCode = draftReason;
+      _selectedProductId = draftProduct;
+      _selectedDateFrom = draftFrom;
+      _selectedDateTo = draftTo;
+      _movementProducts = draftProducts;
     });
     await _reloadMovements();
   }
@@ -753,6 +1110,38 @@ class _MovimientosInventarioPageState
     return '$hour12:$mm $period';
   }
 
+  DateTime _startOfDay(DateTime date) {
+    final DateTime local = date.toLocal();
+    return DateTime(local.year, local.month, local.day);
+  }
+
+  String _formatDateOnly(DateTime date) {
+    final DateTime local = date.toLocal();
+    final String d = local.day.toString().padLeft(2, '0');
+    final String m = local.month.toString().padLeft(2, '0');
+    final String y = local.year.toString();
+    return '$d/$m/$y';
+  }
+
+  bool get _hasAdvancedFilters {
+    return _selectedProductId != null ||
+        _selectedDateFrom != null ||
+        _selectedDateTo != null;
+  }
+
+  String _selectedProductLabel() {
+    final String id = (_selectedProductId ?? '').trim();
+    if (id.isEmpty) {
+      return 'Todos';
+    }
+    for (final InventoryMovementProductOption option in _movementProducts) {
+      if (option.productId == id) {
+        return '${option.productName} • ${option.sku}';
+      }
+    }
+    return 'Producto';
+  }
+
   bool _isAdjustmentMovement(InventoryMovementView movement) {
     final String reason = movement.reasonCode.toLowerCase();
     if (reason == 'adjust' || reason == 'breakage' || reason == 'shrinkage') {
@@ -833,11 +1222,14 @@ class _MovimientosInventarioPageState
   }
 
   bool _canArchiveMovement(InventoryMovementView movement) {
+    final String source = movement.movementSource.trim().toLowerCase();
+    if (source == 'transfer' || movement.reasonCode == 'transfer') {
+      return false;
+    }
     final UserSession? session = ref.read(currentSessionProvider);
     if (session?.isAdmin ?? false) {
       return true;
     }
-    final String source = movement.movementSource.trim().toLowerCase();
     final String refType = (movement.refType ?? '').trim().toLowerCase();
     final bool isSaleRef = refType == 'sale' ||
         refType == 'sale_pos' ||
@@ -1003,6 +1395,25 @@ class _MovimientosInventarioPageState
             ),
           ),
         ),
+        PopupMenuButton<_MovementMoreMenuAction>(
+          tooltip: 'Más opciones',
+          icon: const Icon(Icons.more_vert_rounded),
+          onSelected: (_MovementMoreMenuAction action) {
+            unawaited(_handleMoreMenuAction(action));
+          },
+          itemBuilder: (BuildContext context) =>
+              <PopupMenuEntry<_MovementMoreMenuAction>>[
+            const PopupMenuItem<_MovementMoreMenuAction>(
+              value: _MovementMoreMenuAction.exportFiltered,
+              child: ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.ios_share_rounded),
+                title: Text('Exportar filtrados'),
+              ),
+            ),
+          ],
+        ),
       ],
       floatingActionButton: license.canWrite
           ? AppAddActionButton(
@@ -1064,6 +1475,59 @@ class _MovimientosInventarioPageState
                     },
                   ),
                   const SizedBox(height: 14),
+                  if (_hasAdvancedFilters)
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF9FAFB),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE5E7EB)),
+                      ),
+                      child: Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: <Widget>[
+                                if (_selectedProductId != null)
+                                  Chip(
+                                    label: Text(_selectedProductLabel()),
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                if (_selectedDateFrom != null)
+                                  Chip(
+                                    label: Text(
+                                      'Desde ${_formatDateOnly(_selectedDateFrom!)}',
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                if (_selectedDateTo != null)
+                                  Chip(
+                                    label: Text(
+                                      'Hasta ${_formatDateOnly(_selectedDateTo!)}',
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Limpiar filtros',
+                            onPressed: () async {
+                              setState(() {
+                                _selectedProductId = null;
+                                _selectedDateFrom = null;
+                                _selectedDateTo = null;
+                              });
+                              await _reloadMovements();
+                            },
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (_hasAdvancedFilters) const SizedBox(height: 14),
                   if (groups.isEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 120),

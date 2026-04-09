@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../auth/presentation/auth_providers.dart';
+import '../../configuracion/data/configuracion_local_datasource.dart';
+import '../../configuracion/presentation/configuracion_providers.dart';
 import '../data/reportes_local_datasource.dart';
 import 'reportes_providers.dart';
 
@@ -37,6 +39,7 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
   List<ManualIpvEmployeeOption> _employeeOptions = <ManualIpvEmployeeOption>[];
   Set<String> _selectedEmployeeIds = <String>{};
   List<String> _paymentMethods = <String>[];
+  Map<String, String> _paymentMethodLabelsByCode = <String, String>{};
   List<ManualIpvEditableLineStat> _lines = <ManualIpvEditableLineStat>[];
 
   @override
@@ -66,13 +69,23 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
       setState(() => _loading = true);
     }
     try {
+      final Future<List<AppPaymentMethodSetting>> paymentMethodsFuture = ref
+          .read(configuracionLocalDataSourceProvider)
+          .loadPaymentMethodSettings();
       final List<ManualIpvEmployeeOption> employees =
           await _ds.listManualIpvEmployeeOptions();
+      List<AppPaymentMethodSetting> paymentSettings =
+          const <AppPaymentMethodSetting>[];
+      try {
+        paymentSettings = await paymentMethodsFuture;
+      } catch (_) {}
       if (!mounted) {
         return;
       }
       setState(() {
         _employeeOptions = employees;
+        _paymentMethodLabelsByCode =
+            buildPaymentMethodLabelMap(paymentSettings);
       });
       await _loadReportForDate(_reportDate, resetDirty: true);
     } catch (e) {
@@ -596,6 +609,130 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
     }
   }
 
+  Future<void> _deleteCurrentReport() async {
+    if (_reportId.trim().isEmpty || _saving || _loading) {
+      return;
+    }
+    if (_dirty && !await _confirmDiscardIfDirty()) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        final String dateLabel =
+            '${_reportDate.day.toString().padLeft(2, '0')}/${_reportDate.month.toString().padLeft(2, '0')}/${_reportDate.year}';
+        return AlertDialog(
+          title: const Text('Eliminar IPV manual'),
+          content: Text(
+            'Se eliminará el IPV manual del $dateLabel y luego se recalcularán los inicios de los reportes siguientes. Esta acción no se puede deshacer. ¿Deseas continuar?',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFB91C1C),
+              ),
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Eliminar'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirm != true) {
+      return;
+    }
+
+    setState(() => _saving = true);
+    try {
+      final DateTime deletedDate = _reportDate;
+      await _ds.deleteManualIpvReport(reportId: _reportId);
+      await _ds.recalculateManualIpvStarts(fromDate: deletedDate);
+      if (!mounted) {
+        return;
+      }
+      await _loadReportForDate(deletedDate, resetDirty: true);
+      if (!mounted) {
+        return;
+      }
+      _show('IPV manual eliminado. Inicios recalculados.');
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      _show('No se pudo eliminar el IPV manual: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
+  }
+
+  Future<void> _recalculateStartsFromCurrentDate() async {
+    if (_saving || _loading) {
+      return;
+    }
+    if (_dirty && !await _confirmDiscardIfDirty()) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        final String dateLabel =
+            '${_reportDate.day.toString().padLeft(2, '0')}/${_reportDate.month.toString().padLeft(2, '0')}/${_reportDate.year}';
+        return AlertDialog(
+          title: const Text('Recalcular inicios'),
+          content: Text(
+            'Se recalcularán los inicios desde el IPV del $dateLabel en adelante usando el final del reporte anterior. ¿Deseas continuar?',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Recalcular'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirm != true) {
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await _ds.recalculateManualIpvStarts(fromDate: _reportDate);
+      if (!mounted) {
+        return;
+      }
+      await _loadReportForDate(_reportDate, resetDirty: true);
+      if (!mounted) {
+        return;
+      }
+      _show('Inicios recalculados correctamente.');
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      _show('No se pudo recalcular inicios: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
+  }
+
   ManualIpvEditableLineStat _recalculateLocalLine(
     ManualIpvEditableLineStat line,
   ) {
@@ -705,7 +842,11 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
   }
 
   String _paymentMethodLabel(String method) {
-    return _ds.paymentMethodLabel(method);
+    final String code = method.trim().toLowerCase();
+    if (code.isEmpty) {
+      return 'Metodo';
+    }
+    return _paymentMethodLabelsByCode[code] ?? defaultPaymentMethodLabel(code);
   }
 
   void _show(String message) {
@@ -825,12 +966,28 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
                 icon: const Icon(Icons.save_rounded),
                 label: Text(_dirty ? 'Guardar cambios' : 'Guardar'),
               ),
+              if (isAdmin)
+                OutlinedButton.icon(
+                  onPressed: _saving ? null : _recalculateStartsFromCurrentDate,
+                  icon: const Icon(Icons.sync_rounded),
+                  label: const Text('Recalcular inicios'),
+                ),
+              if (isAdmin)
+                OutlinedButton.icon(
+                  onPressed: _saving ? null : _deleteCurrentReport,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFB91C1C),
+                    side: const BorderSide(color: Color(0xFFFCA5A5)),
+                  ),
+                  icon: const Icon(Icons.delete_outline_rounded),
+                  label: const Text('Eliminar IPV'),
+                ),
               if (_hasPreviousReport)
-                Chip(
-                  avatar: const Icon(Icons.link_rounded, size: 16),
-                  label: const Text('Inicio enlazado al IPV anterior'),
-                  side: const BorderSide(color: Color(0xFFBFDBFE)),
-                  backgroundColor: const Color(0xFFEFF6FF),
+                const Chip(
+                  avatar: Icon(Icons.link_rounded, size: 16),
+                  label: Text('Inicio enlazado al IPV anterior'),
+                  side: BorderSide(color: Color(0xFFBFDBFE)),
+                  backgroundColor: Color(0xFFEFF6FF),
                 ),
               if (isAdmin)
                 const Chip(

@@ -118,8 +118,9 @@ class AppCurrencyConfig {
   });
 
   static const AppCurrencyConfig defaults = AppCurrencyConfig(
-    primaryCurrencyCode: 'USD',
+    primaryCurrencyCode: 'CUP',
     currencies: <AppCurrencySetting>[
+      AppCurrencySetting(code: 'CUP', symbol: '₱', rateToPrimary: 1),
       AppCurrencySetting(code: 'USD', symbol: r'$', rateToPrimary: 1),
     ],
     rateHistory: <AppExchangeRateHistoryEntry>[],
@@ -191,8 +192,8 @@ class AppCurrencyConfig {
   AppCurrencySetting get primaryCurrency {
     return currencyByCode(primaryCurrencyCode) ??
         const AppCurrencySetting(
-          code: 'USD',
-          symbol: r'$',
+          code: 'CUP',
+          symbol: '₱',
           rateToPrimary: 1,
         );
   }
@@ -236,7 +237,7 @@ class AppCurrencyConfig {
 
     String normalizedPrimary = _sanitizeCurrencyCode(primaryCurrencyCode);
     if (normalizedPrimary.isEmpty) {
-      normalizedPrimary = 'USD';
+      normalizedPrimary = 'CUP';
     }
 
     if (!byCode.containsKey(normalizedPrimary)) {
@@ -297,15 +298,23 @@ class AppPaymentMethodSetting {
   const AppPaymentMethodSetting({
     required this.code,
     required this.isOnline,
+    this.displayName,
   });
 
   final String code;
   final bool isOnline;
+  final String? displayName;
 
   factory AppPaymentMethodSetting.fromJson(Map<String, Object?> json) {
+    final String rawCode = (json['code'] as String? ?? '').trim().toLowerCase();
+    final String? rawDisplayName =
+        (json['displayName'] as String? ?? json['name'] as String?)?.trim();
     return AppPaymentMethodSetting(
-      code: (json['code'] as String? ?? '').trim().toLowerCase(),
+      code: rawCode,
       isOnline: json['isOnline'] == true,
+      displayName: (rawDisplayName == null || rawDisplayName.isEmpty)
+          ? null
+          : rawDisplayName,
     );
   }
 
@@ -313,17 +322,29 @@ class AppPaymentMethodSetting {
     return <String, Object?>{
       'code': code,
       'isOnline': isOnline,
+      'displayName': displayName,
     };
   }
 
   AppPaymentMethodSetting copyWith({
     String? code,
     bool? isOnline,
+    String? displayName,
+    bool clearDisplayName = false,
   }) {
     return AppPaymentMethodSetting(
       code: code ?? this.code,
       isOnline: isOnline ?? this.isOnline,
+      displayName: clearDisplayName ? null : (displayName ?? this.displayName),
     );
+  }
+
+  String get label {
+    final String explicit = (displayName ?? '').trim();
+    if (explicit.isNotEmpty) {
+      return explicit;
+    }
+    return defaultPaymentMethodLabel(code);
   }
 }
 
@@ -337,7 +358,7 @@ class AppConfig {
   });
 
   static const String defaultBusinessName = 'Mi Negocio';
-  static const String defaultCurrencySymbol = r'$';
+  static const String defaultCurrencySymbol = '₱';
 
   static const AppConfig defaults = AppConfig(
     businessName: defaultBusinessName,
@@ -387,13 +408,18 @@ class ConfiguracionLocalDataSource {
       'payment_methods_config_json_v1';
   static const String _kDashboardWidgetsPrefix =
       'dashboard_widgets_visible_v1::';
-  static const List<AppPaymentMethodSetting> _defaultPaymentMethods =
+  static const List<AppPaymentMethodSetting> _initialInstallPaymentMethods =
       <AppPaymentMethodSetting>[
-    AppPaymentMethodSetting(code: 'cash', isOnline: false),
-    AppPaymentMethodSetting(code: 'card', isOnline: false),
-    AppPaymentMethodSetting(code: 'transfer', isOnline: true),
-    AppPaymentMethodSetting(code: 'wallet', isOnline: true),
-    AppPaymentMethodSetting(code: 'consignment', isOnline: false),
+    AppPaymentMethodSetting(
+      code: 'cash',
+      isOnline: false,
+      displayName: 'Efectivo',
+    ),
+    AppPaymentMethodSetting(
+      code: 'transfer',
+      isOnline: true,
+      displayName: 'Transferencia',
+    ),
   ];
 
   Future<AppConfig> loadConfig() async {
@@ -417,7 +443,7 @@ class ConfiguracionLocalDataSource {
     };
 
     final AppCurrencyConfig currencyConfig = _parseCurrencyConfig(values);
-    return AppConfig(
+    final AppConfig config = AppConfig(
       businessName: values[_kBusinessName] ?? AppConfig.defaultBusinessName,
       currencySymbol: currencyConfig.primaryCurrency.symbol,
       allowNegativeStock: values[_kAllowNegativeStock] == '1',
@@ -425,6 +451,11 @@ class ConfiguracionLocalDataSource {
           AppThemePreference.fromStorage(values[_kThemePreference]),
       currencyConfig: currencyConfig,
     );
+    await _seedFirstInstallSettings(
+      existingValues: values,
+      config: config,
+    );
+    return config;
   }
 
   Future<void> saveConfig(AppConfig config) async {
@@ -464,13 +495,28 @@ class ConfiguracionLocalDataSource {
           ..where(
               (AppSettings tbl) => tbl.key.equals(_kPaymentMethodsConfigJson)))
         .getSingleOrNull();
-    if (row == null || row.value.trim().isEmpty) {
-      return _defaultPaymentMethods;
+    if (row == null) {
+      final List<AppPaymentMethodSetting> seeded =
+          _normalizePaymentMethodSettings(
+        _initialInstallPaymentMethods,
+      );
+      await _upsert(
+        _kPaymentMethodsConfigJson,
+        jsonEncode(
+          seeded
+              .map((AppPaymentMethodSetting method) => method.toJson())
+              .toList(growable: false),
+        ),
+      );
+      return seeded;
+    }
+    if (row.value.trim().isEmpty) {
+      return const <AppPaymentMethodSetting>[];
     }
     try {
       final Object? decoded = jsonDecode(row.value);
       if (decoded is! List) {
-        return _defaultPaymentMethods;
+        return const <AppPaymentMethodSetting>[];
       }
       final List<AppPaymentMethodSetting> parsed = <AppPaymentMethodSetting>[];
       for (final Object? item in decoded) {
@@ -478,11 +524,24 @@ class ConfiguracionLocalDataSource {
           parsed.add(
             AppPaymentMethodSetting.fromJson(item.cast<String, Object?>()),
           );
+          continue;
+        }
+        if (item is String) {
+          final String code = item.trim().toLowerCase();
+          if (code.isEmpty) {
+            continue;
+          }
+          parsed.add(
+            AppPaymentMethodSetting(
+              code: code,
+              isOnline: code == 'transfer' || code == 'wallet',
+            ),
+          );
         }
       }
       return _normalizePaymentMethodSettings(parsed);
     } catch (_) {
-      return _defaultPaymentMethods;
+      return const <AppPaymentMethodSetting>[];
     }
   }
 
@@ -582,8 +641,12 @@ class ConfiguracionLocalDataSource {
       } catch (_) {}
     }
 
+    final String? rawLegacySymbol = values[_kCurrencySymbol];
+    if (rawLegacySymbol == null || rawLegacySymbol.trim().isEmpty) {
+      return AppCurrencyConfig.defaults.normalized();
+    }
     final String legacySymbol = _sanitizeCurrencySymbol(
-      values[_kCurrencySymbol],
+      rawLegacySymbol,
       fallback: AppConfig.defaultCurrencySymbol,
     );
     final String legacyCode = _currencyCodeFromSymbol(legacySymbol);
@@ -598,6 +661,78 @@ class ConfiguracionLocalDataSource {
       ],
       rateHistory: const <AppExchangeRateHistoryEntry>[],
     ).normalized();
+  }
+
+  Future<void> _seedFirstInstallSettings({
+    required Map<String, String> existingValues,
+    required AppConfig config,
+  }) async {
+    final bool missingBusiness =
+        !_hasStoredValue(existingValues, _kBusinessName);
+    final bool missingCurrencySymbol =
+        !_hasStoredValue(existingValues, _kCurrencySymbol);
+    final bool missingCurrencyConfig =
+        !_hasStoredValue(existingValues, _kCurrencyConfigJson);
+    final bool missingAllowNegativeStock =
+        !_hasStoredValue(existingValues, _kAllowNegativeStock);
+    final bool missingThemePreference =
+        !_hasStoredValue(existingValues, _kThemePreference);
+
+    final AppSetting? paymentSetting = await (_db.select(_db.appSettings)
+          ..where(
+            (AppSettings tbl) => tbl.key.equals(_kPaymentMethodsConfigJson),
+          )
+          ..limit(1))
+        .getSingleOrNull();
+    final bool missingPaymentMethods = paymentSetting == null;
+
+    if (!missingBusiness &&
+        !missingCurrencySymbol &&
+        !missingCurrencyConfig &&
+        !missingAllowNegativeStock &&
+        !missingThemePreference &&
+        !missingPaymentMethods) {
+      return;
+    }
+
+    final AppCurrencyConfig normalizedCurrencies =
+        config.currencyConfig.normalized();
+    await _db.transaction(() async {
+      if (missingBusiness) {
+        await _upsert(_kBusinessName, config.businessName.trim());
+      }
+      if (missingCurrencySymbol) {
+        await _upsert(
+          _kCurrencySymbol,
+          normalizedCurrencies.primaryCurrency.symbol,
+        );
+      }
+      if (missingCurrencyConfig) {
+        await _upsert(
+          _kCurrencyConfigJson,
+          jsonEncode(normalizedCurrencies.toJson()),
+        );
+      }
+      if (missingAllowNegativeStock) {
+        await _upsert(
+          _kAllowNegativeStock,
+          config.allowNegativeStock ? '1' : '0',
+        );
+      }
+      if (missingThemePreference) {
+        await _upsert(_kThemePreference, config.themePreference.storageValue);
+      }
+      if (missingPaymentMethods) {
+        await _upsert(
+          _kPaymentMethodsConfigJson,
+          jsonEncode(
+            _initialInstallPaymentMethods
+                .map((AppPaymentMethodSetting method) => method.toJson())
+                .toList(growable: false),
+          ),
+        );
+      }
+    });
   }
 
   Future<void> _upsert(String key, String value) {
@@ -623,24 +758,37 @@ class ConfiguracionLocalDataSource {
       byCode[code] = AppPaymentMethodSetting(
         code: code,
         isOnline: raw.isOnline,
+        displayName: _normalizePaymentMethodDisplayName(raw.displayName),
       );
     }
-    for (final AppPaymentMethodSetting def in _defaultPaymentMethods) {
-      byCode.putIfAbsent(def.code, () => def);
-    }
-    final List<AppPaymentMethodSetting> ordered = <AppPaymentMethodSetting>[];
-    for (final AppPaymentMethodSetting def in _defaultPaymentMethods) {
-      final AppPaymentMethodSetting? row = byCode.remove(def.code);
-      if (row != null) {
-        ordered.add(row);
-      }
-    }
-    final List<AppPaymentMethodSetting> extras = byCode.values.toList()
+    final List<AppPaymentMethodSetting> ordered = byCode.values.toList()
       ..sort((AppPaymentMethodSetting a, AppPaymentMethodSetting b) {
+        final int ai = _initialInstallPaymentMethods
+            .indexWhere((AppPaymentMethodSetting row) => row.code == a.code);
+        final int bi = _initialInstallPaymentMethods
+            .indexWhere((AppPaymentMethodSetting row) => row.code == b.code);
+        final bool aIsDefault = ai >= 0;
+        final bool bIsDefault = bi >= 0;
+        if (aIsDefault && bIsDefault) {
+          return ai.compareTo(bi);
+        }
+        if (aIsDefault) {
+          return -1;
+        }
+        if (bIsDefault) {
+          return 1;
+        }
         return a.code.compareTo(b.code);
       });
-    ordered.addAll(extras);
     return ordered;
+  }
+
+  String? _normalizePaymentMethodDisplayName(String? value) {
+    final String clean = (value ?? '').trim();
+    if (clean.isEmpty) {
+      return null;
+    }
+    return clean;
   }
 
   DashboardWidgetLayout _decodeDashboardWidgetLayout(String raw) {
@@ -688,6 +836,11 @@ class ConfiguracionLocalDataSource {
         .where((String key) => key.isNotEmpty)
         .toList(growable: false);
   }
+}
+
+bool _hasStoredValue(Map<String, String> values, String key) {
+  final String? value = values[key];
+  return value != null && value.trim().isNotEmpty;
 }
 
 double? _asDouble(Object? value) {
@@ -746,4 +899,36 @@ String _defaultSymbolForCode(String code) {
     default:
       return r'$';
   }
+}
+
+String defaultPaymentMethodLabel(String methodCode) {
+  switch (methodCode.trim().toLowerCase()) {
+    case 'cash':
+      return 'Efectivo';
+    case 'card':
+      return 'Tarjeta';
+    case 'transfer':
+      return 'Transferencia';
+    case 'wallet':
+      return 'Billetera';
+    case 'consignment':
+      return 'Consignacion';
+    default:
+      final String clean = methodCode.trim();
+      return clean.isEmpty ? 'Metodo' : clean;
+  }
+}
+
+Map<String, String> buildPaymentMethodLabelMap(
+  Iterable<AppPaymentMethodSetting> methods,
+) {
+  final Map<String, String> out = <String, String>{};
+  for (final AppPaymentMethodSetting row in methods) {
+    final String code = row.code.trim().toLowerCase();
+    if (code.isEmpty) {
+      continue;
+    }
+    out[code] = row.label;
+  }
+  return out;
 }

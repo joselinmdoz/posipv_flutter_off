@@ -224,8 +224,20 @@ class SaleService {
 
           final int lineSubtotal = (item.unitPriceCents * item.qty).round();
           final int lineTax = (lineSubtotal * item.taxRateBps / 10000).round();
-          final int unitCostCents = product.costPriceCents;
-          final int lineCostCents = (item.qty * unitCostCents).round();
+          final List<_FifoAllocation> fifoAllocations =
+              await _reserveFifoAllocations(
+            productId: item.productId,
+            warehouseId: input.warehouseId,
+            qty: item.qty,
+            fallbackUnitCostCents: product.costPriceCents,
+          );
+          final int lineCostCents = fifoAllocations.fold<int>(
+            0,
+            (int sum, _FifoAllocation row) => sum + row.lineCostCents,
+          );
+          final int unitCostCents = item.qty.abs() <= 0.000001
+              ? product.costPriceCents
+              : (lineCostCents / item.qty).round();
           final int lineTotal = lineSubtotal + lineTax;
 
           subtotalCents += lineSubtotal;
@@ -242,6 +254,7 @@ class SaleService {
               lineSubtotalCents: lineSubtotal,
               lineTaxCents: lineTax,
               lineTotalCents: lineTotal,
+              allocations: fifoAllocations,
             ),
           );
         }
@@ -300,6 +313,13 @@ class SaleService {
                   lineTotalCents: line.lineTotalCents,
                 ),
               );
+          await _insertSaleItemAllocations(
+            saleId: saleId,
+            saleItemId: saleItemId,
+            productId: line.item.productId,
+            warehouseId: input.warehouseId,
+            allocations: line.allocations,
+          );
 
           await _upsertStock(
             productId: line.item.productId,
@@ -324,6 +344,12 @@ class SaleService {
                 ),
               );
         }
+
+        await _syncProductsCostFromActiveLots(
+          productIds:
+              processed.map((_ProcessedLine row) => row.item.productId).toSet(),
+          now: now,
+        );
 
         for (final PaymentInput payment in input.payments) {
           await _db.into(_db.payments).insert(
@@ -466,6 +492,10 @@ class SaleService {
         previousQtyByProduct[line.productId] =
             (previousQtyByProduct[line.productId] ?? 0) + line.qty;
       }
+      await _releaseSaleAllocations(
+        saleId: safeSaleId,
+        markVoided: false,
+      );
 
       final List<_SaleEditProcessedLine> processedLines =
           <_SaleEditProcessedLine>[];
@@ -504,8 +534,20 @@ class SaleService {
 
         final int lineSubtotal = (item.unitPriceCents * item.qty).round();
         final int lineTax = (lineSubtotal * item.taxRateBps / 10000).round();
-        final int unitCostCents = product.costPriceCents;
-        final int lineCostCents = (item.qty * unitCostCents).round();
+        final List<_FifoAllocation> fifoAllocations =
+            await _reserveFifoAllocations(
+          productId: item.productId,
+          warehouseId: sale.warehouseId,
+          qty: item.qty,
+          fallbackUnitCostCents: product.costPriceCents,
+        );
+        final int lineCostCents = fifoAllocations.fold<int>(
+          0,
+          (int sum, _FifoAllocation row) => sum + row.lineCostCents,
+        );
+        final int unitCostCents = item.qty.abs() <= 0.000001
+            ? product.costPriceCents
+            : (lineCostCents / item.qty).round();
         final int lineTotal = lineSubtotal + lineTax;
         subtotalCents += lineSubtotal;
         taxCents += lineTax;
@@ -519,6 +561,7 @@ class SaleService {
             lineSubtotalCents: lineSubtotal,
             lineTaxCents: lineTax,
             lineTotalCents: lineTotal,
+            allocations: fifoAllocations,
           ),
         );
       }
@@ -619,9 +662,10 @@ class SaleService {
           .go();
 
       for (final _SaleEditProcessedLine line in processedLines) {
+        final String saleItemId = _uuid.v4();
         await _db.into(_db.saleItems).insert(
               SaleItemsCompanion.insert(
-                id: _uuid.v4(),
+                id: saleItemId,
                 saleId: safeSaleId,
                 productId: line.item.productId,
                 qty: line.item.qty,
@@ -634,6 +678,13 @@ class SaleService {
                 lineTotalCents: line.lineTotalCents,
               ),
             );
+        await _insertSaleItemAllocations(
+          saleId: safeSaleId,
+          saleItemId: saleItemId,
+          productId: line.item.productId,
+          warehouseId: sale.warehouseId,
+          allocations: line.allocations,
+        );
         await _db.into(_db.stockMovements).insert(
               StockMovementsCompanion.insert(
                 id: _uuid.v4(),
@@ -675,6 +726,11 @@ class SaleService {
           totalCents: Value(totalCents),
           status: const Value('posted'),
         ),
+      );
+
+      await _syncProductsCostFromActiveLots(
+        productIds: stockProductIds,
+        now: now,
       );
 
       await _db.into(_db.auditLogs).insert(
@@ -839,6 +895,12 @@ class SaleService {
       }
 
       final DateTime now = DateTime.now();
+      final Set<String> affectedProductIds = <String>{};
+      await _releaseSaleAllocations(
+        saleId: safeSaleId,
+        markVoided: true,
+        voidedAt: now,
+      );
       final List<_SaleMovementDelta> activeMovementDeltas =
           await _loadSaleMovementDeltas(
         saleId: safeSaleId,
@@ -846,6 +908,7 @@ class SaleService {
       );
       if (activeMovementDeltas.isNotEmpty) {
         for (final _SaleMovementDelta delta in activeMovementDeltas) {
+          affectedProductIds.add(delta.productId);
           final StockBalance? balance = await (_db.select(_db.stockBalances)
                 ..where(
                   (StockBalances tbl) =>
@@ -867,6 +930,7 @@ class SaleService {
               ..where((SaleItems tbl) => tbl.saleId.equals(safeSaleId)))
             .get();
         for (final SaleItem line in lines) {
+          affectedProductIds.add(line.productId);
           final StockBalance? balance = await (_db.select(_db.stockBalances)
                 ..where(
                   (StockBalances tbl) =>
@@ -914,6 +978,11 @@ class SaleService {
         const SalesCompanion(
           status: Value('archived'),
         ),
+      );
+
+      await _syncProductsCostFromActiveLots(
+        productIds: affectedProductIds,
+        now: now,
       );
 
       await _db.into(_db.auditLogs).insert(
@@ -965,6 +1034,7 @@ class SaleService {
       }
 
       final DateTime now = DateTime.now();
+      final Set<String> affectedProductIds = <String>{};
       final List<_SaleMovementDelta> voidedMovementDeltas =
           await _loadSaleMovementDeltas(
         saleId: safeSaleId,
@@ -972,6 +1042,7 @@ class SaleService {
       );
       if (voidedMovementDeltas.isNotEmpty) {
         for (final _SaleMovementDelta delta in voidedMovementDeltas) {
+          affectedProductIds.add(delta.productId);
           final StockBalance? balance = await (_db.select(_db.stockBalances)
                 ..where(
                   (StockBalances tbl) =>
@@ -998,6 +1069,7 @@ class SaleService {
               ..where((SaleItems tbl) => tbl.saleId.equals(safeSaleId)))
             .get();
         for (final SaleItem line in lines) {
+          affectedProductIds.add(line.productId);
           final StockBalance? balance = await (_db.select(_db.stockBalances)
                 ..where(
                   (StockBalances tbl) =>
@@ -1020,6 +1092,10 @@ class SaleService {
           );
         }
       }
+      await _reapplyVoidedSaleAllocations(
+        saleId: safeSaleId,
+        allowNegativeResult: allowNegativeResult,
+      );
 
       await _db.customStatement(
         '''
@@ -1049,6 +1125,11 @@ class SaleService {
         const SalesCompanion(
           status: Value('posted'),
         ),
+      );
+
+      await _syncProductsCostFromActiveLots(
+        productIds: affectedProductIds,
+        now: now,
       );
 
       await _db.into(_db.auditLogs).insert(
@@ -1125,6 +1206,13 @@ class SaleService {
       }
 
       final String archivedFolio = sale.folio;
+      await _db.customStatement(
+        '''
+        DELETE FROM sale_item_lot_allocations
+        WHERE sale_id = ?
+        ''',
+        <Object?>[safeSaleId],
+      );
       await _db.customStatement(
         '''
         DELETE FROM stock_movements
@@ -1304,6 +1392,289 @@ class SaleService {
     );
   }
 
+  Future<void> _syncProductsCostFromActiveLots({
+    required Set<String> productIds,
+    required DateTime now,
+  }) async {
+    if (productIds.isEmpty) {
+      return;
+    }
+    for (final String rawProductId in productIds) {
+      final String productId = rawProductId.trim();
+      if (productId.isEmpty) {
+        continue;
+      }
+      final QueryRow? lotRow = await _db.customSelect(
+        '''
+        SELECT
+          COALESCE(l.unit_cost_cents, 0) AS unit_cost_cents
+        FROM stock_lots l
+        WHERE l.product_id = ?
+          AND COALESCE(l.qty_remaining, 0) > 0
+        ORDER BY l.received_at ASC, l.created_at ASC, l.id ASC
+        LIMIT 1
+        ''',
+        variables: <Variable<Object>>[
+          Variable<String>(productId),
+        ],
+      ).getSingleOrNull();
+      if (lotRow == null) {
+        continue;
+      }
+      final int lotCostCents =
+          (lotRow.data['unit_cost_cents'] as num?)?.toInt() ?? 0;
+      await (_db.update(_db.products)
+            ..where((Products tbl) => tbl.id.equals(productId)))
+          .write(
+        ProductsCompanion(
+          costPriceCents: Value(lotCostCents < 0 ? 0 : lotCostCents),
+          updatedAt: Value(now),
+        ),
+      );
+    }
+  }
+
+  Future<void> _insertSaleItemAllocations({
+    required String saleId,
+    required String saleItemId,
+    required String productId,
+    required String warehouseId,
+    required List<_FifoAllocation> allocations,
+  }) async {
+    for (final _FifoAllocation allocation in allocations) {
+      await _db.into(_db.saleItemLotAllocations).insert(
+            SaleItemLotAllocationsCompanion.insert(
+              id: _uuid.v4(),
+              saleId: saleId,
+              saleItemId: saleItemId,
+              productId: productId,
+              warehouseId: warehouseId,
+              lotId: Value(allocation.lotId),
+              qty: Value(allocation.qty),
+              unitCostCents: Value(allocation.unitCostCents),
+              lineCostCents: Value(allocation.lineCostCents),
+            ),
+          );
+    }
+  }
+
+  Future<List<_FifoAllocation>> _reserveFifoAllocations({
+    required String productId,
+    required String warehouseId,
+    required double qty,
+    required int fallbackUnitCostCents,
+  }) async {
+    if (qty <= 0) {
+      return const <_FifoAllocation>[];
+    }
+    const double epsilon = 0.000001;
+    final List<_FifoAllocation> out = <_FifoAllocation>[];
+    double remaining = qty;
+
+    final List<QueryRow> lotRows = await _db.customSelect(
+      '''
+      SELECT
+        l.id AS lot_id,
+        COALESCE(l.qty_remaining, 0) AS qty_remaining,
+        COALESCE(l.unit_cost_cents, 0) AS unit_cost_cents
+      FROM stock_lots l
+      WHERE l.product_id = ?
+        AND l.warehouse_id = ?
+        AND COALESCE(l.qty_remaining, 0) > 0
+      ORDER BY l.received_at ASC, l.created_at ASC, l.id ASC
+      ''',
+      variables: <Variable<Object>>[
+        Variable<String>(productId),
+        Variable<String>(warehouseId),
+      ],
+    ).get();
+
+    for (final QueryRow row in lotRows) {
+      if (remaining <= epsilon) {
+        break;
+      }
+      final String lotId = (row.readNullable<String>('lot_id') ?? '').trim();
+      if (lotId.isEmpty) {
+        continue;
+      }
+      final double lotRemaining =
+          (row.data['qty_remaining'] as num?)?.toDouble() ?? 0;
+      if (lotRemaining <= epsilon) {
+        continue;
+      }
+      final double take = lotRemaining < remaining ? lotRemaining : remaining;
+      final int unitCostCents =
+          (row.data['unit_cost_cents'] as num?)?.toInt() ??
+              fallbackUnitCostCents;
+      final int lineCostCents = (take * unitCostCents).round();
+
+      await (_db.update(_db.stockLots)
+            ..where((StockLots tbl) => tbl.id.equals(lotId)))
+          .write(
+        StockLotsCompanion(
+          qtyRemaining: Value(lotRemaining - take),
+        ),
+      );
+      out.add(
+        _FifoAllocation(
+          lotId: lotId,
+          qty: take,
+          unitCostCents: unitCostCents,
+          lineCostCents: lineCostCents,
+        ),
+      );
+      remaining -= take;
+    }
+
+    if (remaining > epsilon) {
+      out.add(
+        _FifoAllocation(
+          lotId: null,
+          qty: remaining,
+          unitCostCents: fallbackUnitCostCents,
+          lineCostCents: (remaining * fallbackUnitCostCents).round(),
+        ),
+      );
+    }
+    return out;
+  }
+
+  Future<void> _releaseSaleAllocations({
+    required String saleId,
+    required bool markVoided,
+    DateTime? voidedAt,
+  }) async {
+    final String safeSaleId = saleId.trim();
+    if (safeSaleId.isEmpty) {
+      return;
+    }
+
+    final List<QueryRow> rows = await _db.customSelect(
+      '''
+      SELECT
+        a.id AS id,
+        a.lot_id AS lot_id,
+        COALESCE(a.qty, 0) AS qty
+      FROM sale_item_lot_allocations a
+      WHERE a.sale_id = ?
+        AND COALESCE(a.is_voided, 0) = 0
+      ORDER BY a.created_at ASC, a.id ASC
+      ''',
+      variables: <Variable<Object>>[
+        Variable<String>(safeSaleId),
+      ],
+    ).get();
+
+    for (final QueryRow row in rows) {
+      final String lotId = (row.readNullable<String>('lot_id') ?? '').trim();
+      if (lotId.isEmpty) {
+        continue;
+      }
+      final double qty = (row.data['qty'] as num?)?.toDouble() ?? 0;
+      if (qty.abs() <= 0.000001) {
+        continue;
+      }
+      final StockLot? lot = await (_db.select(_db.stockLots)
+            ..where((StockLots tbl) => tbl.id.equals(lotId)))
+          .getSingleOrNull();
+      if (lot == null) {
+        continue;
+      }
+      await (_db.update(_db.stockLots)
+            ..where((StockLots tbl) => tbl.id.equals(lotId)))
+          .write(
+        StockLotsCompanion(
+          qtyRemaining: Value(lot.qtyRemaining + qty),
+        ),
+      );
+    }
+
+    if (markVoided) {
+      await (_db.update(_db.saleItemLotAllocations)
+            ..where((SaleItemLotAllocations tbl) =>
+                tbl.saleId.equals(safeSaleId) & tbl.isVoided.equals(false)))
+          .write(
+        SaleItemLotAllocationsCompanion(
+          isVoided: const Value(true),
+          voidedAt: Value(voidedAt ?? DateTime.now()),
+        ),
+      );
+      return;
+    }
+
+    await (_db.delete(_db.saleItemLotAllocations)
+          ..where(
+              (SaleItemLotAllocations tbl) => tbl.saleId.equals(safeSaleId)))
+        .go();
+  }
+
+  Future<void> _reapplyVoidedSaleAllocations({
+    required String saleId,
+    required bool allowNegativeResult,
+  }) async {
+    final String safeSaleId = saleId.trim();
+    if (safeSaleId.isEmpty) {
+      return;
+    }
+
+    final List<QueryRow> rows = await _db.customSelect(
+      '''
+      SELECT
+        a.id AS id,
+        a.lot_id AS lot_id,
+        COALESCE(a.qty, 0) AS qty
+      FROM sale_item_lot_allocations a
+      WHERE a.sale_id = ?
+        AND COALESCE(a.is_voided, 0) = 1
+      ORDER BY a.created_at ASC, a.id ASC
+      ''',
+      variables: <Variable<Object>>[
+        Variable<String>(safeSaleId),
+      ],
+    ).get();
+
+    const double epsilon = 0.000001;
+    for (final QueryRow row in rows) {
+      final String lotId = (row.readNullable<String>('lot_id') ?? '').trim();
+      if (lotId.isEmpty) {
+        continue;
+      }
+      final double qty = (row.data['qty'] as num?)?.toDouble() ?? 0;
+      if (qty.abs() <= epsilon) {
+        continue;
+      }
+      final StockLot? lot = await (_db.select(_db.stockLots)
+            ..where((StockLots tbl) => tbl.id.equals(lotId)))
+          .getSingleOrNull();
+      if (lot == null) {
+        continue;
+      }
+      final double nextRemaining = lot.qtyRemaining - qty;
+      if (!allowNegativeResult && nextRemaining < -epsilon) {
+        throw const _SaleException(
+          'No hay stock FIFO suficiente para restaurar la venta con su costo original.',
+        );
+      }
+      await (_db.update(_db.stockLots)
+            ..where((StockLots tbl) => tbl.id.equals(lotId)))
+          .write(
+        StockLotsCompanion(
+          qtyRemaining: Value(nextRemaining),
+        ),
+      );
+    }
+
+    await (_db.update(_db.saleItemLotAllocations)
+          ..where((SaleItemLotAllocations tbl) =>
+              tbl.saleId.equals(safeSaleId) & tbl.isVoided.equals(true)))
+        .write(
+      const SaleItemLotAllocationsCompanion(
+        isVoided: Value(false),
+        voidedAt: Value(null),
+      ),
+    );
+  }
+
   Future<List<_SaleMovementDelta>> _loadSaleMovementDeltas({
     required String saleId,
     required bool isVoided,
@@ -1368,6 +1739,7 @@ class _ProcessedLine {
     required this.lineSubtotalCents,
     required this.lineTaxCents,
     required this.lineTotalCents,
+    required this.allocations,
   });
 
   final SaleItemInput item;
@@ -1379,6 +1751,7 @@ class _ProcessedLine {
   final int lineSubtotalCents;
   final int lineTaxCents;
   final int lineTotalCents;
+  final List<_FifoAllocation> allocations;
 }
 
 class _SaleEditProcessedLine {
@@ -1389,6 +1762,7 @@ class _SaleEditProcessedLine {
     required this.lineSubtotalCents,
     required this.lineTaxCents,
     required this.lineTotalCents,
+    required this.allocations,
   });
 
   final SaleItemInput item;
@@ -1397,6 +1771,7 @@ class _SaleEditProcessedLine {
   final int lineSubtotalCents;
   final int lineTaxCents;
   final int lineTotalCents;
+  final List<_FifoAllocation> allocations;
 }
 
 class _SaleMovementDelta {
@@ -1409,6 +1784,20 @@ class _SaleMovementDelta {
   final String productId;
   final String warehouseId;
   final double signedDelta;
+}
+
+class _FifoAllocation {
+  const _FifoAllocation({
+    required this.lotId,
+    required this.qty,
+    required this.unitCostCents,
+    required this.lineCostCents,
+  });
+
+  final String? lotId;
+  final double qty;
+  final int unitCostCents;
+  final int lineCostCents;
 }
 
 class _SaleException implements Exception {

@@ -133,8 +133,12 @@ class DataManagementLocalDataSource {
     'stock_balances',
     'stock_movements',
     'customers',
+    'purchases',
+    'purchase_items',
+    'stock_lots',
     'sales',
     'sale_items',
+    'sale_item_lot_allocations',
     'payments',
     'ipv_reports',
     'ipv_report_lines',
@@ -143,13 +147,25 @@ class DataManagementLocalDataSource {
     'app_settings',
     'audit_logs',
   ];
+  static const Set<String> _optionalRestorableTables = <String>{
+    'purchases',
+    'purchase_items',
+    'stock_lots',
+    'sale_item_lot_allocations',
+    'manual_ipv_reports',
+    'manual_ipv_report_lines',
+  };
   static const String _fullLicenseDataMessage =
       'Modo demo: importar/exportar productos y gestionar salvas de la base de datos '
       'esta disponible solo con licencia activa.';
   static const List<String> _resetOperationalTables = <String>[
     'payments',
+    'sale_item_lot_allocations',
     'sale_items',
     'sales',
+    'stock_lots',
+    'purchase_items',
+    'purchases',
     'ipv_report_lines',
     'ipv_reports',
     'manual_ipv_report_lines',
@@ -296,7 +312,8 @@ class DataManagementLocalDataSource {
               .toSet();
 
           for (final String table in _restorableTables) {
-            if (!backupTables.contains(table)) {
+            if (!backupTables.contains(table) &&
+                !_optionalRestorableTables.contains(table)) {
               throw Exception(
                 'La copia no es compatible: falta la tabla "$table".',
               );
@@ -308,6 +325,9 @@ class DataManagementLocalDataSource {
           }
 
           for (final String table in _restorableTables) {
+            if (!backupTables.contains(table)) {
+              continue;
+            }
             if (table == 'stock_movements') {
               final Set<String> backupColumns = await _loadBackupTableColumns(
                 backupAlias: backupAlias,

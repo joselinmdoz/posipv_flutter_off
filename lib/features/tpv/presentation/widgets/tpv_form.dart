@@ -44,6 +44,8 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
   bool _payTransfer = false;
   bool _payWallet = false;
   bool _payConsignment = true;
+  bool _useCashDenominationsOnClose = true;
+  bool _allowDiscounts = false;
   bool _loadingWarehouseOptions = true;
   bool _loadingEmployeeAccess = true;
   bool _saving = false;
@@ -80,6 +82,8 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
     _payTransfer = config.paymentMethods.contains('transfer');
     _payWallet = config.paymentMethods.contains('wallet');
     _payConsignment = config.paymentMethods.contains('consignment');
+    _useCashDenominationsOnClose = config.useCashDenominationsOnClose;
+    _allowDiscounts = config.allowDiscounts;
     _imagePath = widget.terminal?.imagePath;
     _selectedWarehouseId =
         widget.terminal?.warehouseId ?? _autoCreateWarehouseValue;
@@ -238,6 +242,8 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
         currencySymbol: currencySymbol,
         paymentMethods: methods,
         cashDenominationsCents: denominations,
+        useCashDenominationsOnClose: _useCashDenominationsOnClose,
+        allowDiscounts: _allowDiscounts,
       );
 
       if (_isEditing) {
@@ -563,6 +569,41 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
                       color: theme.colorScheme.onSurfaceVariant,
                       fontWeight: FontWeight.w600,
                     ),
+                  ),
+                  const SizedBox(height: 12),
+                  SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
+                    value: _useCashDenominationsOnClose,
+                    title: const Text(
+                      'Usar denominaciones al cerrar caja',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    subtitle: const Text(
+                      'Si se desactiva, el cierre permitirá introducir montos manualmente.',
+                    ),
+                    onChanged: _saving
+                        ? null
+                        : (bool value) {
+                            setState(
+                              () => _useCashDenominationsOnClose = value,
+                            );
+                          },
+                  ),
+                  SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
+                    value: _allowDiscounts,
+                    title: const Text(
+                      'Permitir descuentos en ventas (%)',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    subtitle: const Text(
+                      'Si se activa, en el cobro POS aparecerá un descuento porcentual.',
+                    ),
+                    onChanged: _saving
+                        ? null
+                        : (bool value) {
+                            setState(() => _allowDiscounts = value);
+                          },
                   ),
                   const SizedBox(height: 20),
                   _buildTextField(

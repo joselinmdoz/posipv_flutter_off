@@ -13,6 +13,7 @@ import '../../../shared/models/user_session.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../../shared/widgets/code_scanner_page.dart';
 import '../../auth/presentation/auth_providers.dart';
+import '../../almacenes/presentation/almacenes_providers.dart';
 import '../../clientes/data/clientes_local_datasource.dart';
 import '../../clientes/presentation/clientes_providers.dart';
 import '../../configuracion/data/configuracion_local_datasource.dart';
@@ -76,6 +77,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
   final bool _showingIpvSheet = false;
   bool _redirectingToTpv = false;
   PosSelectedCustomer? _selectedCustomer;
+  Map<String, String> _paymentMethodLabelsByCode = <String, String>{};
 
   @override
   void initState() {
@@ -127,12 +129,21 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       final UserSession? session = ref.read(currentSessionProvider);
       final Future<AppConfig> configFuture =
           ref.read(configuracionLocalDataSourceProvider).loadConfig();
+      final Future<List<AppPaymentMethodSetting>> paymentMethodsFuture = ref
+          .read(configuracionLocalDataSourceProvider)
+          .loadPaymentMethodSettings();
       trace.mark('session + config future');
 
       if (session == null || session.activeTerminalId == null) {
         AppConfig config = AppConfig.defaults;
+        Map<String, String> methodLabels = <String, String>{};
         try {
           config = await configFuture;
+        } catch (_) {}
+        try {
+          methodLabels = buildPaymentMethodLabelMap(
+            await paymentMethodsFuture,
+          );
         } catch (_) {}
         if (!mounted) {
           return;
@@ -142,6 +153,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
             currencySymbol: config.currencySymbol,
             allowNegativeStock: config.allowNegativeStock,
           );
+          _paymentMethodLabelsByCode = methodLabels;
           _loading = false;
         });
         trace.end('sin sesion activa');
@@ -153,8 +165,14 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       final Future<TpvTerminalView?> terminalFuture =
           tpvDs.getTerminalView(session.activeTerminalId!);
       AppConfig config = AppConfig.defaults;
+      Map<String, String> methodLabels = <String, String>{};
       try {
         config = await configFuture;
+      } catch (_) {}
+      try {
+        methodLabels = buildPaymentMethodLabelMap(
+          await paymentMethodsFuture,
+        );
       } catch (_) {}
       final TpvTerminalView? terminalView = await terminalFuture;
       trace.mark('terminal + config listos');
@@ -169,6 +187,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
             currencySymbol: config.currencySymbol,
             allowNegativeStock: config.allowNegativeStock,
           );
+          _paymentMethodLabelsByCode = methodLabels;
           _loading = false;
         });
         trace.end('tpv invalido');
@@ -191,6 +210,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
             currencySymbol: config.currencySymbol,
             allowNegativeStock: config.allowNegativeStock,
           );
+          _paymentMethodLabelsByCode = methodLabels;
           _loading = false;
         });
         trace.end('sin acceso tpv');
@@ -258,6 +278,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
         _terminalConfig = terminalConfig;
         _currencySymbol = terminalConfig.currencySymbol;
         _allowNegativeStock = config.allowNegativeStock;
+        _paymentMethodLabelsByCode = methodLabels;
         _loading = false;
       });
       trace.end('ok');
@@ -706,6 +727,8 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
             allowNegativeStock: _allowNegativeStock,
             customers: customers,
             onlinePaymentMethodCodes: onlinePaymentMethodCodes,
+            cashDenominationsCents: _terminalConfig.cashDenominationsCents,
+            allowDiscounts: _terminalConfig.allowDiscounts,
             selectedCustomer: _selectedCustomer,
             canCreateCustomer:
                 session?.hasPermission(AppPermissionKeys.customersManage) ??
@@ -743,7 +766,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     _applyCartLinesFromPayment(finalLines);
 
     await _submitSale(
-      discountCents: 0,
+      discountCents: result.discountCents,
       paymentLines: result.paymentLines,
       linesOverride: finalLines,
       isConsignmentSale: result.isConsignmentSale,
@@ -959,6 +982,8 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     }
     final InventarioLocalDataSource inventarioDs =
         ref.read(inventarioLocalDataSourceProvider);
+    final List<Warehouse> activeWarehouses =
+        await ref.read(almacenesLocalDataSourceProvider).listActiveWarehouses();
     final List<InventoryView> baseRows =
         await inventarioDs.listByWarehouse(_warehouseId!);
     final List<InventoryView> adjustRows = baseRows
@@ -974,7 +999,8 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
         await inventarioDs.listManualMovementReasons(movementType: 'in');
     final List<InventoryMovementReason> outputReasons =
         await inventarioDs.listManualMovementReasons(movementType: 'out');
-    if (entryReasons.isEmpty && outputReasons.isEmpty) {
+    final bool allowTransfer = activeWarehouses.length > 1;
+    if (entryReasons.isEmpty && outputReasons.isEmpty && !allowTransfer) {
       _show('No hay motivos disponibles para registrar movimientos.');
       return;
     }
@@ -993,7 +1019,18 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
           adjustRows: adjustRows,
           entryReasons: entryReasons,
           outputReasons: outputReasons,
+          allowTransfer: allowTransfer,
           currencySymbol: _currencySymbol,
+          warehouseOptions: activeWarehouses
+              .map(
+                (Warehouse row) => InventoryMovementWarehouseOption(
+                  id: row.id,
+                  name: row.name,
+                ),
+              )
+              .toList(growable: false),
+          initialWarehouseId: _warehouseId,
+          transferFixedDestinationWarehouseId: _warehouseId,
           loadAdjustRowsForWarehouse: (String warehouseId) async {
             final List<InventoryView> rows =
                 await inventarioDs.listByWarehouse(warehouseId);
@@ -1011,10 +1048,67 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     }
 
     final String safeProductId = result['productId'] as String;
-    final bool isEntry = result['isEntry'] as bool;
+    final String movementKind =
+        ((result['movementKind'] as String?) ?? '').trim();
+    final bool isTransfer =
+        movementKind == PosInventoryMovementDialog.kindTransfer;
+    final bool isEntry = movementKind == PosInventoryMovementDialog.kindEntry;
     final double qty = result['qty'] as double;
-    final String safeReasonCode = result['reasonCode'] as String;
+    final String safeReasonCode =
+        ((result['reasonCode'] as String?) ?? '').trim();
     final String note = (result['note'] as String).trim();
+    final String currentWarehouseId = (_warehouseId ?? '').trim();
+    final String safeWarehouseId =
+        ((result['warehouseId'] as String?) ?? currentWarehouseId).trim();
+    final String safeDestinationWarehouseId =
+        ((result['destinationWarehouseId'] as String?) ?? currentWarehouseId)
+            .trim();
+
+    if (isTransfer) {
+      if (safeWarehouseId.isEmpty || safeDestinationWarehouseId.isEmpty) {
+        _show('Selecciona origen y destino para la transferencia.');
+        return;
+      }
+      if (safeWarehouseId == safeDestinationWarehouseId) {
+        _show('El origen y el destino no pueden ser iguales.');
+        return;
+      }
+      if (safeWarehouseId != currentWarehouseId &&
+          safeDestinationWarehouseId != currentWarehouseId) {
+        _show(
+          'Desde el POS solo puedes transferir movimientos que involucren el almacén del TPV.',
+        );
+        return;
+      }
+      try {
+        await inventarioDs.createWarehouseTransfer(
+          productId: safeProductId,
+          sourceWarehouseId: safeWarehouseId,
+          destinationWarehouseId: safeDestinationWarehouseId,
+          qty: qty,
+          userId: session.userId,
+          note: note.isEmpty ? 'Transferencia rápida desde TPV' : note,
+        );
+        await _reloadPosInventory();
+        _show('Transferencia registrada desde TPV.');
+      } catch (e) {
+        _show('No se pudo registrar la transferencia: $e');
+      }
+      return;
+    }
+
+    if (isEntry) {
+      _show(
+        'Para mantener la trazabilidad FIFO, usa el tipo "Transferir" y selecciona el almacén de origen.',
+      );
+      return;
+    }
+    if (safeWarehouseId != currentWarehouseId) {
+      _show(
+        'Los ajustes manuales del POS solo aplican al almacén del TPV. Para mover entre almacenes usa "Transferir".',
+      );
+      return;
+    }
 
     final InventoryView? selectedProduct = rowByProductId[safeProductId];
     final double currentQty = selectedProduct?.qty ?? 0;
@@ -1149,6 +1243,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
           expectedPayments: expectedConfigured,
           openingFloatCents: openSession.openingFloatCents,
           denominations: _terminalConfig.cashDenominationsCents,
+          useDenominationsOnClose: _terminalConfig.useCashDenominationsOnClose,
           currencySymbol: _terminalConfig.currencySymbol,
           paymentMethodLabel: _paymentMethodLabel,
           formatCents: _formatCentsWithSymbol,
@@ -1211,20 +1306,11 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
   }
 
   String _paymentMethodLabel(String method) {
-    switch (method) {
-      case 'cash':
-        return 'Efectivo';
-      case 'card':
-        return 'Tarjeta';
-      case 'transfer':
-        return 'Transferencia';
-      case 'wallet':
-        return 'Billetera';
-      case 'consignment':
-        return 'Consignación';
-      default:
-        return method;
+    final String code = method.trim().toLowerCase();
+    if (code.isEmpty) {
+      return 'Metodo';
     }
+    return _paymentMethodLabelsByCode[code] ?? defaultPaymentMethodLabel(code);
   }
 
   String _formatQty(double qty) {

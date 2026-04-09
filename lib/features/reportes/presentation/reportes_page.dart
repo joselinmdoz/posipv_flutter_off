@@ -47,6 +47,7 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
   List<_AnalyticsSalesSourceOption> _salesSourceOptions =
       _defaultSalesSourceOptions();
   String _selectedSalesSourceKey = _allSalesSourceToken;
+  Map<String, String> _paymentMethodLabelsByCode = <String, String>{};
   String _currencySymbol = AppConfig.defaultCurrencySymbol;
   bool _loading = true;
   bool _exportingAnalytics = false;
@@ -95,17 +96,30 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
         ref.read(reportesLocalDataSourceProvider);
     final ConfiguracionLocalDataSource configDs =
         ref.read(configuracionLocalDataSourceProvider);
+    final Future<AppConfig> configFuture = configDs.loadConfig();
+    final Future<List<AppPaymentMethodSetting>> paymentMethodsFuture =
+        configDs.loadPaymentMethodSettings();
 
     String currencySymbol = _currencySymbol;
+    Map<String, String> paymentMethodLabels = _paymentMethodLabelsByCode;
     SalesAnalyticsSnapshot? snapshot;
     List<_AnalyticsSalesSourceOption> sourceOptions = _salesSourceOptions;
     String selectedSourceKey = _selectedSalesSourceKey;
     String? warningMessage;
 
     try {
-      currencySymbol = (await configDs.loadConfig()).currencySymbol;
+      currencySymbol = (await configFuture).currencySymbol;
     } catch (e) {
       warningMessage = 'Configuracion: $e';
+    }
+    try {
+      paymentMethodLabels = buildPaymentMethodLabelMap(
+        await paymentMethodsFuture,
+      );
+    } catch (e) {
+      final String message = 'Métodos de pago: $e';
+      warningMessage =
+          warningMessage == null ? message : '$warningMessage\n$message';
     }
 
     try {
@@ -146,6 +160,7 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
 
     setState(() {
       _currencySymbol = currencySymbol;
+      _paymentMethodLabelsByCode = paymentMethodLabels;
       _analytics = snapshot;
       _salesSourceOptions = sourceOptions;
       _selectedSalesSourceKey = selectedSourceKey;
@@ -186,8 +201,12 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
         ref.read(reportesLocalDataSourceProvider);
     final ConfiguracionLocalDataSource configDs =
         ref.read(configuracionLocalDataSourceProvider);
+    final Future<AppConfig> configFuture = configDs.loadConfig();
+    final Future<List<AppPaymentMethodSetting>> paymentMethodsFuture =
+        configDs.loadPaymentMethodSettings();
 
     String currencySymbol = _currencySymbol;
+    Map<String, String> paymentMethodLabels = _paymentMethodLabelsByCode;
     List<SalesPaymentReportRow> rows = <SalesPaymentReportRow>[];
     List<String> methodKeys = _paymentMethodKeys;
     List<_AnalyticsSalesSourceOption> sourceOptions = _salesSourceOptions;
@@ -198,9 +217,18 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
     String? warningMessage;
 
     try {
-      currencySymbol = (await configDs.loadConfig()).currencySymbol;
+      currencySymbol = (await configFuture).currencySymbol;
     } catch (e) {
       warningMessage = 'Configuracion: $e';
+    }
+    try {
+      paymentMethodLabels = buildPaymentMethodLabelMap(
+        await paymentMethodsFuture,
+      );
+    } catch (e) {
+      final String message = 'Métodos de pago: $e';
+      warningMessage =
+          warningMessage == null ? message : '$warningMessage\n$message';
     }
 
     try {
@@ -273,6 +301,7 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
 
     setState(() {
       _currencySymbol = currencySymbol;
+      _paymentMethodLabelsByCode = paymentMethodLabels;
       _salesSourceOptions = sourceOptions;
       _selectedSalesSourceKey = selectedSourceKey;
       _paymentMethodKeys = methodKeys;
@@ -500,21 +529,11 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
   }
 
   String _paymentMethodLabel(String method) {
-    switch (method.trim().toLowerCase()) {
-      case 'cash':
-        return 'Efectivo';
-      case 'card':
-        return 'Tarjeta';
-      case 'transfer':
-        return 'Transferencia';
-      case 'wallet':
-        return 'Billetera';
-      case 'consignment':
-        return 'Consignación';
-      default:
-        final String clean = method.trim();
-        return clean.isEmpty ? 'Método' : clean;
+    final String code = method.trim().toLowerCase();
+    if (code.isEmpty) {
+      return 'Metodo';
     }
+    return _paymentMethodLabelsByCode[code] ?? defaultPaymentMethodLabel(code);
   }
 
   String _reportTypeLabel(_ReportViewType type) {
@@ -535,6 +554,10 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
       _paymentCurrentPage = 1;
     });
     await _loadCurrentReport(showLoader: true);
+  }
+
+  void _openLotsStatusPage() {
+    context.push('/reportes-lotes');
   }
 
   static List<_AnalyticsSalesSourceOption> _defaultSalesSourceOptions() {
@@ -1115,6 +1138,11 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
       appBarActions: _selectedReport == _ReportViewType.salesAnalytics
           ? <Widget>[
               IconButton(
+                tooltip: 'Estado de lotes',
+                onPressed: _openLotsStatusPage,
+                icon: const Icon(Icons.inventory_2_outlined),
+              ),
+              IconButton(
                 tooltip: 'Descargar',
                 onPressed: _exportingAnalytics ? null : _exportAnalytics,
                 icon: _exportingAnalytics
@@ -1126,7 +1154,13 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
                     : const Icon(Icons.download_rounded),
               ),
             ]
-          : const <Widget>[],
+          : <Widget>[
+              IconButton(
+                tooltip: 'Estado de lotes',
+                onPressed: _openLotsStatusPage,
+                icon: const Icon(Icons.inventory_2_outlined),
+              ),
+            ],
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
@@ -1146,6 +1180,15 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
                         }
                         _changeReportType(value);
                       },
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        onPressed: _openLotsStatusPage,
+                        icon: const Icon(Icons.inventory_2_outlined, size: 18),
+                        label: const Text('Estado de lotes'),
+                      ),
                     ),
                     const SizedBox(height: 12),
                     if (_selectedReport ==

@@ -1,6 +1,11 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:drift/drift.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 import 'package:uuid/uuid.dart';
 
 import '../../../core/db/app_database.dart';
@@ -12,6 +17,7 @@ class InventoryView {
     required this.productName,
     required this.sku,
     required this.qty,
+    required this.totalQty,
     required this.priceCents,
     required this.taxRateBps,
     this.currencyCode = 'USD',
@@ -22,6 +28,7 @@ class InventoryView {
   final String productName;
   final String sku;
   final double qty;
+  final double totalQty;
   final int priceCents;
   final int taxRateBps;
   final String currencyCode;
@@ -166,6 +173,38 @@ class InventoryArchivedMovementView {
   final String? voidNote;
 }
 
+class InventoryMovementProductOption {
+  const InventoryMovementProductOption({
+    required this.productId,
+    required this.productName,
+    required this.sku,
+  });
+
+  final String productId;
+  final String productName;
+  final String sku;
+}
+
+class InventoryMovementExportFilters {
+  const InventoryMovementExportFilters({
+    this.warehouse = 'Todos',
+    this.movementType = 'Todos',
+    this.reason = 'Todos',
+    this.product = 'Todos',
+    this.dateFrom = '-',
+    this.dateTo = '-',
+    this.search = '-',
+  });
+
+  final String warehouse;
+  final String movementType;
+  final String reason;
+  final String product;
+  final String dateFrom;
+  final String dateTo;
+  final String search;
+}
+
 class InventarioLocalDataSource {
   InventarioLocalDataSource(
     this._db, {
@@ -179,6 +218,9 @@ class InventarioLocalDataSource {
   final Uuid _uuid;
 
   static const String _movementReasonsKey = 'inventory_movement_reasons_v1';
+  static const String _exportMovementsBlockedMessage =
+      'Modo demo: exportar movimientos de inventario (CSV/PDF) '
+      'esta disponible solo con licencia activa.';
 
   static const List<InventoryMovementReason> _defaultReasons =
       <InventoryMovementReason>[
@@ -190,9 +232,23 @@ class InventarioLocalDataSource {
       hiddenInManualSelector: true,
     ),
     InventoryMovementReason(
+      code: 'consignment_sale',
+      label: 'Venta en consignacion',
+      appliesTo: 'out',
+      isSystem: true,
+      hiddenInManualSelector: true,
+    ),
+    InventoryMovementReason(
       code: 'purchase',
       label: 'Compra',
       appliesTo: 'in',
+    ),
+    InventoryMovementReason(
+      code: 'transfer',
+      label: 'Transferencia',
+      appliesTo: 'out',
+      isSystem: true,
+      hiddenInManualSelector: true,
     ),
     InventoryMovementReason(
       code: 'adjust',
@@ -280,6 +336,7 @@ class InventarioLocalDataSource {
         productName: row.read<String>('name'),
         sku: row.read<String>('sku'),
         qty: row.read<double>('qty'),
+        totalQty: row.read<double>('qty'),
         priceCents: row.read<int>('price_cents'),
         taxRateBps: row.read<int>('tax_rate_bps'),
         currencyCode:
@@ -340,6 +397,7 @@ class InventarioLocalDataSource {
         productName: row.read<String>('name'),
         sku: row.read<String>('sku'),
         qty: row.read<double>('qty'),
+        totalQty: row.read<double>('qty'),
         priceCents: row.read<int>('price_cents'),
         taxRateBps: row.read<int>('tax_rate_bps'),
         currencyCode:
@@ -433,6 +491,7 @@ class InventarioLocalDataSource {
         productName: row.read<String>('name'),
         sku: row.read<String>('sku'),
         qty: row.read<double>('qty'),
+        totalQty: row.read<double>('qty'),
         priceCents: row.read<int>('price_cents'),
         taxRateBps: row.read<int>('tax_rate_bps'),
         currencyCode:
@@ -453,6 +512,13 @@ class InventarioLocalDataSource {
     final int safeLimit = limit < 1 ? 1 : limit;
     final int safeOffset = offset < 0 ? 0 : offset;
     final String cleanedSearch = (search ?? '').trim().toLowerCase();
+    final String? cleanWarehouseId =
+        (warehouseId == null || warehouseId.trim().isEmpty)
+            ? null
+            : warehouseId.trim();
+    final String scopedQtyExpr = cleanWarehouseId == null
+        ? 'COALESCE(SUM(sb.qty), 0)'
+        : 'COALESCE(SUM(CASE WHEN sb.warehouse_id = ? THEN sb.qty ELSE 0 END), 0)';
     final StringBuffer sql = StringBuffer(
       '''
       SELECT
@@ -463,17 +529,16 @@ class InventarioLocalDataSource {
         p.tax_rate_bps,
         p.currency_code,
         p.image_path,
-        COALESCE(SUM(sb.qty), 0) AS qty
+        $scopedQtyExpr AS qty,
+        COALESCE(SUM(sb.qty), 0) AS total_qty
       FROM products p
       LEFT JOIN stock_balances sb
         ON sb.product_id = p.id
       ''',
     );
     final List<Variable<Object>> variables = <Variable<Object>>[];
-
-    if (warehouseId != null && warehouseId.trim().isNotEmpty) {
-      sql.write(' AND sb.warehouse_id = ?');
-      variables.add(Variable<String>(warehouseId.trim()));
+    if (cleanWarehouseId != null) {
+      variables.add(Variable<String>(cleanWarehouseId));
     }
 
     sql.write(
@@ -518,20 +583,19 @@ class InventarioLocalDataSource {
       ''',
     );
 
-    const String qtyExpr = 'COALESCE(SUM(sb.qty), 0)';
     switch (filter) {
       case InventoryListFilter.all:
         break;
       case InventoryListFilter.inStock:
-        sql.write(' HAVING $qtyExpr > ?');
+        sql.write(' HAVING qty > ?');
         variables.add(Variable<double>(lowStockThreshold));
         break;
       case InventoryListFilter.lowStock:
-        sql.write(' HAVING $qtyExpr > 0 AND $qtyExpr <= ?');
+        sql.write(' HAVING qty > 0 AND qty <= ?');
         variables.add(Variable<double>(lowStockThreshold));
         break;
       case InventoryListFilter.outOfStock:
-        sql.write(' HAVING $qtyExpr <= 0');
+        sql.write(' HAVING qty <= 0');
         break;
     }
 
@@ -559,6 +623,7 @@ class InventarioLocalDataSource {
         productName: row.read<String>('name'),
         sku: row.read<String>('sku'),
         qty: row.read<double>('qty'),
+        totalQty: row.read<double>('total_qty'),
         priceCents: row.read<int>('price_cents'),
         taxRateBps: row.read<int>('tax_rate_bps'),
         currencyCode:
@@ -713,6 +778,9 @@ class InventarioLocalDataSource {
     String? warehouseId,
     String? movementType,
     String? reasonCode,
+    String? productId,
+    DateTime? createdFrom,
+    DateTime? createdTo,
     int limit = 250,
   }) async {
     final String? safeType = movementType == null || movementType == 'all'
@@ -778,6 +846,18 @@ class InventarioLocalDataSource {
       sql.write(' AND LOWER(COALESCE(sm.reason_code, \'\')) = ?');
       variables.add(Variable<String>(safeReason));
     }
+    if (productId != null && productId.trim().isNotEmpty) {
+      sql.write(' AND sm.product_id = ?');
+      variables.add(Variable<String>(productId.trim()));
+    }
+    if (createdFrom != null) {
+      sql.write(' AND sm.created_at >= ?');
+      variables.add(Variable<DateTime>(createdFrom));
+    }
+    if (createdTo != null) {
+      sql.write(' AND sm.created_at < ?');
+      variables.add(Variable<DateTime>(createdTo));
+    }
 
     sql.write(' ORDER BY sm.created_at DESC LIMIT ?');
     variables.add(Variable<int>(limit < 1 ? 1 : limit));
@@ -833,6 +913,205 @@ class InventarioLocalDataSource {
         createdAt: row.read<DateTime>('created_at'),
       );
     }).toList();
+  }
+
+  Future<List<InventoryMovementProductOption>> listMovementProducts({
+    String? warehouseId,
+    int limit = 1000,
+  }) async {
+    final StringBuffer sql = StringBuffer(
+      '''
+      SELECT
+        sm.product_id AS product_id,
+        COALESCE(p.name, '') AS product_name,
+        COALESCE(p.sku, '') AS sku
+      FROM stock_movements sm
+      LEFT JOIN products p ON p.id = sm.product_id
+      WHERE COALESCE(sm.is_voided, 0) = 0
+      ''',
+    );
+    final List<Variable<Object>> variables = <Variable<Object>>[];
+    if (warehouseId != null && warehouseId.trim().isNotEmpty) {
+      sql.write(' AND sm.warehouse_id = ?');
+      variables.add(Variable<String>(warehouseId.trim()));
+    }
+    sql.write(
+      '''
+      GROUP BY sm.product_id, p.name, p.sku
+      ORDER BY LOWER(COALESCE(p.name, '')), LOWER(COALESCE(p.sku, ''))
+      LIMIT ?
+      ''',
+    );
+    variables.add(Variable<int>(limit < 1 ? 1 : limit));
+
+    final List<QueryRow> rows = await _db
+        .customSelect(
+          sql.toString(),
+          variables: variables,
+        )
+        .get();
+
+    return rows
+        .map((QueryRow row) {
+          final String productId =
+              (row.readNullable<String>('product_id') ?? '').trim();
+          if (productId.isEmpty) {
+            return null;
+          }
+          final String name =
+              (row.readNullable<String>('product_name') ?? '').trim();
+          final String sku = (row.readNullable<String>('sku') ?? '').trim();
+          return InventoryMovementProductOption(
+            productId: productId,
+            productName: name.isEmpty ? 'Producto' : name,
+            sku: sku.isEmpty ? '-' : sku,
+          );
+        })
+        .whereType<InventoryMovementProductOption>()
+        .toList(growable: false);
+  }
+
+  Future<String> exportMovementsCsv({
+    required List<InventoryMovementView> movements,
+    InventoryMovementExportFilters filters =
+        const InventoryMovementExportFilters(),
+  }) async {
+    await _licenseService.requireFullAccess(
+      message: _exportMovementsBlockedMessage,
+    );
+    if (movements.isEmpty) {
+      throw Exception('No hay movimientos filtrados para exportar.');
+    }
+    final DateTime now = DateTime.now();
+    final String stamp = _ts(now);
+    final Directory dir = await _resolveMovementsExportDir();
+    final File file = File(p.join(dir.path, 'movimientos-$stamp.csv'));
+
+    final StringBuffer csv = StringBuffer()
+      ..writeln('Reporte,Movimientos de inventario')
+      ..writeln('Generado,${_csvCell(_formatDateTimeExport(now))}')
+      ..writeln('Registros,${movements.length}')
+      ..writeln('Almacen,${_csvCell(filters.warehouse)}')
+      ..writeln('Tipo,${_csvCell(filters.movementType)}')
+      ..writeln('Motivo,${_csvCell(filters.reason)}')
+      ..writeln('Producto,${_csvCell(filters.product)}')
+      ..writeln('Fecha desde,${_csvCell(filters.dateFrom)}')
+      ..writeln('Fecha hasta,${_csvCell(filters.dateTo)}')
+      ..writeln('Busqueda,${_csvCell(filters.search)}')
+      ..writeln('')
+      ..writeln(
+        'ID,Fecha,Almacen,Producto,SKU,Tipo,Cantidad,Motivo,Codigo motivo,Origen,Ref tipo,Ref ID,Nota,Usuario,Usuario ID',
+      );
+
+    for (final InventoryMovementView row in movements) {
+      csv.writeln(
+        <String>[
+          _csvCell(row.id),
+          _csvCell(_formatDateTimeExport(row.createdAt)),
+          _csvCell(row.warehouseName),
+          _csvCell(row.productName),
+          _csvCell(row.sku),
+          _csvCell(_movementTypeLabel(row.movementType)),
+          _csvCell(_formatQtyForExport(row.qty)),
+          _csvCell(row.reasonLabel),
+          _csvCell(row.reasonCode),
+          _csvCell(row.movementSource),
+          _csvCell(_safeText(row.refType)),
+          _csvCell(_safeText(row.refId)),
+          _csvCell(_safeText(row.note)),
+          _csvCell(row.username),
+          _csvCell(row.createdBy),
+        ].join(','),
+      );
+    }
+
+    await file.writeAsString(csv.toString(), encoding: utf8, flush: true);
+    return file.path;
+  }
+
+  Future<String> exportMovementsPdf({
+    required List<InventoryMovementView> movements,
+    InventoryMovementExportFilters filters =
+        const InventoryMovementExportFilters(),
+  }) async {
+    await _licenseService.requireFullAccess(
+      message: _exportMovementsBlockedMessage,
+    );
+    if (movements.isEmpty) {
+      throw Exception('No hay movimientos filtrados para exportar.');
+    }
+    final DateTime now = DateTime.now();
+    final String stamp = _ts(now);
+    final Directory dir = await _resolveMovementsExportDir();
+    final File file = File(p.join(dir.path, 'movimientos-$stamp.pdf'));
+
+    final pw.Document doc = pw.Document();
+    final String generatedAt = _formatDateTimeExport(now);
+    doc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.fromLTRB(20, 20, 20, 20),
+        build: (pw.Context context) {
+          return <pw.Widget>[
+            pw.Text(
+              'Movimientos de Inventario',
+              style: pw.TextStyle(
+                fontSize: 16,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+            pw.SizedBox(height: 6),
+            pw.Text(
+              'Generado: $generatedAt',
+              style: const pw.TextStyle(fontSize: 10),
+            ),
+            pw.Text(
+              'Registros: ${movements.length}',
+              style: const pw.TextStyle(fontSize: 10),
+            ),
+            pw.SizedBox(height: 10),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(8),
+              decoration: pw.BoxDecoration(
+                color: PdfColors.grey100,
+                border: pw.Border.all(color: PdfColors.grey300),
+                borderRadius: pw.BorderRadius.circular(6),
+              ),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: <pw.Widget>[
+                  pw.Text('Filtros aplicados',
+                      style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                  pw.SizedBox(height: 4),
+                  pw.Text('Almacén: ${filters.warehouse}',
+                      style: const pw.TextStyle(fontSize: 9)),
+                  pw.Text('Tipo: ${filters.movementType}',
+                      style: const pw.TextStyle(fontSize: 9)),
+                  pw.Text('Motivo: ${filters.reason}',
+                      style: const pw.TextStyle(fontSize: 9)),
+                  pw.Text('Producto: ${filters.product}',
+                      style: const pw.TextStyle(fontSize: 9)),
+                  pw.Text('Desde: ${filters.dateFrom}',
+                      style: const pw.TextStyle(fontSize: 9)),
+                  pw.Text('Hasta: ${filters.dateTo}',
+                      style: const pw.TextStyle(fontSize: 9)),
+                  pw.Text('Búsqueda: ${filters.search}',
+                      style: const pw.TextStyle(fontSize: 9)),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 10),
+            ...movements.asMap().entries.map(
+                  (MapEntry<int, InventoryMovementView> entry) =>
+                      _buildMovementPdfCard(entry.value, index: entry.key + 1),
+                ),
+          ];
+        },
+      ),
+    );
+
+    await file.writeAsBytes(await doc.save(), flush: true);
+    return file.path;
   }
 
   Future<List<InventoryArchivedMovementView>> listArchivedMovements({
@@ -992,6 +1271,15 @@ class InventarioLocalDataSource {
   }) async {
     await _licenseService.requireWriteAccess();
     final String safeType = _sanitizeMovementType(type);
+    final String safeProductId = productId.trim();
+    final String safeWarehouseId = warehouseId.trim();
+    final String safeUserId = userId.trim();
+    if (safeProductId.isEmpty || safeWarehouseId.isEmpty) {
+      throw Exception('Producto o almacén inválido.');
+    }
+    if (safeUserId.isEmpty) {
+      throw Exception('Usuario inválido.');
+    }
     if (qty <= 0) {
       throw Exception('La cantidad debe ser mayor que 0.');
     }
@@ -1006,11 +1294,13 @@ class InventarioLocalDataSource {
     }
 
     await _db.transaction(() async {
+      final DateTime now = DateTime.now();
+      final String movementId = _uuid.v4();
       final StockBalance? current = await (_db.select(_db.stockBalances)
             ..where(
               (StockBalances tbl) =>
-                  tbl.productId.equals(productId) &
-                  tbl.warehouseId.equals(warehouseId),
+                  tbl.productId.equals(safeProductId) &
+                  tbl.warehouseId.equals(safeWarehouseId),
             ))
           .getSingleOrNull();
       final double oldQty = current?.qty ?? 0;
@@ -1020,16 +1310,16 @@ class InventarioLocalDataSource {
       }
 
       await _upsertStockBalance(
-        productId: productId,
-        warehouseId: warehouseId,
+        productId: safeProductId,
+        warehouseId: safeWarehouseId,
         qty: nextQty,
       );
 
       await _db.into(_db.stockMovements).insert(
             StockMovementsCompanion.insert(
-              id: _uuid.v4(),
-              productId: productId,
-              warehouseId: warehouseId,
+              id: movementId,
+              productId: safeProductId,
+              warehouseId: safeWarehouseId,
               type: safeType,
               qty: qty,
               reasonCode: Value(safeReasonCode),
@@ -1037,7 +1327,205 @@ class InventarioLocalDataSource {
               refType: const Value('manual_move'),
               refId: const Value(null),
               note: Value(_normalizeOptional(note)),
-              createdBy: userId,
+              createdBy: safeUserId,
+              createdAt: Value(now),
+            ),
+          );
+
+      await _applyManualMovementLotImpact(
+        movementId: movementId,
+        productId: safeProductId,
+        warehouseId: safeWarehouseId,
+        type: safeType,
+        qty: qty.abs(),
+        note: _normalizeOptional(note),
+        userId: safeUserId,
+        at: now,
+      );
+    });
+  }
+
+  Future<void> createWarehouseTransfer({
+    required String productId,
+    required String sourceWarehouseId,
+    required String destinationWarehouseId,
+    required double qty,
+    required String userId,
+    String? note,
+  }) async {
+    await _licenseService.requireWriteAccess();
+    final String safeProductId = productId.trim();
+    final String safeSourceWarehouseId = sourceWarehouseId.trim();
+    final String safeDestinationWarehouseId = destinationWarehouseId.trim();
+    final String safeUserId = userId.trim();
+    if (safeProductId.isEmpty ||
+        safeSourceWarehouseId.isEmpty ||
+        safeDestinationWarehouseId.isEmpty) {
+      throw Exception('Producto o almacén inválido.');
+    }
+    if (safeSourceWarehouseId == safeDestinationWarehouseId) {
+      throw Exception(
+        'El almacén destino debe ser diferente al almacén de origen.',
+      );
+    }
+    if (safeUserId.isEmpty) {
+      throw Exception('Usuario inválido.');
+    }
+    if (qty <= 0) {
+      throw Exception('La cantidad debe ser mayor que 0.');
+    }
+
+    await _db.transaction(() async {
+      final StockBalance? sourceBalance = await (_db.select(_db.stockBalances)
+            ..where(
+              (StockBalances tbl) =>
+                  tbl.productId.equals(safeProductId) &
+                  tbl.warehouseId.equals(safeSourceWarehouseId),
+            ))
+          .getSingleOrNull();
+      final StockBalance? destinationBalance =
+          await (_db.select(_db.stockBalances)
+                ..where(
+                  (StockBalances tbl) =>
+                      tbl.productId.equals(safeProductId) &
+                      tbl.warehouseId.equals(safeDestinationWarehouseId),
+                ))
+              .getSingleOrNull();
+      final double sourceQty = sourceBalance?.qty ?? 0;
+      if (qty > sourceQty) {
+        throw Exception('La transferencia supera el stock disponible.');
+      }
+      final double destinationQty = destinationBalance?.qty ?? 0;
+      final DateTime now = DateTime.now();
+      final String transferId = _uuid.v4();
+      final String outMovementId = _uuid.v4();
+      final String inMovementId = _uuid.v4();
+      final String? normalizedNote = _normalizeOptional(note);
+
+      await _upsertStockBalance(
+        productId: safeProductId,
+        warehouseId: safeSourceWarehouseId,
+        qty: sourceQty - qty,
+      );
+      await _upsertStockBalance(
+        productId: safeProductId,
+        warehouseId: safeDestinationWarehouseId,
+        qty: destinationQty + qty,
+      );
+
+      final int fallbackCostCents = await _productCostCents(safeProductId);
+      final List<_ManualLotAllocation> sourceAllocations =
+          await _consumeFifoLotsForManualOut(
+        movementId: outMovementId,
+        productId: safeProductId,
+        warehouseId: safeSourceWarehouseId,
+        qty: qty,
+        fallbackUnitCostCents: fallbackCostCents,
+        note: normalizedNote,
+        at: now,
+      );
+
+      await _db.into(_db.stockMovements).insert(
+            StockMovementsCompanion.insert(
+              id: outMovementId,
+              productId: safeProductId,
+              warehouseId: safeSourceWarehouseId,
+              type: 'out',
+              qty: qty,
+              reasonCode: const Value('transfer'),
+              movementSource: const Value('transfer'),
+              refType: const Value('transfer_out'),
+              refId: Value(transferId),
+              note: Value(normalizedNote),
+              createdBy: safeUserId,
+              createdAt: Value(now),
+            ),
+          );
+
+      final List<_ManualLotAllocation> destinationAllocations =
+          <_ManualLotAllocation>[];
+      for (final _ManualLotAllocation allocation in sourceAllocations) {
+        final String destinationLotId = _uuid.v4();
+        final double lineQty = allocation.qty <= 0 ? 0 : allocation.qty;
+        if (lineQty <= 0.000001) {
+          continue;
+        }
+        await _db.into(_db.stockLots).insert(
+              StockLotsCompanion.insert(
+                id: destinationLotId,
+                productId: safeProductId,
+                warehouseId: safeDestinationWarehouseId,
+                purchaseItemId: Value(allocation.purchaseItemId),
+                sourceType: const Value('transfer'),
+                sourceId: Value(transferId),
+                qtyIn: Value(lineQty),
+                qtyRemaining: Value(lineQty),
+                unitCostCents: Value(allocation.unitCostCents),
+                receivedAt: Value(now),
+                createdAt: Value(now),
+                note: Value(normalizedNote),
+              ),
+            );
+        destinationAllocations.add(
+          _ManualLotAllocation(
+            lotId: destinationLotId,
+            qty: lineQty,
+            unitCostCents: allocation.unitCostCents,
+            lineCostCents: (lineQty * allocation.unitCostCents).round(),
+            purchaseItemId: allocation.purchaseItemId,
+          ),
+        );
+      }
+
+      await _db.into(_db.stockMovements).insert(
+            StockMovementsCompanion.insert(
+              id: inMovementId,
+              productId: safeProductId,
+              warehouseId: safeDestinationWarehouseId,
+              type: 'in',
+              qty: qty,
+              reasonCode: const Value('transfer'),
+              movementSource: const Value('transfer'),
+              refType: const Value('transfer_in'),
+              refId: Value(transferId),
+              note: Value(normalizedNote),
+              createdBy: safeUserId,
+              createdAt: Value(now),
+            ),
+          );
+
+      await _recordManualMovementLotState(
+        movementId: outMovementId,
+        userId: safeUserId,
+        state: _ManualMovementLotState(
+          type: 'out',
+          allocations: sourceAllocations,
+        ),
+      );
+      await _recordManualMovementLotState(
+        movementId: inMovementId,
+        userId: safeUserId,
+        state: _ManualMovementLotState(
+          type: 'in',
+          allocations: destinationAllocations,
+        ),
+      );
+
+      await _db.into(_db.auditLogs).insert(
+            AuditLogsCompanion.insert(
+              id: _uuid.v4(),
+              userId: Value(safeUserId),
+              action: 'STOCK_TRANSFER_CREATED',
+              entity: 'stock_transfer',
+              entityId: transferId,
+              payloadJson: jsonEncode(<String, Object?>{
+                'productId': safeProductId,
+                'sourceWarehouseId': safeSourceWarehouseId,
+                'destinationWarehouseId': safeDestinationWarehouseId,
+                'qty': qty,
+                'outMovementId': outMovementId,
+                'inMovementId': inMovementId,
+              }),
             ),
           );
     });
@@ -1160,6 +1648,26 @@ class InventarioLocalDataSource {
         );
       }
 
+      await _revertManualMovementLotImpact(
+        movementId: existing.id,
+        productId: existing.productId,
+        warehouseId: existing.warehouseId,
+        type: _normalizeMovementType(existing.type, existing.qty),
+        qty: existing.qty.abs(),
+      );
+
+      final DateTime now = DateTime.now();
+      await _applyManualMovementLotImpact(
+        movementId: safeMovementId,
+        productId: safeProductId,
+        warehouseId: safeWarehouseId,
+        type: safeType,
+        qty: qty.abs(),
+        note: _normalizeOptional(note),
+        userId: safeUserId,
+        at: now,
+      );
+
       await (_db.update(_db.stockMovements)
             ..where((StockMovements tbl) => tbl.id.equals(safeMovementId)))
           .write(
@@ -1261,6 +1769,14 @@ class InventarioLocalDataSource {
         qty: nextQty,
       );
 
+      await _revertManualMovementLotImpact(
+        movementId: movement.id,
+        productId: movement.productId,
+        warehouseId: movement.warehouseId,
+        type: _normalizeMovementType(movement.type, movement.qty),
+        qty: movement.qty.abs(),
+      );
+
       await (_db.update(_db.stockMovements)
             ..where((StockMovements tbl) => tbl.id.equals(movement.id)))
           .write(
@@ -1322,6 +1838,17 @@ class InventarioLocalDataSource {
         qty: nextQty,
       );
 
+      await _applyManualMovementLotImpact(
+        movementId: movement.id,
+        productId: movement.productId,
+        warehouseId: movement.warehouseId,
+        type: _normalizeMovementType(movement.type, movement.qty),
+        qty: movement.qty.abs(),
+        note: _normalizeOptional(movement.note),
+        userId: safeUserId,
+        at: DateTime.now(),
+      );
+
       await (_db.update(_db.stockMovements)
             ..where((StockMovements tbl) => tbl.id.equals(movement.id)))
           .write(
@@ -1373,6 +1900,12 @@ class InventarioLocalDataSource {
           'Solo se pueden eliminar definitivamente movimientos archivados.',
         );
       }
+
+      await (_db.delete(_db.stockLots)
+            ..where((StockLots tbl) =>
+                tbl.sourceId.equals(safeMovementId) &
+                tbl.sourceType.like('manual%')))
+          .go();
 
       await (_db.delete(_db.stockMovements)
             ..where((StockMovements tbl) => tbl.id.equals(safeMovementId)))
@@ -1429,9 +1962,11 @@ class InventarioLocalDataSource {
         return;
       }
 
+      final DateTime now = DateTime.now();
+      final String movementId = _uuid.v4();
       await _db.into(_db.stockMovements).insert(
             StockMovementsCompanion.insert(
-              id: _uuid.v4(),
+              id: movementId,
               productId: productId,
               warehouseId: warehouseId,
               type: delta > 0 ? 'in' : 'out',
@@ -1442,9 +1977,309 @@ class InventarioLocalDataSource {
               refId: const Value(null),
               note: Value(note),
               createdBy: userId,
+              createdAt: Value(now),
             ),
           );
+      await _applyManualMovementLotImpact(
+        movementId: movementId,
+        productId: productId,
+        warehouseId: warehouseId,
+        type: delta > 0 ? 'in' : 'out',
+        qty: delta.abs(),
+        note: _normalizeOptional(note),
+        userId: userId,
+        at: now,
+      );
     });
+  }
+
+  Future<void> _applyManualMovementLotImpact({
+    required String movementId,
+    required String productId,
+    required String warehouseId,
+    required String type,
+    required double qty,
+    required String? note,
+    required String userId,
+    required DateTime at,
+  }) async {
+    if (qty <= 0.000001) {
+      return;
+    }
+    final String safeType = _sanitizeMovementType(type);
+    if (safeType == 'in') {
+      final int fallbackCostCents = await _productCostCents(productId);
+      final String lotId = _uuid.v4();
+      await _db.into(_db.stockLots).insert(
+            StockLotsCompanion.insert(
+              id: lotId,
+              productId: productId,
+              warehouseId: warehouseId,
+              purchaseItemId: const Value(null),
+              sourceType: const Value('manual_movement'),
+              sourceId: Value(movementId),
+              qtyIn: Value(qty),
+              qtyRemaining: Value(qty),
+              unitCostCents: Value(fallbackCostCents),
+              receivedAt: Value(at),
+              createdAt: Value(at),
+              note: Value(note),
+            ),
+          );
+      await _recordManualMovementLotState(
+        movementId: movementId,
+        userId: userId,
+        state: _ManualMovementLotState(
+          type: 'in',
+          allocations: <_ManualLotAllocation>[
+            _ManualLotAllocation(
+              lotId: lotId,
+              qty: qty,
+              unitCostCents: fallbackCostCents,
+              lineCostCents: (qty * fallbackCostCents).round(),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final int fallbackCostCents = await _productCostCents(productId);
+    final List<_ManualLotAllocation> allocations =
+        await _consumeFifoLotsForManualOut(
+      movementId: movementId,
+      productId: productId,
+      warehouseId: warehouseId,
+      qty: qty,
+      fallbackUnitCostCents: fallbackCostCents,
+      note: note,
+      at: at,
+    );
+    await _recordManualMovementLotState(
+      movementId: movementId,
+      userId: userId,
+      state: _ManualMovementLotState(
+        type: 'out',
+        allocations: allocations,
+      ),
+    );
+  }
+
+  Future<void> _revertManualMovementLotImpact({
+    required String movementId,
+    required String productId,
+    required String warehouseId,
+    required String type,
+    required double qty,
+  }) async {
+    if (qty <= 0.000001) {
+      return;
+    }
+    final _ManualMovementLotState? state =
+        await _loadManualMovementLotState(movementId);
+    if (state == null) {
+      return;
+    }
+
+    if (state.type == 'in') {
+      for (final _ManualLotAllocation allocation in state.allocations) {
+        final String lotId = allocation.lotId;
+        final StockLot? lot = await (_db.select(_db.stockLots)
+              ..where((StockLots tbl) => tbl.id.equals(lotId)))
+            .getSingleOrNull();
+        if (lot == null) {
+          continue;
+        }
+        final double consumed = lot.qtyIn - lot.qtyRemaining;
+        if (consumed > 0.000001) {
+          throw Exception(
+            'No se puede anular/editar este movimiento porque su lote ya tiene consumo FIFO.',
+          );
+        }
+        await (_db.delete(_db.stockLots)
+              ..where((StockLots tbl) => tbl.id.equals(lotId)))
+            .go();
+      }
+      return;
+    }
+
+    for (final _ManualLotAllocation allocation in state.allocations) {
+      final StockLot? lot = await (_db.select(_db.stockLots)
+            ..where((StockLots tbl) => tbl.id.equals(allocation.lotId)))
+          .getSingleOrNull();
+      if (lot == null) {
+        continue;
+      }
+      await (_db.update(_db.stockLots)
+            ..where((StockLots tbl) => tbl.id.equals(lot.id)))
+          .write(
+        StockLotsCompanion(
+          qtyRemaining: Value(lot.qtyRemaining + allocation.qty),
+        ),
+      );
+    }
+  }
+
+  Future<List<_ManualLotAllocation>> _consumeFifoLotsForManualOut({
+    required String movementId,
+    required String productId,
+    required String warehouseId,
+    required double qty,
+    required int fallbackUnitCostCents,
+    required String? note,
+    required DateTime at,
+  }) async {
+    if (qty <= 0.000001) {
+      return const <_ManualLotAllocation>[];
+    }
+    const double epsilon = 0.000001;
+    double remaining = qty;
+    final List<_ManualLotAllocation> out = <_ManualLotAllocation>[];
+
+    final List<QueryRow> lotRows = await _db.customSelect(
+      '''
+      SELECT
+        l.id AS lot_id,
+        l.purchase_item_id AS purchase_item_id,
+        COALESCE(l.qty_remaining, 0) AS qty_remaining,
+        COALESCE(l.unit_cost_cents, 0) AS unit_cost_cents
+      FROM stock_lots l
+      WHERE l.product_id = ?
+        AND l.warehouse_id = ?
+        AND COALESCE(l.qty_remaining, 0) > 0
+      ORDER BY l.received_at ASC, l.created_at ASC, l.id ASC
+      ''',
+      variables: <Variable<Object>>[
+        Variable<String>(productId),
+        Variable<String>(warehouseId),
+      ],
+    ).get();
+
+    for (final QueryRow row in lotRows) {
+      if (remaining <= epsilon) {
+        break;
+      }
+      final String lotId = (row.readNullable<String>('lot_id') ?? '').trim();
+      if (lotId.isEmpty) {
+        continue;
+      }
+      final double lotRemaining =
+          (row.data['qty_remaining'] as num?)?.toDouble() ?? 0;
+      if (lotRemaining <= epsilon) {
+        continue;
+      }
+      final double take = lotRemaining < remaining ? lotRemaining : remaining;
+      final int unitCostCents =
+          (row.data['unit_cost_cents'] as num?)?.toInt() ??
+              fallbackUnitCostCents;
+      await (_db.update(_db.stockLots)
+            ..where((StockLots tbl) => tbl.id.equals(lotId)))
+          .write(
+        StockLotsCompanion(
+          qtyRemaining: Value(lotRemaining - take),
+        ),
+      );
+      out.add(
+        _ManualLotAllocation(
+          lotId: lotId,
+          qty: take,
+          unitCostCents: unitCostCents,
+          lineCostCents: (take * unitCostCents).round(),
+          purchaseItemId:
+              _normalizeOptional(row.readNullable<String>('purchase_item_id')),
+        ),
+      );
+      remaining -= take;
+    }
+
+    if (remaining > epsilon) {
+      final String fallbackLotId = _uuid.v4();
+      await _db.into(_db.stockLots).insert(
+            StockLotsCompanion.insert(
+              id: fallbackLotId,
+              productId: productId,
+              warehouseId: warehouseId,
+              purchaseItemId: const Value(null),
+              sourceType: const Value('manual_fallback'),
+              sourceId: Value(movementId),
+              qtyIn: Value(remaining),
+              qtyRemaining: const Value(0),
+              unitCostCents: Value(fallbackUnitCostCents),
+              receivedAt: Value(at),
+              createdAt: Value(at),
+              note: Value(note),
+            ),
+          );
+      out.add(
+        _ManualLotAllocation(
+          lotId: fallbackLotId,
+          qty: remaining,
+          unitCostCents: fallbackUnitCostCents,
+          lineCostCents: (remaining * fallbackUnitCostCents).round(),
+          purchaseItemId: null,
+        ),
+      );
+    }
+    return out;
+  }
+
+  Future<int> _productCostCents(String productId) async {
+    final Product? product = await (_db.select(_db.products)
+          ..where((Products tbl) => tbl.id.equals(productId)))
+        .getSingleOrNull();
+    if (product == null) {
+      return 0;
+    }
+    return product.costPriceCents < 0 ? 0 : product.costPriceCents;
+  }
+
+  Future<void> _recordManualMovementLotState({
+    required String movementId,
+    required String userId,
+    required _ManualMovementLotState state,
+  }) async {
+    await _db.into(_db.auditLogs).insert(
+          AuditLogsCompanion.insert(
+            id: _uuid.v4(),
+            userId: Value(userId.trim().isEmpty ? null : userId.trim()),
+            action: 'STOCK_MOVEMENT_LOT_APPLIED',
+            entity: 'stock_movement',
+            entityId: movementId,
+            payloadJson: jsonEncode(state.toJson()),
+          ),
+        );
+  }
+
+  Future<_ManualMovementLotState?> _loadManualMovementLotState(
+    String movementId,
+  ) async {
+    final String id = movementId.trim();
+    if (id.isEmpty) {
+      return null;
+    }
+    final List<QueryRow> rows = await _db.customSelect(
+      '''
+      SELECT payload_json
+      FROM audit_logs
+      WHERE action = 'STOCK_MOVEMENT_LOT_APPLIED'
+        AND entity = 'stock_movement'
+        AND entity_id = ?
+      ORDER BY created_at DESC
+      LIMIT 1
+      ''',
+      variables: <Variable<Object>>[
+        Variable<String>(id),
+      ],
+    ).get();
+    if (rows.isEmpty) {
+      return null;
+    }
+    final String raw =
+        (rows.first.readNullable<String>('payload_json') ?? '').trim();
+    if (raw.isEmpty) {
+      return null;
+    }
+    return _ManualMovementLotState.fromJson(raw);
   }
 
   Future<void> _upsertStockBalance({
@@ -1569,7 +2404,24 @@ class InventarioLocalDataSource {
       );
     }
 
-    final List<InventoryMovementReason> ordered = byCode.values.toList()
+    byCode['transfer'] = const InventoryMovementReason(
+      code: 'transfer',
+      label: 'Transferencia',
+      appliesTo: 'out',
+      isSystem: true,
+      hiddenInManualSelector: true,
+    );
+    byCode['consignment_sale'] = const InventoryMovementReason(
+      code: 'consignment_sale',
+      label: 'Venta en consignacion',
+      appliesTo: 'out',
+      isSystem: true,
+      hiddenInManualSelector: true,
+    );
+
+    final List<InventoryMovementReason> ordered = byCode.values
+        .where((InventoryMovementReason row) => row.code != 'consignment_sale')
+        .toList()
       ..sort(
         (InventoryMovementReason a, InventoryMovementReason b) {
           return a.label.toLowerCase().compareTo(b.label.toLowerCase());
@@ -1584,6 +2436,13 @@ class InventarioLocalDataSource {
         isSystem: true,
         hiddenInManualSelector: true,
       ),
+      const InventoryMovementReason(
+        code: 'consignment_sale',
+        label: 'Venta en consignacion',
+        appliesTo: 'out',
+        isSystem: true,
+        hiddenInManualSelector: true,
+      ),
       ...ordered,
     ];
   }
@@ -1592,6 +2451,177 @@ class InventarioLocalDataSource {
     return jsonEncode(
       reasons.map((InventoryMovementReason row) => row.toJson()).toList(),
     );
+  }
+
+  Future<Directory> _resolveMovementsExportDir() async {
+    final Directory preferredBase = await _resolveDownloadsBaseDir();
+    Directory dir = Directory(
+      p.join(preferredBase.path, 'POSIPV', 'Exportaciones', 'Movimientos'),
+    );
+    try {
+      if (!dir.existsSync()) {
+        await dir.create(recursive: true);
+      }
+      return dir;
+    } catch (_) {
+      final Directory docs = await getApplicationDocumentsDirectory();
+      dir = Directory(
+        p.join(docs.path, 'exports', 'inventario', 'movimientos'),
+      );
+      if (!dir.existsSync()) {
+        await dir.create(recursive: true);
+      }
+    }
+    return dir;
+  }
+
+  Future<Directory> _resolveDownloadsBaseDir() async {
+    if (Platform.isAndroid) {
+      const List<String> candidates = <String>[
+        '/storage/emulated/0/Download',
+        '/storage/emulated/0/Descargas',
+      ];
+      for (final String path in candidates) {
+        final Directory dir = Directory(path);
+        try {
+          if (dir.existsSync()) {
+            return dir;
+          }
+          await dir.create(recursive: true);
+          if (dir.existsSync()) {
+            return dir;
+          }
+        } catch (_) {}
+      }
+      return getApplicationDocumentsDirectory();
+    }
+
+    final Directory? downloads = await getDownloadsDirectory();
+    if (downloads != null) {
+      return downloads;
+    }
+    return getApplicationDocumentsDirectory();
+  }
+
+  pw.Widget _buildMovementPdfCard(
+    InventoryMovementView row, {
+    required int index,
+  }) {
+    pw.Widget item(String label, String value) {
+      return pw.Container(
+        width: 250,
+        margin: const pw.EdgeInsets.only(bottom: 2),
+        child: pw.RichText(
+          text: pw.TextSpan(
+            style: const pw.TextStyle(
+              fontSize: 8.4,
+              color: PdfColors.black,
+            ),
+            children: <pw.InlineSpan>[
+              pw.TextSpan(
+                text: '$label: ',
+                style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+              ),
+              pw.TextSpan(text: value),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return pw.Container(
+      margin: const pw.EdgeInsets.only(bottom: 8),
+      padding: const pw.EdgeInsets.all(8),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey400, width: 0.6),
+        borderRadius: pw.BorderRadius.circular(6),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: <pw.Widget>[
+          pw.Text(
+            '$index. ${row.productName}',
+            style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+          ),
+          pw.SizedBox(height: 4),
+          pw.Wrap(
+            spacing: 8,
+            runSpacing: 0,
+            children: <pw.Widget>[
+              item('ID', row.id),
+              item('Fecha', _formatDateTimeExport(row.createdAt)),
+              item('Almacén', row.warehouseName),
+              item('Producto', row.productName),
+              item('SKU', row.sku),
+              item('Tipo', _movementTypeLabel(row.movementType)),
+              item('Cantidad', _formatQtyForExport(row.qty)),
+              item('Motivo', row.reasonLabel),
+              item('Código motivo', row.reasonCode),
+              item('Origen', row.movementSource),
+              item('Ref tipo', _safeText(row.refType)),
+              item('Ref ID', _safeText(row.refId)),
+              item('Nota', _safeText(row.note)),
+              item('Usuario', row.username),
+              item('Usuario ID', row.createdBy),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _movementTypeLabel(String movementType) {
+    final String value = movementType.trim().toLowerCase();
+    if (value == 'in') {
+      return 'Entrada';
+    }
+    if (value == 'out') {
+      return 'Salida';
+    }
+    return 'Ajuste';
+  }
+
+  String _safeText(String? value) {
+    final String out = (value ?? '').trim();
+    return out.isEmpty ? '-' : out;
+  }
+
+  String _formatDateTimeExport(DateTime date) {
+    final DateTime local = date.toLocal();
+    final String y = local.year.toString().padLeft(4, '0');
+    final String m = local.month.toString().padLeft(2, '0');
+    final String d = local.day.toString().padLeft(2, '0');
+    final String hh = local.hour.toString().padLeft(2, '0');
+    final String mm = local.minute.toString().padLeft(2, '0');
+    final String ss = local.second.toString().padLeft(2, '0');
+    return '$y-$m-$d $hh:$mm:$ss';
+  }
+
+  String _formatQtyForExport(double qty) {
+    final double rounded = qty.roundToDouble();
+    if ((qty - rounded).abs() <= 0.000001) {
+      return rounded.toStringAsFixed(0);
+    }
+    return qty
+        .toStringAsFixed(3)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+  }
+
+  String _csvCell(String value) {
+    final String escaped = value.replaceAll('"', '""');
+    return '"$escaped"';
+  }
+
+  String _ts(DateTime date) {
+    final DateTime local = date.toLocal();
+    final String y = local.year.toString().padLeft(4, '0');
+    final String mo = local.month.toString().padLeft(2, '0');
+    final String d = local.day.toString().padLeft(2, '0');
+    final String h = local.hour.toString().padLeft(2, '0');
+    final String mi = local.minute.toString().padLeft(2, '0');
+    final String s = local.second.toString().padLeft(2, '0');
+    return '$y$mo$d-$h$mi$s';
   }
 
   String _sanitizeMovementType(String raw) {
@@ -1641,6 +2671,10 @@ class InventarioLocalDataSource {
         normalizedRefType == 'consignment_sale_direct') {
       return 'consignment_sale';
     }
+    if (normalizedRefType == 'transfer_out' ||
+        normalizedRefType == 'transfer_in') {
+      return 'transfer';
+    }
     return 'adjust';
   }
 
@@ -1666,6 +2700,10 @@ class InventarioLocalDataSource {
     }
     if (normalizedRefType == 'consignment_sale_direct') {
       return 'direct_consignment';
+    }
+    if (normalizedRefType == 'transfer_out' ||
+        normalizedRefType == 'transfer_in') {
+      return 'transfer';
     }
     return 'manual';
   }
@@ -1707,6 +2745,8 @@ class InventarioLocalDataSource {
         return 'Merma';
       case 'adjust':
         return 'Ajuste';
+      case 'transfer':
+        return 'Transferencia';
       default:
         return reasonCode.isEmpty ? 'Sin motivo' : reasonCode;
     }
@@ -1738,5 +2778,105 @@ class InventarioLocalDataSource {
         .toLowerCase()
         .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
         .replaceAll(RegExp(r'^-+|-+$'), '');
+  }
+}
+
+class _ManualLotAllocation {
+  const _ManualLotAllocation({
+    required this.lotId,
+    required this.qty,
+    required this.unitCostCents,
+    required this.lineCostCents,
+    this.purchaseItemId,
+  });
+
+  final String lotId;
+  final double qty;
+  final int unitCostCents;
+  final int lineCostCents;
+  final String? purchaseItemId;
+
+  Map<String, Object> toJson() {
+    final Map<String, Object> out = <String, Object>{
+      'lotId': lotId,
+      'qty': qty,
+      'unitCostCents': unitCostCents,
+      'lineCostCents': lineCostCents,
+    };
+    final String? safePurchaseItemId = purchaseItemId?.trim();
+    if (safePurchaseItemId != null && safePurchaseItemId.isNotEmpty) {
+      out['purchaseItemId'] = safePurchaseItemId;
+    }
+    return out;
+  }
+
+  static _ManualLotAllocation? fromObject(Object? raw) {
+    if (raw is! Map<Object?, Object?>) {
+      return null;
+    }
+    final String lotId = (raw['lotId'] ?? '').toString().trim();
+    if (lotId.isEmpty) {
+      return null;
+    }
+    final double qty = (raw['qty'] as num?)?.toDouble() ?? 0;
+    if (qty <= 0.000001) {
+      return null;
+    }
+    return _ManualLotAllocation(
+      lotId: lotId,
+      qty: qty,
+      unitCostCents: (raw['unitCostCents'] as num?)?.toInt() ?? 0,
+      lineCostCents: (raw['lineCostCents'] as num?)?.toInt() ?? 0,
+      purchaseItemId: (raw['purchaseItemId'] ?? '').toString().trim().isEmpty
+          ? null
+          : (raw['purchaseItemId'] ?? '').toString().trim(),
+    );
+  }
+}
+
+class _ManualMovementLotState {
+  const _ManualMovementLotState({
+    required this.type,
+    required this.allocations,
+  });
+
+  final String type;
+  final List<_ManualLotAllocation> allocations;
+
+  Map<String, Object> toJson() {
+    return <String, Object>{
+      'version': 1,
+      'type': type,
+      'allocations': allocations
+          .map((_ManualLotAllocation row) => row.toJson())
+          .toList(growable: false),
+    };
+  }
+
+  static _ManualMovementLotState? fromJson(String raw) {
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! Map<Object?, Object?>) {
+        return null;
+      }
+      final String type = (decoded['type'] ?? '').toString().trim();
+      if (type != 'in' && type != 'out') {
+        return null;
+      }
+      final Object? rawAllocations = decoded['allocations'];
+      final List<_ManualLotAllocation> allocations =
+          rawAllocations is List<Object?>
+              ? rawAllocations
+                  .map(_ManualLotAllocation.fromObject)
+                  .whereType<_ManualLotAllocation>()
+                  .toList(growable: false)
+              : const <_ManualLotAllocation>[];
+      return _ManualMovementLotState(
+        type: type,
+        allocations: allocations,
+      );
+    } catch (_) {
+      return null;
+    }
   }
 }

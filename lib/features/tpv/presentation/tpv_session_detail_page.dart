@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../configuracion/data/configuracion_local_datasource.dart';
+import '../../configuracion/presentation/configuracion_providers.dart';
 import '../../reportes/data/reportes_local_datasource.dart';
 import '../../reportes/presentation/reportes_providers.dart';
 import '../../reportes/presentation/widgets/ipv_reporte_detail_page.dart';
@@ -45,6 +47,7 @@ class _TpvSessionDetailPageState extends ConsumerState<TpvSessionDetailPage> {
   List<TpvSessionCashBreakdown> _cashBreakdown = <TpvSessionCashBreakdown>[];
   List<TpvSessionSaleView> _sales = <TpvSessionSaleView>[];
   IpvReportSummaryStat? _ipvReport;
+  Map<String, String> _paymentMethodLabelsByCode = <String, String>{};
 
   PosSession get _session => widget.sessionRow.session;
 
@@ -71,6 +74,9 @@ class _TpvSessionDetailPageState extends ConsumerState<TpvSessionDetailPage> {
           tpvDs.getSessionSalesSummary(_session.id);
       final Future<Map<String, int>> paymentsFuture =
           tpvDs.getSessionExpectedPaymentsByMethod(_session.id);
+      final Future<List<AppPaymentMethodSetting>> paymentMethodsFuture = ref
+          .read(configuracionLocalDataSourceProvider)
+          .loadPaymentMethodSettings();
       final Future<List<TpvSessionSaleView>> salesFuture =
           tpvDs.listSessionSales(_session.id, limit: _salesPageSize);
       final Future<IpvReportSummaryStat?> ipvFuture =
@@ -82,6 +88,11 @@ class _TpvSessionDetailPageState extends ConsumerState<TpvSessionDetailPage> {
 
       final TpvSessionSalesSummary summary = await summaryFuture;
       final Map<String, int> payments = await paymentsFuture;
+      List<AppPaymentMethodSetting> paymentSettings =
+          const <AppPaymentMethodSetting>[];
+      try {
+        paymentSettings = await paymentMethodsFuture;
+      } catch (_) {}
       final List<TpvSessionSaleView> sales = await salesFuture;
       final IpvReportSummaryStat? ipv = await ipvFuture;
       final List<TpvSessionCashBreakdown> breakdown = await breakdownFuture;
@@ -92,6 +103,8 @@ class _TpvSessionDetailPageState extends ConsumerState<TpvSessionDetailPage> {
       setState(() {
         _salesSummary = summary;
         _paymentsByMethod = payments;
+        _paymentMethodLabelsByCode =
+            buildPaymentMethodLabelMap(paymentSettings);
         _sales = sales;
         _hasMoreSales = sales.length == _salesPageSize;
         _loadingMoreSales = false;
@@ -167,20 +180,11 @@ class _TpvSessionDetailPageState extends ConsumerState<TpvSessionDetailPage> {
   }
 
   String _paymentMethodLabel(String method) {
-    switch (method.trim().toLowerCase()) {
-      case 'cash':
-        return 'Efectivo';
-      case 'card':
-        return 'Tarjeta';
-      case 'transfer':
-        return 'Transferencia';
-      case 'wallet':
-        return 'Billetera';
-      case 'consignment':
-        return 'Consignación';
-      default:
-        return method;
+    final String code = method.trim().toLowerCase();
+    if (code.isEmpty) {
+      return 'Metodo';
     }
+    return _paymentMethodLabelsByCode[code] ?? defaultPaymentMethodLabel(code);
   }
 
   Future<void> _openIpv() async {

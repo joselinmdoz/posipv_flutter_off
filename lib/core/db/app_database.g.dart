@@ -11434,6 +11434,2138 @@ class ManualIpvReportLinesCompanion
   }
 }
 
+class $PurchasesTable extends Purchases
+    with TableInfo<$PurchasesTable, Purchase> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $PurchasesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+      'id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _folioMeta = const VerificationMeta('folio');
+  @override
+  late final GeneratedColumn<String> folio = GeneratedColumn<String>(
+      'folio', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'));
+  static const VerificationMeta _warehouseIdMeta =
+      const VerificationMeta('warehouseId');
+  @override
+  late final GeneratedColumn<String> warehouseId = GeneratedColumn<String>(
+      'warehouse_id', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('REFERENCES warehouses (id)'));
+  static const VerificationMeta _supplierNameMeta =
+      const VerificationMeta('supplierName');
+  @override
+  late final GeneratedColumn<String> supplierName = GeneratedColumn<String>(
+      'supplier_name', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _supplierDocMeta =
+      const VerificationMeta('supplierDoc');
+  @override
+  late final GeneratedColumn<String> supplierDoc = GeneratedColumn<String>(
+      'supplier_doc', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _statusMeta = const VerificationMeta('status');
+  @override
+  late final GeneratedColumn<String> status = GeneratedColumn<String>(
+      'status', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('posted'));
+  static const VerificationMeta _noteMeta = const VerificationMeta('note');
+  @override
+  late final GeneratedColumn<String> note = GeneratedColumn<String>(
+      'note', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _createdByMeta =
+      const VerificationMeta('createdBy');
+  @override
+  late final GeneratedColumn<String> createdBy = GeneratedColumn<String>(
+      'created_by', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('REFERENCES users (id)'));
+  static const VerificationMeta _createdAtMeta =
+      const VerificationMeta('createdAt');
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+      'created_at', aliasedName, false,
+      type: DriftSqlType.dateTime,
+      requiredDuringInsert: false,
+      defaultValue: currentDateAndTime);
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        folio,
+        warehouseId,
+        supplierName,
+        supplierDoc,
+        status,
+        note,
+        createdBy,
+        createdAt
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'purchases';
+  @override
+  VerificationContext validateIntegrity(Insertable<Purchase> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('folio')) {
+      context.handle(
+          _folioMeta, folio.isAcceptableOrUnknown(data['folio']!, _folioMeta));
+    } else if (isInserting) {
+      context.missing(_folioMeta);
+    }
+    if (data.containsKey('warehouse_id')) {
+      context.handle(
+          _warehouseIdMeta,
+          warehouseId.isAcceptableOrUnknown(
+              data['warehouse_id']!, _warehouseIdMeta));
+    } else if (isInserting) {
+      context.missing(_warehouseIdMeta);
+    }
+    if (data.containsKey('supplier_name')) {
+      context.handle(
+          _supplierNameMeta,
+          supplierName.isAcceptableOrUnknown(
+              data['supplier_name']!, _supplierNameMeta));
+    }
+    if (data.containsKey('supplier_doc')) {
+      context.handle(
+          _supplierDocMeta,
+          supplierDoc.isAcceptableOrUnknown(
+              data['supplier_doc']!, _supplierDocMeta));
+    }
+    if (data.containsKey('status')) {
+      context.handle(_statusMeta,
+          status.isAcceptableOrUnknown(data['status']!, _statusMeta));
+    }
+    if (data.containsKey('note')) {
+      context.handle(
+          _noteMeta, note.isAcceptableOrUnknown(data['note']!, _noteMeta));
+    }
+    if (data.containsKey('created_by')) {
+      context.handle(_createdByMeta,
+          createdBy.isAcceptableOrUnknown(data['created_by']!, _createdByMeta));
+    } else if (isInserting) {
+      context.missing(_createdByMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(_createdAtMeta,
+          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  Purchase map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return Purchase(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
+      folio: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}folio'])!,
+      warehouseId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}warehouse_id'])!,
+      supplierName: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}supplier_name']),
+      supplierDoc: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}supplier_doc']),
+      status: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}status'])!,
+      note: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}note']),
+      createdBy: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}created_by'])!,
+      createdAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
+    );
+  }
+
+  @override
+  $PurchasesTable createAlias(String alias) {
+    return $PurchasesTable(attachedDatabase, alias);
+  }
+}
+
+class Purchase extends DataClass implements Insertable<Purchase> {
+  final String id;
+  final String folio;
+  final String warehouseId;
+  final String? supplierName;
+  final String? supplierDoc;
+  final String status;
+  final String? note;
+  final String createdBy;
+  final DateTime createdAt;
+  const Purchase(
+      {required this.id,
+      required this.folio,
+      required this.warehouseId,
+      this.supplierName,
+      this.supplierDoc,
+      required this.status,
+      this.note,
+      required this.createdBy,
+      required this.createdAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['folio'] = Variable<String>(folio);
+    map['warehouse_id'] = Variable<String>(warehouseId);
+    if (!nullToAbsent || supplierName != null) {
+      map['supplier_name'] = Variable<String>(supplierName);
+    }
+    if (!nullToAbsent || supplierDoc != null) {
+      map['supplier_doc'] = Variable<String>(supplierDoc);
+    }
+    map['status'] = Variable<String>(status);
+    if (!nullToAbsent || note != null) {
+      map['note'] = Variable<String>(note);
+    }
+    map['created_by'] = Variable<String>(createdBy);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    return map;
+  }
+
+  PurchasesCompanion toCompanion(bool nullToAbsent) {
+    return PurchasesCompanion(
+      id: Value(id),
+      folio: Value(folio),
+      warehouseId: Value(warehouseId),
+      supplierName: supplierName == null && nullToAbsent
+          ? const Value.absent()
+          : Value(supplierName),
+      supplierDoc: supplierDoc == null && nullToAbsent
+          ? const Value.absent()
+          : Value(supplierDoc),
+      status: Value(status),
+      note: note == null && nullToAbsent ? const Value.absent() : Value(note),
+      createdBy: Value(createdBy),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory Purchase.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return Purchase(
+      id: serializer.fromJson<String>(json['id']),
+      folio: serializer.fromJson<String>(json['folio']),
+      warehouseId: serializer.fromJson<String>(json['warehouseId']),
+      supplierName: serializer.fromJson<String?>(json['supplierName']),
+      supplierDoc: serializer.fromJson<String?>(json['supplierDoc']),
+      status: serializer.fromJson<String>(json['status']),
+      note: serializer.fromJson<String?>(json['note']),
+      createdBy: serializer.fromJson<String>(json['createdBy']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'folio': serializer.toJson<String>(folio),
+      'warehouseId': serializer.toJson<String>(warehouseId),
+      'supplierName': serializer.toJson<String?>(supplierName),
+      'supplierDoc': serializer.toJson<String?>(supplierDoc),
+      'status': serializer.toJson<String>(status),
+      'note': serializer.toJson<String?>(note),
+      'createdBy': serializer.toJson<String>(createdBy),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+    };
+  }
+
+  Purchase copyWith(
+          {String? id,
+          String? folio,
+          String? warehouseId,
+          Value<String?> supplierName = const Value.absent(),
+          Value<String?> supplierDoc = const Value.absent(),
+          String? status,
+          Value<String?> note = const Value.absent(),
+          String? createdBy,
+          DateTime? createdAt}) =>
+      Purchase(
+        id: id ?? this.id,
+        folio: folio ?? this.folio,
+        warehouseId: warehouseId ?? this.warehouseId,
+        supplierName:
+            supplierName.present ? supplierName.value : this.supplierName,
+        supplierDoc: supplierDoc.present ? supplierDoc.value : this.supplierDoc,
+        status: status ?? this.status,
+        note: note.present ? note.value : this.note,
+        createdBy: createdBy ?? this.createdBy,
+        createdAt: createdAt ?? this.createdAt,
+      );
+  Purchase copyWithCompanion(PurchasesCompanion data) {
+    return Purchase(
+      id: data.id.present ? data.id.value : this.id,
+      folio: data.folio.present ? data.folio.value : this.folio,
+      warehouseId:
+          data.warehouseId.present ? data.warehouseId.value : this.warehouseId,
+      supplierName: data.supplierName.present
+          ? data.supplierName.value
+          : this.supplierName,
+      supplierDoc:
+          data.supplierDoc.present ? data.supplierDoc.value : this.supplierDoc,
+      status: data.status.present ? data.status.value : this.status,
+      note: data.note.present ? data.note.value : this.note,
+      createdBy: data.createdBy.present ? data.createdBy.value : this.createdBy,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('Purchase(')
+          ..write('id: $id, ')
+          ..write('folio: $folio, ')
+          ..write('warehouseId: $warehouseId, ')
+          ..write('supplierName: $supplierName, ')
+          ..write('supplierDoc: $supplierDoc, ')
+          ..write('status: $status, ')
+          ..write('note: $note, ')
+          ..write('createdBy: $createdBy, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, folio, warehouseId, supplierName,
+      supplierDoc, status, note, createdBy, createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is Purchase &&
+          other.id == this.id &&
+          other.folio == this.folio &&
+          other.warehouseId == this.warehouseId &&
+          other.supplierName == this.supplierName &&
+          other.supplierDoc == this.supplierDoc &&
+          other.status == this.status &&
+          other.note == this.note &&
+          other.createdBy == this.createdBy &&
+          other.createdAt == this.createdAt);
+}
+
+class PurchasesCompanion extends UpdateCompanion<Purchase> {
+  final Value<String> id;
+  final Value<String> folio;
+  final Value<String> warehouseId;
+  final Value<String?> supplierName;
+  final Value<String?> supplierDoc;
+  final Value<String> status;
+  final Value<String?> note;
+  final Value<String> createdBy;
+  final Value<DateTime> createdAt;
+  final Value<int> rowid;
+  const PurchasesCompanion({
+    this.id = const Value.absent(),
+    this.folio = const Value.absent(),
+    this.warehouseId = const Value.absent(),
+    this.supplierName = const Value.absent(),
+    this.supplierDoc = const Value.absent(),
+    this.status = const Value.absent(),
+    this.note = const Value.absent(),
+    this.createdBy = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  PurchasesCompanion.insert({
+    required String id,
+    required String folio,
+    required String warehouseId,
+    this.supplierName = const Value.absent(),
+    this.supplierDoc = const Value.absent(),
+    this.status = const Value.absent(),
+    this.note = const Value.absent(),
+    required String createdBy,
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  })  : id = Value(id),
+        folio = Value(folio),
+        warehouseId = Value(warehouseId),
+        createdBy = Value(createdBy);
+  static Insertable<Purchase> custom({
+    Expression<String>? id,
+    Expression<String>? folio,
+    Expression<String>? warehouseId,
+    Expression<String>? supplierName,
+    Expression<String>? supplierDoc,
+    Expression<String>? status,
+    Expression<String>? note,
+    Expression<String>? createdBy,
+    Expression<DateTime>? createdAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (folio != null) 'folio': folio,
+      if (warehouseId != null) 'warehouse_id': warehouseId,
+      if (supplierName != null) 'supplier_name': supplierName,
+      if (supplierDoc != null) 'supplier_doc': supplierDoc,
+      if (status != null) 'status': status,
+      if (note != null) 'note': note,
+      if (createdBy != null) 'created_by': createdBy,
+      if (createdAt != null) 'created_at': createdAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  PurchasesCompanion copyWith(
+      {Value<String>? id,
+      Value<String>? folio,
+      Value<String>? warehouseId,
+      Value<String?>? supplierName,
+      Value<String?>? supplierDoc,
+      Value<String>? status,
+      Value<String?>? note,
+      Value<String>? createdBy,
+      Value<DateTime>? createdAt,
+      Value<int>? rowid}) {
+    return PurchasesCompanion(
+      id: id ?? this.id,
+      folio: folio ?? this.folio,
+      warehouseId: warehouseId ?? this.warehouseId,
+      supplierName: supplierName ?? this.supplierName,
+      supplierDoc: supplierDoc ?? this.supplierDoc,
+      status: status ?? this.status,
+      note: note ?? this.note,
+      createdBy: createdBy ?? this.createdBy,
+      createdAt: createdAt ?? this.createdAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (folio.present) {
+      map['folio'] = Variable<String>(folio.value);
+    }
+    if (warehouseId.present) {
+      map['warehouse_id'] = Variable<String>(warehouseId.value);
+    }
+    if (supplierName.present) {
+      map['supplier_name'] = Variable<String>(supplierName.value);
+    }
+    if (supplierDoc.present) {
+      map['supplier_doc'] = Variable<String>(supplierDoc.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<String>(status.value);
+    }
+    if (note.present) {
+      map['note'] = Variable<String>(note.value);
+    }
+    if (createdBy.present) {
+      map['created_by'] = Variable<String>(createdBy.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PurchasesCompanion(')
+          ..write('id: $id, ')
+          ..write('folio: $folio, ')
+          ..write('warehouseId: $warehouseId, ')
+          ..write('supplierName: $supplierName, ')
+          ..write('supplierDoc: $supplierDoc, ')
+          ..write('status: $status, ')
+          ..write('note: $note, ')
+          ..write('createdBy: $createdBy, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $PurchaseItemsTable extends PurchaseItems
+    with TableInfo<$PurchaseItemsTable, PurchaseItem> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $PurchaseItemsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+      'id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _purchaseIdMeta =
+      const VerificationMeta('purchaseId');
+  @override
+  late final GeneratedColumn<String> purchaseId = GeneratedColumn<String>(
+      'purchase_id', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('REFERENCES purchases (id)'));
+  static const VerificationMeta _productIdMeta =
+      const VerificationMeta('productId');
+  @override
+  late final GeneratedColumn<String> productId = GeneratedColumn<String>(
+      'product_id', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('REFERENCES products (id)'));
+  static const VerificationMeta _qtyMeta = const VerificationMeta('qty');
+  @override
+  late final GeneratedColumn<double> qty = GeneratedColumn<double>(
+      'qty', aliasedName, false,
+      type: DriftSqlType.double, requiredDuringInsert: true);
+  static const VerificationMeta _unitCostCentsMeta =
+      const VerificationMeta('unitCostCents');
+  @override
+  late final GeneratedColumn<int> unitCostCents = GeneratedColumn<int>(
+      'unit_cost_cents', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _lineCostCentsMeta =
+      const VerificationMeta('lineCostCents');
+  @override
+  late final GeneratedColumn<int> lineCostCents = GeneratedColumn<int>(
+      'line_cost_cents', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _unitPriceSnapshotCentsMeta =
+      const VerificationMeta('unitPriceSnapshotCents');
+  @override
+  late final GeneratedColumn<int> unitPriceSnapshotCents = GeneratedColumn<int>(
+      'unit_price_snapshot_cents', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        purchaseId,
+        productId,
+        qty,
+        unitCostCents,
+        lineCostCents,
+        unitPriceSnapshotCents
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'purchase_items';
+  @override
+  VerificationContext validateIntegrity(Insertable<PurchaseItem> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('purchase_id')) {
+      context.handle(
+          _purchaseIdMeta,
+          purchaseId.isAcceptableOrUnknown(
+              data['purchase_id']!, _purchaseIdMeta));
+    } else if (isInserting) {
+      context.missing(_purchaseIdMeta);
+    }
+    if (data.containsKey('product_id')) {
+      context.handle(_productIdMeta,
+          productId.isAcceptableOrUnknown(data['product_id']!, _productIdMeta));
+    } else if (isInserting) {
+      context.missing(_productIdMeta);
+    }
+    if (data.containsKey('qty')) {
+      context.handle(
+          _qtyMeta, qty.isAcceptableOrUnknown(data['qty']!, _qtyMeta));
+    } else if (isInserting) {
+      context.missing(_qtyMeta);
+    }
+    if (data.containsKey('unit_cost_cents')) {
+      context.handle(
+          _unitCostCentsMeta,
+          unitCostCents.isAcceptableOrUnknown(
+              data['unit_cost_cents']!, _unitCostCentsMeta));
+    }
+    if (data.containsKey('line_cost_cents')) {
+      context.handle(
+          _lineCostCentsMeta,
+          lineCostCents.isAcceptableOrUnknown(
+              data['line_cost_cents']!, _lineCostCentsMeta));
+    }
+    if (data.containsKey('unit_price_snapshot_cents')) {
+      context.handle(
+          _unitPriceSnapshotCentsMeta,
+          unitPriceSnapshotCents.isAcceptableOrUnknown(
+              data['unit_price_snapshot_cents']!, _unitPriceSnapshotCentsMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  PurchaseItem map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return PurchaseItem(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
+      purchaseId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}purchase_id'])!,
+      productId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}product_id'])!,
+      qty: attachedDatabase.typeMapping
+          .read(DriftSqlType.double, data['${effectivePrefix}qty'])!,
+      unitCostCents: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}unit_cost_cents'])!,
+      lineCostCents: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}line_cost_cents'])!,
+      unitPriceSnapshotCents: attachedDatabase.typeMapping.read(
+          DriftSqlType.int,
+          data['${effectivePrefix}unit_price_snapshot_cents'])!,
+    );
+  }
+
+  @override
+  $PurchaseItemsTable createAlias(String alias) {
+    return $PurchaseItemsTable(attachedDatabase, alias);
+  }
+}
+
+class PurchaseItem extends DataClass implements Insertable<PurchaseItem> {
+  final String id;
+  final String purchaseId;
+  final String productId;
+  final double qty;
+  final int unitCostCents;
+  final int lineCostCents;
+  final int unitPriceSnapshotCents;
+  const PurchaseItem(
+      {required this.id,
+      required this.purchaseId,
+      required this.productId,
+      required this.qty,
+      required this.unitCostCents,
+      required this.lineCostCents,
+      required this.unitPriceSnapshotCents});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['purchase_id'] = Variable<String>(purchaseId);
+    map['product_id'] = Variable<String>(productId);
+    map['qty'] = Variable<double>(qty);
+    map['unit_cost_cents'] = Variable<int>(unitCostCents);
+    map['line_cost_cents'] = Variable<int>(lineCostCents);
+    map['unit_price_snapshot_cents'] = Variable<int>(unitPriceSnapshotCents);
+    return map;
+  }
+
+  PurchaseItemsCompanion toCompanion(bool nullToAbsent) {
+    return PurchaseItemsCompanion(
+      id: Value(id),
+      purchaseId: Value(purchaseId),
+      productId: Value(productId),
+      qty: Value(qty),
+      unitCostCents: Value(unitCostCents),
+      lineCostCents: Value(lineCostCents),
+      unitPriceSnapshotCents: Value(unitPriceSnapshotCents),
+    );
+  }
+
+  factory PurchaseItem.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return PurchaseItem(
+      id: serializer.fromJson<String>(json['id']),
+      purchaseId: serializer.fromJson<String>(json['purchaseId']),
+      productId: serializer.fromJson<String>(json['productId']),
+      qty: serializer.fromJson<double>(json['qty']),
+      unitCostCents: serializer.fromJson<int>(json['unitCostCents']),
+      lineCostCents: serializer.fromJson<int>(json['lineCostCents']),
+      unitPriceSnapshotCents:
+          serializer.fromJson<int>(json['unitPriceSnapshotCents']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'purchaseId': serializer.toJson<String>(purchaseId),
+      'productId': serializer.toJson<String>(productId),
+      'qty': serializer.toJson<double>(qty),
+      'unitCostCents': serializer.toJson<int>(unitCostCents),
+      'lineCostCents': serializer.toJson<int>(lineCostCents),
+      'unitPriceSnapshotCents': serializer.toJson<int>(unitPriceSnapshotCents),
+    };
+  }
+
+  PurchaseItem copyWith(
+          {String? id,
+          String? purchaseId,
+          String? productId,
+          double? qty,
+          int? unitCostCents,
+          int? lineCostCents,
+          int? unitPriceSnapshotCents}) =>
+      PurchaseItem(
+        id: id ?? this.id,
+        purchaseId: purchaseId ?? this.purchaseId,
+        productId: productId ?? this.productId,
+        qty: qty ?? this.qty,
+        unitCostCents: unitCostCents ?? this.unitCostCents,
+        lineCostCents: lineCostCents ?? this.lineCostCents,
+        unitPriceSnapshotCents:
+            unitPriceSnapshotCents ?? this.unitPriceSnapshotCents,
+      );
+  PurchaseItem copyWithCompanion(PurchaseItemsCompanion data) {
+    return PurchaseItem(
+      id: data.id.present ? data.id.value : this.id,
+      purchaseId:
+          data.purchaseId.present ? data.purchaseId.value : this.purchaseId,
+      productId: data.productId.present ? data.productId.value : this.productId,
+      qty: data.qty.present ? data.qty.value : this.qty,
+      unitCostCents: data.unitCostCents.present
+          ? data.unitCostCents.value
+          : this.unitCostCents,
+      lineCostCents: data.lineCostCents.present
+          ? data.lineCostCents.value
+          : this.lineCostCents,
+      unitPriceSnapshotCents: data.unitPriceSnapshotCents.present
+          ? data.unitPriceSnapshotCents.value
+          : this.unitPriceSnapshotCents,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PurchaseItem(')
+          ..write('id: $id, ')
+          ..write('purchaseId: $purchaseId, ')
+          ..write('productId: $productId, ')
+          ..write('qty: $qty, ')
+          ..write('unitCostCents: $unitCostCents, ')
+          ..write('lineCostCents: $lineCostCents, ')
+          ..write('unitPriceSnapshotCents: $unitPriceSnapshotCents')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, purchaseId, productId, qty, unitCostCents,
+      lineCostCents, unitPriceSnapshotCents);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PurchaseItem &&
+          other.id == this.id &&
+          other.purchaseId == this.purchaseId &&
+          other.productId == this.productId &&
+          other.qty == this.qty &&
+          other.unitCostCents == this.unitCostCents &&
+          other.lineCostCents == this.lineCostCents &&
+          other.unitPriceSnapshotCents == this.unitPriceSnapshotCents);
+}
+
+class PurchaseItemsCompanion extends UpdateCompanion<PurchaseItem> {
+  final Value<String> id;
+  final Value<String> purchaseId;
+  final Value<String> productId;
+  final Value<double> qty;
+  final Value<int> unitCostCents;
+  final Value<int> lineCostCents;
+  final Value<int> unitPriceSnapshotCents;
+  final Value<int> rowid;
+  const PurchaseItemsCompanion({
+    this.id = const Value.absent(),
+    this.purchaseId = const Value.absent(),
+    this.productId = const Value.absent(),
+    this.qty = const Value.absent(),
+    this.unitCostCents = const Value.absent(),
+    this.lineCostCents = const Value.absent(),
+    this.unitPriceSnapshotCents = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  PurchaseItemsCompanion.insert({
+    required String id,
+    required String purchaseId,
+    required String productId,
+    required double qty,
+    this.unitCostCents = const Value.absent(),
+    this.lineCostCents = const Value.absent(),
+    this.unitPriceSnapshotCents = const Value.absent(),
+    this.rowid = const Value.absent(),
+  })  : id = Value(id),
+        purchaseId = Value(purchaseId),
+        productId = Value(productId),
+        qty = Value(qty);
+  static Insertable<PurchaseItem> custom({
+    Expression<String>? id,
+    Expression<String>? purchaseId,
+    Expression<String>? productId,
+    Expression<double>? qty,
+    Expression<int>? unitCostCents,
+    Expression<int>? lineCostCents,
+    Expression<int>? unitPriceSnapshotCents,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (purchaseId != null) 'purchase_id': purchaseId,
+      if (productId != null) 'product_id': productId,
+      if (qty != null) 'qty': qty,
+      if (unitCostCents != null) 'unit_cost_cents': unitCostCents,
+      if (lineCostCents != null) 'line_cost_cents': lineCostCents,
+      if (unitPriceSnapshotCents != null)
+        'unit_price_snapshot_cents': unitPriceSnapshotCents,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  PurchaseItemsCompanion copyWith(
+      {Value<String>? id,
+      Value<String>? purchaseId,
+      Value<String>? productId,
+      Value<double>? qty,
+      Value<int>? unitCostCents,
+      Value<int>? lineCostCents,
+      Value<int>? unitPriceSnapshotCents,
+      Value<int>? rowid}) {
+    return PurchaseItemsCompanion(
+      id: id ?? this.id,
+      purchaseId: purchaseId ?? this.purchaseId,
+      productId: productId ?? this.productId,
+      qty: qty ?? this.qty,
+      unitCostCents: unitCostCents ?? this.unitCostCents,
+      lineCostCents: lineCostCents ?? this.lineCostCents,
+      unitPriceSnapshotCents:
+          unitPriceSnapshotCents ?? this.unitPriceSnapshotCents,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (purchaseId.present) {
+      map['purchase_id'] = Variable<String>(purchaseId.value);
+    }
+    if (productId.present) {
+      map['product_id'] = Variable<String>(productId.value);
+    }
+    if (qty.present) {
+      map['qty'] = Variable<double>(qty.value);
+    }
+    if (unitCostCents.present) {
+      map['unit_cost_cents'] = Variable<int>(unitCostCents.value);
+    }
+    if (lineCostCents.present) {
+      map['line_cost_cents'] = Variable<int>(lineCostCents.value);
+    }
+    if (unitPriceSnapshotCents.present) {
+      map['unit_price_snapshot_cents'] =
+          Variable<int>(unitPriceSnapshotCents.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PurchaseItemsCompanion(')
+          ..write('id: $id, ')
+          ..write('purchaseId: $purchaseId, ')
+          ..write('productId: $productId, ')
+          ..write('qty: $qty, ')
+          ..write('unitCostCents: $unitCostCents, ')
+          ..write('lineCostCents: $lineCostCents, ')
+          ..write('unitPriceSnapshotCents: $unitPriceSnapshotCents, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $StockLotsTable extends StockLots
+    with TableInfo<$StockLotsTable, StockLot> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $StockLotsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+      'id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _productIdMeta =
+      const VerificationMeta('productId');
+  @override
+  late final GeneratedColumn<String> productId = GeneratedColumn<String>(
+      'product_id', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('REFERENCES products (id)'));
+  static const VerificationMeta _warehouseIdMeta =
+      const VerificationMeta('warehouseId');
+  @override
+  late final GeneratedColumn<String> warehouseId = GeneratedColumn<String>(
+      'warehouse_id', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('REFERENCES warehouses (id)'));
+  static const VerificationMeta _purchaseItemIdMeta =
+      const VerificationMeta('purchaseItemId');
+  @override
+  late final GeneratedColumn<String> purchaseItemId = GeneratedColumn<String>(
+      'purchase_item_id', aliasedName, true,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('REFERENCES purchase_items (id)'));
+  static const VerificationMeta _sourceTypeMeta =
+      const VerificationMeta('sourceType');
+  @override
+  late final GeneratedColumn<String> sourceType = GeneratedColumn<String>(
+      'source_type', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('purchase'));
+  static const VerificationMeta _sourceIdMeta =
+      const VerificationMeta('sourceId');
+  @override
+  late final GeneratedColumn<String> sourceId = GeneratedColumn<String>(
+      'source_id', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _qtyInMeta = const VerificationMeta('qtyIn');
+  @override
+  late final GeneratedColumn<double> qtyIn = GeneratedColumn<double>(
+      'qty_in', aliasedName, false,
+      type: DriftSqlType.double,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _qtyRemainingMeta =
+      const VerificationMeta('qtyRemaining');
+  @override
+  late final GeneratedColumn<double> qtyRemaining = GeneratedColumn<double>(
+      'qty_remaining', aliasedName, false,
+      type: DriftSqlType.double,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _unitCostCentsMeta =
+      const VerificationMeta('unitCostCents');
+  @override
+  late final GeneratedColumn<int> unitCostCents = GeneratedColumn<int>(
+      'unit_cost_cents', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _receivedAtMeta =
+      const VerificationMeta('receivedAt');
+  @override
+  late final GeneratedColumn<DateTime> receivedAt = GeneratedColumn<DateTime>(
+      'received_at', aliasedName, false,
+      type: DriftSqlType.dateTime,
+      requiredDuringInsert: false,
+      defaultValue: currentDateAndTime);
+  static const VerificationMeta _createdAtMeta =
+      const VerificationMeta('createdAt');
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+      'created_at', aliasedName, false,
+      type: DriftSqlType.dateTime,
+      requiredDuringInsert: false,
+      defaultValue: currentDateAndTime);
+  static const VerificationMeta _noteMeta = const VerificationMeta('note');
+  @override
+  late final GeneratedColumn<String> note = GeneratedColumn<String>(
+      'note', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        productId,
+        warehouseId,
+        purchaseItemId,
+        sourceType,
+        sourceId,
+        qtyIn,
+        qtyRemaining,
+        unitCostCents,
+        receivedAt,
+        createdAt,
+        note
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'stock_lots';
+  @override
+  VerificationContext validateIntegrity(Insertable<StockLot> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('product_id')) {
+      context.handle(_productIdMeta,
+          productId.isAcceptableOrUnknown(data['product_id']!, _productIdMeta));
+    } else if (isInserting) {
+      context.missing(_productIdMeta);
+    }
+    if (data.containsKey('warehouse_id')) {
+      context.handle(
+          _warehouseIdMeta,
+          warehouseId.isAcceptableOrUnknown(
+              data['warehouse_id']!, _warehouseIdMeta));
+    } else if (isInserting) {
+      context.missing(_warehouseIdMeta);
+    }
+    if (data.containsKey('purchase_item_id')) {
+      context.handle(
+          _purchaseItemIdMeta,
+          purchaseItemId.isAcceptableOrUnknown(
+              data['purchase_item_id']!, _purchaseItemIdMeta));
+    }
+    if (data.containsKey('source_type')) {
+      context.handle(
+          _sourceTypeMeta,
+          sourceType.isAcceptableOrUnknown(
+              data['source_type']!, _sourceTypeMeta));
+    }
+    if (data.containsKey('source_id')) {
+      context.handle(_sourceIdMeta,
+          sourceId.isAcceptableOrUnknown(data['source_id']!, _sourceIdMeta));
+    }
+    if (data.containsKey('qty_in')) {
+      context.handle(
+          _qtyInMeta, qtyIn.isAcceptableOrUnknown(data['qty_in']!, _qtyInMeta));
+    }
+    if (data.containsKey('qty_remaining')) {
+      context.handle(
+          _qtyRemainingMeta,
+          qtyRemaining.isAcceptableOrUnknown(
+              data['qty_remaining']!, _qtyRemainingMeta));
+    }
+    if (data.containsKey('unit_cost_cents')) {
+      context.handle(
+          _unitCostCentsMeta,
+          unitCostCents.isAcceptableOrUnknown(
+              data['unit_cost_cents']!, _unitCostCentsMeta));
+    }
+    if (data.containsKey('received_at')) {
+      context.handle(
+          _receivedAtMeta,
+          receivedAt.isAcceptableOrUnknown(
+              data['received_at']!, _receivedAtMeta));
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(_createdAtMeta,
+          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+    }
+    if (data.containsKey('note')) {
+      context.handle(
+          _noteMeta, note.isAcceptableOrUnknown(data['note']!, _noteMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  StockLot map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return StockLot(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
+      productId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}product_id'])!,
+      warehouseId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}warehouse_id'])!,
+      purchaseItemId: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}purchase_item_id']),
+      sourceType: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}source_type'])!,
+      sourceId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}source_id']),
+      qtyIn: attachedDatabase.typeMapping
+          .read(DriftSqlType.double, data['${effectivePrefix}qty_in'])!,
+      qtyRemaining: attachedDatabase.typeMapping
+          .read(DriftSqlType.double, data['${effectivePrefix}qty_remaining'])!,
+      unitCostCents: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}unit_cost_cents'])!,
+      receivedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}received_at'])!,
+      createdAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
+      note: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}note']),
+    );
+  }
+
+  @override
+  $StockLotsTable createAlias(String alias) {
+    return $StockLotsTable(attachedDatabase, alias);
+  }
+}
+
+class StockLot extends DataClass implements Insertable<StockLot> {
+  final String id;
+  final String productId;
+  final String warehouseId;
+  final String? purchaseItemId;
+  final String sourceType;
+  final String? sourceId;
+  final double qtyIn;
+  final double qtyRemaining;
+  final int unitCostCents;
+  final DateTime receivedAt;
+  final DateTime createdAt;
+  final String? note;
+  const StockLot(
+      {required this.id,
+      required this.productId,
+      required this.warehouseId,
+      this.purchaseItemId,
+      required this.sourceType,
+      this.sourceId,
+      required this.qtyIn,
+      required this.qtyRemaining,
+      required this.unitCostCents,
+      required this.receivedAt,
+      required this.createdAt,
+      this.note});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['product_id'] = Variable<String>(productId);
+    map['warehouse_id'] = Variable<String>(warehouseId);
+    if (!nullToAbsent || purchaseItemId != null) {
+      map['purchase_item_id'] = Variable<String>(purchaseItemId);
+    }
+    map['source_type'] = Variable<String>(sourceType);
+    if (!nullToAbsent || sourceId != null) {
+      map['source_id'] = Variable<String>(sourceId);
+    }
+    map['qty_in'] = Variable<double>(qtyIn);
+    map['qty_remaining'] = Variable<double>(qtyRemaining);
+    map['unit_cost_cents'] = Variable<int>(unitCostCents);
+    map['received_at'] = Variable<DateTime>(receivedAt);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    if (!nullToAbsent || note != null) {
+      map['note'] = Variable<String>(note);
+    }
+    return map;
+  }
+
+  StockLotsCompanion toCompanion(bool nullToAbsent) {
+    return StockLotsCompanion(
+      id: Value(id),
+      productId: Value(productId),
+      warehouseId: Value(warehouseId),
+      purchaseItemId: purchaseItemId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(purchaseItemId),
+      sourceType: Value(sourceType),
+      sourceId: sourceId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceId),
+      qtyIn: Value(qtyIn),
+      qtyRemaining: Value(qtyRemaining),
+      unitCostCents: Value(unitCostCents),
+      receivedAt: Value(receivedAt),
+      createdAt: Value(createdAt),
+      note: note == null && nullToAbsent ? const Value.absent() : Value(note),
+    );
+  }
+
+  factory StockLot.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return StockLot(
+      id: serializer.fromJson<String>(json['id']),
+      productId: serializer.fromJson<String>(json['productId']),
+      warehouseId: serializer.fromJson<String>(json['warehouseId']),
+      purchaseItemId: serializer.fromJson<String?>(json['purchaseItemId']),
+      sourceType: serializer.fromJson<String>(json['sourceType']),
+      sourceId: serializer.fromJson<String?>(json['sourceId']),
+      qtyIn: serializer.fromJson<double>(json['qtyIn']),
+      qtyRemaining: serializer.fromJson<double>(json['qtyRemaining']),
+      unitCostCents: serializer.fromJson<int>(json['unitCostCents']),
+      receivedAt: serializer.fromJson<DateTime>(json['receivedAt']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      note: serializer.fromJson<String?>(json['note']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'productId': serializer.toJson<String>(productId),
+      'warehouseId': serializer.toJson<String>(warehouseId),
+      'purchaseItemId': serializer.toJson<String?>(purchaseItemId),
+      'sourceType': serializer.toJson<String>(sourceType),
+      'sourceId': serializer.toJson<String?>(sourceId),
+      'qtyIn': serializer.toJson<double>(qtyIn),
+      'qtyRemaining': serializer.toJson<double>(qtyRemaining),
+      'unitCostCents': serializer.toJson<int>(unitCostCents),
+      'receivedAt': serializer.toJson<DateTime>(receivedAt),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'note': serializer.toJson<String?>(note),
+    };
+  }
+
+  StockLot copyWith(
+          {String? id,
+          String? productId,
+          String? warehouseId,
+          Value<String?> purchaseItemId = const Value.absent(),
+          String? sourceType,
+          Value<String?> sourceId = const Value.absent(),
+          double? qtyIn,
+          double? qtyRemaining,
+          int? unitCostCents,
+          DateTime? receivedAt,
+          DateTime? createdAt,
+          Value<String?> note = const Value.absent()}) =>
+      StockLot(
+        id: id ?? this.id,
+        productId: productId ?? this.productId,
+        warehouseId: warehouseId ?? this.warehouseId,
+        purchaseItemId:
+            purchaseItemId.present ? purchaseItemId.value : this.purchaseItemId,
+        sourceType: sourceType ?? this.sourceType,
+        sourceId: sourceId.present ? sourceId.value : this.sourceId,
+        qtyIn: qtyIn ?? this.qtyIn,
+        qtyRemaining: qtyRemaining ?? this.qtyRemaining,
+        unitCostCents: unitCostCents ?? this.unitCostCents,
+        receivedAt: receivedAt ?? this.receivedAt,
+        createdAt: createdAt ?? this.createdAt,
+        note: note.present ? note.value : this.note,
+      );
+  StockLot copyWithCompanion(StockLotsCompanion data) {
+    return StockLot(
+      id: data.id.present ? data.id.value : this.id,
+      productId: data.productId.present ? data.productId.value : this.productId,
+      warehouseId:
+          data.warehouseId.present ? data.warehouseId.value : this.warehouseId,
+      purchaseItemId: data.purchaseItemId.present
+          ? data.purchaseItemId.value
+          : this.purchaseItemId,
+      sourceType:
+          data.sourceType.present ? data.sourceType.value : this.sourceType,
+      sourceId: data.sourceId.present ? data.sourceId.value : this.sourceId,
+      qtyIn: data.qtyIn.present ? data.qtyIn.value : this.qtyIn,
+      qtyRemaining: data.qtyRemaining.present
+          ? data.qtyRemaining.value
+          : this.qtyRemaining,
+      unitCostCents: data.unitCostCents.present
+          ? data.unitCostCents.value
+          : this.unitCostCents,
+      receivedAt:
+          data.receivedAt.present ? data.receivedAt.value : this.receivedAt,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      note: data.note.present ? data.note.value : this.note,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('StockLot(')
+          ..write('id: $id, ')
+          ..write('productId: $productId, ')
+          ..write('warehouseId: $warehouseId, ')
+          ..write('purchaseItemId: $purchaseItemId, ')
+          ..write('sourceType: $sourceType, ')
+          ..write('sourceId: $sourceId, ')
+          ..write('qtyIn: $qtyIn, ')
+          ..write('qtyRemaining: $qtyRemaining, ')
+          ..write('unitCostCents: $unitCostCents, ')
+          ..write('receivedAt: $receivedAt, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('note: $note')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      id,
+      productId,
+      warehouseId,
+      purchaseItemId,
+      sourceType,
+      sourceId,
+      qtyIn,
+      qtyRemaining,
+      unitCostCents,
+      receivedAt,
+      createdAt,
+      note);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is StockLot &&
+          other.id == this.id &&
+          other.productId == this.productId &&
+          other.warehouseId == this.warehouseId &&
+          other.purchaseItemId == this.purchaseItemId &&
+          other.sourceType == this.sourceType &&
+          other.sourceId == this.sourceId &&
+          other.qtyIn == this.qtyIn &&
+          other.qtyRemaining == this.qtyRemaining &&
+          other.unitCostCents == this.unitCostCents &&
+          other.receivedAt == this.receivedAt &&
+          other.createdAt == this.createdAt &&
+          other.note == this.note);
+}
+
+class StockLotsCompanion extends UpdateCompanion<StockLot> {
+  final Value<String> id;
+  final Value<String> productId;
+  final Value<String> warehouseId;
+  final Value<String?> purchaseItemId;
+  final Value<String> sourceType;
+  final Value<String?> sourceId;
+  final Value<double> qtyIn;
+  final Value<double> qtyRemaining;
+  final Value<int> unitCostCents;
+  final Value<DateTime> receivedAt;
+  final Value<DateTime> createdAt;
+  final Value<String?> note;
+  final Value<int> rowid;
+  const StockLotsCompanion({
+    this.id = const Value.absent(),
+    this.productId = const Value.absent(),
+    this.warehouseId = const Value.absent(),
+    this.purchaseItemId = const Value.absent(),
+    this.sourceType = const Value.absent(),
+    this.sourceId = const Value.absent(),
+    this.qtyIn = const Value.absent(),
+    this.qtyRemaining = const Value.absent(),
+    this.unitCostCents = const Value.absent(),
+    this.receivedAt = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.note = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  StockLotsCompanion.insert({
+    required String id,
+    required String productId,
+    required String warehouseId,
+    this.purchaseItemId = const Value.absent(),
+    this.sourceType = const Value.absent(),
+    this.sourceId = const Value.absent(),
+    this.qtyIn = const Value.absent(),
+    this.qtyRemaining = const Value.absent(),
+    this.unitCostCents = const Value.absent(),
+    this.receivedAt = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.note = const Value.absent(),
+    this.rowid = const Value.absent(),
+  })  : id = Value(id),
+        productId = Value(productId),
+        warehouseId = Value(warehouseId);
+  static Insertable<StockLot> custom({
+    Expression<String>? id,
+    Expression<String>? productId,
+    Expression<String>? warehouseId,
+    Expression<String>? purchaseItemId,
+    Expression<String>? sourceType,
+    Expression<String>? sourceId,
+    Expression<double>? qtyIn,
+    Expression<double>? qtyRemaining,
+    Expression<int>? unitCostCents,
+    Expression<DateTime>? receivedAt,
+    Expression<DateTime>? createdAt,
+    Expression<String>? note,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (productId != null) 'product_id': productId,
+      if (warehouseId != null) 'warehouse_id': warehouseId,
+      if (purchaseItemId != null) 'purchase_item_id': purchaseItemId,
+      if (sourceType != null) 'source_type': sourceType,
+      if (sourceId != null) 'source_id': sourceId,
+      if (qtyIn != null) 'qty_in': qtyIn,
+      if (qtyRemaining != null) 'qty_remaining': qtyRemaining,
+      if (unitCostCents != null) 'unit_cost_cents': unitCostCents,
+      if (receivedAt != null) 'received_at': receivedAt,
+      if (createdAt != null) 'created_at': createdAt,
+      if (note != null) 'note': note,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  StockLotsCompanion copyWith(
+      {Value<String>? id,
+      Value<String>? productId,
+      Value<String>? warehouseId,
+      Value<String?>? purchaseItemId,
+      Value<String>? sourceType,
+      Value<String?>? sourceId,
+      Value<double>? qtyIn,
+      Value<double>? qtyRemaining,
+      Value<int>? unitCostCents,
+      Value<DateTime>? receivedAt,
+      Value<DateTime>? createdAt,
+      Value<String?>? note,
+      Value<int>? rowid}) {
+    return StockLotsCompanion(
+      id: id ?? this.id,
+      productId: productId ?? this.productId,
+      warehouseId: warehouseId ?? this.warehouseId,
+      purchaseItemId: purchaseItemId ?? this.purchaseItemId,
+      sourceType: sourceType ?? this.sourceType,
+      sourceId: sourceId ?? this.sourceId,
+      qtyIn: qtyIn ?? this.qtyIn,
+      qtyRemaining: qtyRemaining ?? this.qtyRemaining,
+      unitCostCents: unitCostCents ?? this.unitCostCents,
+      receivedAt: receivedAt ?? this.receivedAt,
+      createdAt: createdAt ?? this.createdAt,
+      note: note ?? this.note,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (productId.present) {
+      map['product_id'] = Variable<String>(productId.value);
+    }
+    if (warehouseId.present) {
+      map['warehouse_id'] = Variable<String>(warehouseId.value);
+    }
+    if (purchaseItemId.present) {
+      map['purchase_item_id'] = Variable<String>(purchaseItemId.value);
+    }
+    if (sourceType.present) {
+      map['source_type'] = Variable<String>(sourceType.value);
+    }
+    if (sourceId.present) {
+      map['source_id'] = Variable<String>(sourceId.value);
+    }
+    if (qtyIn.present) {
+      map['qty_in'] = Variable<double>(qtyIn.value);
+    }
+    if (qtyRemaining.present) {
+      map['qty_remaining'] = Variable<double>(qtyRemaining.value);
+    }
+    if (unitCostCents.present) {
+      map['unit_cost_cents'] = Variable<int>(unitCostCents.value);
+    }
+    if (receivedAt.present) {
+      map['received_at'] = Variable<DateTime>(receivedAt.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (note.present) {
+      map['note'] = Variable<String>(note.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('StockLotsCompanion(')
+          ..write('id: $id, ')
+          ..write('productId: $productId, ')
+          ..write('warehouseId: $warehouseId, ')
+          ..write('purchaseItemId: $purchaseItemId, ')
+          ..write('sourceType: $sourceType, ')
+          ..write('sourceId: $sourceId, ')
+          ..write('qtyIn: $qtyIn, ')
+          ..write('qtyRemaining: $qtyRemaining, ')
+          ..write('unitCostCents: $unitCostCents, ')
+          ..write('receivedAt: $receivedAt, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('note: $note, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $SaleItemLotAllocationsTable extends SaleItemLotAllocations
+    with TableInfo<$SaleItemLotAllocationsTable, SaleItemLotAllocation> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SaleItemLotAllocationsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+      'id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _saleIdMeta = const VerificationMeta('saleId');
+  @override
+  late final GeneratedColumn<String> saleId = GeneratedColumn<String>(
+      'sale_id', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('REFERENCES sales (id)'));
+  static const VerificationMeta _saleItemIdMeta =
+      const VerificationMeta('saleItemId');
+  @override
+  late final GeneratedColumn<String> saleItemId = GeneratedColumn<String>(
+      'sale_item_id', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('REFERENCES sale_items (id)'));
+  static const VerificationMeta _productIdMeta =
+      const VerificationMeta('productId');
+  @override
+  late final GeneratedColumn<String> productId = GeneratedColumn<String>(
+      'product_id', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('REFERENCES products (id)'));
+  static const VerificationMeta _warehouseIdMeta =
+      const VerificationMeta('warehouseId');
+  @override
+  late final GeneratedColumn<String> warehouseId = GeneratedColumn<String>(
+      'warehouse_id', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('REFERENCES warehouses (id)'));
+  static const VerificationMeta _lotIdMeta = const VerificationMeta('lotId');
+  @override
+  late final GeneratedColumn<String> lotId = GeneratedColumn<String>(
+      'lot_id', aliasedName, true,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('REFERENCES stock_lots (id)'));
+  static const VerificationMeta _qtyMeta = const VerificationMeta('qty');
+  @override
+  late final GeneratedColumn<double> qty = GeneratedColumn<double>(
+      'qty', aliasedName, false,
+      type: DriftSqlType.double,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _unitCostCentsMeta =
+      const VerificationMeta('unitCostCents');
+  @override
+  late final GeneratedColumn<int> unitCostCents = GeneratedColumn<int>(
+      'unit_cost_cents', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _lineCostCentsMeta =
+      const VerificationMeta('lineCostCents');
+  @override
+  late final GeneratedColumn<int> lineCostCents = GeneratedColumn<int>(
+      'line_cost_cents', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _isVoidedMeta =
+      const VerificationMeta('isVoided');
+  @override
+  late final GeneratedColumn<bool> isVoided = GeneratedColumn<bool>(
+      'is_voided', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("is_voided" IN (0, 1))'),
+      defaultValue: const Constant(false));
+  static const VerificationMeta _voidedAtMeta =
+      const VerificationMeta('voidedAt');
+  @override
+  late final GeneratedColumn<DateTime> voidedAt = GeneratedColumn<DateTime>(
+      'voided_at', aliasedName, true,
+      type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  static const VerificationMeta _createdAtMeta =
+      const VerificationMeta('createdAt');
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+      'created_at', aliasedName, false,
+      type: DriftSqlType.dateTime,
+      requiredDuringInsert: false,
+      defaultValue: currentDateAndTime);
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        saleId,
+        saleItemId,
+        productId,
+        warehouseId,
+        lotId,
+        qty,
+        unitCostCents,
+        lineCostCents,
+        isVoided,
+        voidedAt,
+        createdAt
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'sale_item_lot_allocations';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<SaleItemLotAllocation> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('sale_id')) {
+      context.handle(_saleIdMeta,
+          saleId.isAcceptableOrUnknown(data['sale_id']!, _saleIdMeta));
+    } else if (isInserting) {
+      context.missing(_saleIdMeta);
+    }
+    if (data.containsKey('sale_item_id')) {
+      context.handle(
+          _saleItemIdMeta,
+          saleItemId.isAcceptableOrUnknown(
+              data['sale_item_id']!, _saleItemIdMeta));
+    } else if (isInserting) {
+      context.missing(_saleItemIdMeta);
+    }
+    if (data.containsKey('product_id')) {
+      context.handle(_productIdMeta,
+          productId.isAcceptableOrUnknown(data['product_id']!, _productIdMeta));
+    } else if (isInserting) {
+      context.missing(_productIdMeta);
+    }
+    if (data.containsKey('warehouse_id')) {
+      context.handle(
+          _warehouseIdMeta,
+          warehouseId.isAcceptableOrUnknown(
+              data['warehouse_id']!, _warehouseIdMeta));
+    } else if (isInserting) {
+      context.missing(_warehouseIdMeta);
+    }
+    if (data.containsKey('lot_id')) {
+      context.handle(
+          _lotIdMeta, lotId.isAcceptableOrUnknown(data['lot_id']!, _lotIdMeta));
+    }
+    if (data.containsKey('qty')) {
+      context.handle(
+          _qtyMeta, qty.isAcceptableOrUnknown(data['qty']!, _qtyMeta));
+    }
+    if (data.containsKey('unit_cost_cents')) {
+      context.handle(
+          _unitCostCentsMeta,
+          unitCostCents.isAcceptableOrUnknown(
+              data['unit_cost_cents']!, _unitCostCentsMeta));
+    }
+    if (data.containsKey('line_cost_cents')) {
+      context.handle(
+          _lineCostCentsMeta,
+          lineCostCents.isAcceptableOrUnknown(
+              data['line_cost_cents']!, _lineCostCentsMeta));
+    }
+    if (data.containsKey('is_voided')) {
+      context.handle(_isVoidedMeta,
+          isVoided.isAcceptableOrUnknown(data['is_voided']!, _isVoidedMeta));
+    }
+    if (data.containsKey('voided_at')) {
+      context.handle(_voidedAtMeta,
+          voidedAt.isAcceptableOrUnknown(data['voided_at']!, _voidedAtMeta));
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(_createdAtMeta,
+          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SaleItemLotAllocation map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SaleItemLotAllocation(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
+      saleId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}sale_id'])!,
+      saleItemId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}sale_item_id'])!,
+      productId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}product_id'])!,
+      warehouseId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}warehouse_id'])!,
+      lotId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}lot_id']),
+      qty: attachedDatabase.typeMapping
+          .read(DriftSqlType.double, data['${effectivePrefix}qty'])!,
+      unitCostCents: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}unit_cost_cents'])!,
+      lineCostCents: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}line_cost_cents'])!,
+      isVoided: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}is_voided'])!,
+      voidedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}voided_at']),
+      createdAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
+    );
+  }
+
+  @override
+  $SaleItemLotAllocationsTable createAlias(String alias) {
+    return $SaleItemLotAllocationsTable(attachedDatabase, alias);
+  }
+}
+
+class SaleItemLotAllocation extends DataClass
+    implements Insertable<SaleItemLotAllocation> {
+  final String id;
+  final String saleId;
+  final String saleItemId;
+  final String productId;
+  final String warehouseId;
+  final String? lotId;
+  final double qty;
+  final int unitCostCents;
+  final int lineCostCents;
+  final bool isVoided;
+  final DateTime? voidedAt;
+  final DateTime createdAt;
+  const SaleItemLotAllocation(
+      {required this.id,
+      required this.saleId,
+      required this.saleItemId,
+      required this.productId,
+      required this.warehouseId,
+      this.lotId,
+      required this.qty,
+      required this.unitCostCents,
+      required this.lineCostCents,
+      required this.isVoided,
+      this.voidedAt,
+      required this.createdAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['sale_id'] = Variable<String>(saleId);
+    map['sale_item_id'] = Variable<String>(saleItemId);
+    map['product_id'] = Variable<String>(productId);
+    map['warehouse_id'] = Variable<String>(warehouseId);
+    if (!nullToAbsent || lotId != null) {
+      map['lot_id'] = Variable<String>(lotId);
+    }
+    map['qty'] = Variable<double>(qty);
+    map['unit_cost_cents'] = Variable<int>(unitCostCents);
+    map['line_cost_cents'] = Variable<int>(lineCostCents);
+    map['is_voided'] = Variable<bool>(isVoided);
+    if (!nullToAbsent || voidedAt != null) {
+      map['voided_at'] = Variable<DateTime>(voidedAt);
+    }
+    map['created_at'] = Variable<DateTime>(createdAt);
+    return map;
+  }
+
+  SaleItemLotAllocationsCompanion toCompanion(bool nullToAbsent) {
+    return SaleItemLotAllocationsCompanion(
+      id: Value(id),
+      saleId: Value(saleId),
+      saleItemId: Value(saleItemId),
+      productId: Value(productId),
+      warehouseId: Value(warehouseId),
+      lotId:
+          lotId == null && nullToAbsent ? const Value.absent() : Value(lotId),
+      qty: Value(qty),
+      unitCostCents: Value(unitCostCents),
+      lineCostCents: Value(lineCostCents),
+      isVoided: Value(isVoided),
+      voidedAt: voidedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(voidedAt),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory SaleItemLotAllocation.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SaleItemLotAllocation(
+      id: serializer.fromJson<String>(json['id']),
+      saleId: serializer.fromJson<String>(json['saleId']),
+      saleItemId: serializer.fromJson<String>(json['saleItemId']),
+      productId: serializer.fromJson<String>(json['productId']),
+      warehouseId: serializer.fromJson<String>(json['warehouseId']),
+      lotId: serializer.fromJson<String?>(json['lotId']),
+      qty: serializer.fromJson<double>(json['qty']),
+      unitCostCents: serializer.fromJson<int>(json['unitCostCents']),
+      lineCostCents: serializer.fromJson<int>(json['lineCostCents']),
+      isVoided: serializer.fromJson<bool>(json['isVoided']),
+      voidedAt: serializer.fromJson<DateTime?>(json['voidedAt']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'saleId': serializer.toJson<String>(saleId),
+      'saleItemId': serializer.toJson<String>(saleItemId),
+      'productId': serializer.toJson<String>(productId),
+      'warehouseId': serializer.toJson<String>(warehouseId),
+      'lotId': serializer.toJson<String?>(lotId),
+      'qty': serializer.toJson<double>(qty),
+      'unitCostCents': serializer.toJson<int>(unitCostCents),
+      'lineCostCents': serializer.toJson<int>(lineCostCents),
+      'isVoided': serializer.toJson<bool>(isVoided),
+      'voidedAt': serializer.toJson<DateTime?>(voidedAt),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+    };
+  }
+
+  SaleItemLotAllocation copyWith(
+          {String? id,
+          String? saleId,
+          String? saleItemId,
+          String? productId,
+          String? warehouseId,
+          Value<String?> lotId = const Value.absent(),
+          double? qty,
+          int? unitCostCents,
+          int? lineCostCents,
+          bool? isVoided,
+          Value<DateTime?> voidedAt = const Value.absent(),
+          DateTime? createdAt}) =>
+      SaleItemLotAllocation(
+        id: id ?? this.id,
+        saleId: saleId ?? this.saleId,
+        saleItemId: saleItemId ?? this.saleItemId,
+        productId: productId ?? this.productId,
+        warehouseId: warehouseId ?? this.warehouseId,
+        lotId: lotId.present ? lotId.value : this.lotId,
+        qty: qty ?? this.qty,
+        unitCostCents: unitCostCents ?? this.unitCostCents,
+        lineCostCents: lineCostCents ?? this.lineCostCents,
+        isVoided: isVoided ?? this.isVoided,
+        voidedAt: voidedAt.present ? voidedAt.value : this.voidedAt,
+        createdAt: createdAt ?? this.createdAt,
+      );
+  SaleItemLotAllocation copyWithCompanion(
+      SaleItemLotAllocationsCompanion data) {
+    return SaleItemLotAllocation(
+      id: data.id.present ? data.id.value : this.id,
+      saleId: data.saleId.present ? data.saleId.value : this.saleId,
+      saleItemId:
+          data.saleItemId.present ? data.saleItemId.value : this.saleItemId,
+      productId: data.productId.present ? data.productId.value : this.productId,
+      warehouseId:
+          data.warehouseId.present ? data.warehouseId.value : this.warehouseId,
+      lotId: data.lotId.present ? data.lotId.value : this.lotId,
+      qty: data.qty.present ? data.qty.value : this.qty,
+      unitCostCents: data.unitCostCents.present
+          ? data.unitCostCents.value
+          : this.unitCostCents,
+      lineCostCents: data.lineCostCents.present
+          ? data.lineCostCents.value
+          : this.lineCostCents,
+      isVoided: data.isVoided.present ? data.isVoided.value : this.isVoided,
+      voidedAt: data.voidedAt.present ? data.voidedAt.value : this.voidedAt,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SaleItemLotAllocation(')
+          ..write('id: $id, ')
+          ..write('saleId: $saleId, ')
+          ..write('saleItemId: $saleItemId, ')
+          ..write('productId: $productId, ')
+          ..write('warehouseId: $warehouseId, ')
+          ..write('lotId: $lotId, ')
+          ..write('qty: $qty, ')
+          ..write('unitCostCents: $unitCostCents, ')
+          ..write('lineCostCents: $lineCostCents, ')
+          ..write('isVoided: $isVoided, ')
+          ..write('voidedAt: $voidedAt, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      id,
+      saleId,
+      saleItemId,
+      productId,
+      warehouseId,
+      lotId,
+      qty,
+      unitCostCents,
+      lineCostCents,
+      isVoided,
+      voidedAt,
+      createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SaleItemLotAllocation &&
+          other.id == this.id &&
+          other.saleId == this.saleId &&
+          other.saleItemId == this.saleItemId &&
+          other.productId == this.productId &&
+          other.warehouseId == this.warehouseId &&
+          other.lotId == this.lotId &&
+          other.qty == this.qty &&
+          other.unitCostCents == this.unitCostCents &&
+          other.lineCostCents == this.lineCostCents &&
+          other.isVoided == this.isVoided &&
+          other.voidedAt == this.voidedAt &&
+          other.createdAt == this.createdAt);
+}
+
+class SaleItemLotAllocationsCompanion
+    extends UpdateCompanion<SaleItemLotAllocation> {
+  final Value<String> id;
+  final Value<String> saleId;
+  final Value<String> saleItemId;
+  final Value<String> productId;
+  final Value<String> warehouseId;
+  final Value<String?> lotId;
+  final Value<double> qty;
+  final Value<int> unitCostCents;
+  final Value<int> lineCostCents;
+  final Value<bool> isVoided;
+  final Value<DateTime?> voidedAt;
+  final Value<DateTime> createdAt;
+  final Value<int> rowid;
+  const SaleItemLotAllocationsCompanion({
+    this.id = const Value.absent(),
+    this.saleId = const Value.absent(),
+    this.saleItemId = const Value.absent(),
+    this.productId = const Value.absent(),
+    this.warehouseId = const Value.absent(),
+    this.lotId = const Value.absent(),
+    this.qty = const Value.absent(),
+    this.unitCostCents = const Value.absent(),
+    this.lineCostCents = const Value.absent(),
+    this.isVoided = const Value.absent(),
+    this.voidedAt = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SaleItemLotAllocationsCompanion.insert({
+    required String id,
+    required String saleId,
+    required String saleItemId,
+    required String productId,
+    required String warehouseId,
+    this.lotId = const Value.absent(),
+    this.qty = const Value.absent(),
+    this.unitCostCents = const Value.absent(),
+    this.lineCostCents = const Value.absent(),
+    this.isVoided = const Value.absent(),
+    this.voidedAt = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  })  : id = Value(id),
+        saleId = Value(saleId),
+        saleItemId = Value(saleItemId),
+        productId = Value(productId),
+        warehouseId = Value(warehouseId);
+  static Insertable<SaleItemLotAllocation> custom({
+    Expression<String>? id,
+    Expression<String>? saleId,
+    Expression<String>? saleItemId,
+    Expression<String>? productId,
+    Expression<String>? warehouseId,
+    Expression<String>? lotId,
+    Expression<double>? qty,
+    Expression<int>? unitCostCents,
+    Expression<int>? lineCostCents,
+    Expression<bool>? isVoided,
+    Expression<DateTime>? voidedAt,
+    Expression<DateTime>? createdAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (saleId != null) 'sale_id': saleId,
+      if (saleItemId != null) 'sale_item_id': saleItemId,
+      if (productId != null) 'product_id': productId,
+      if (warehouseId != null) 'warehouse_id': warehouseId,
+      if (lotId != null) 'lot_id': lotId,
+      if (qty != null) 'qty': qty,
+      if (unitCostCents != null) 'unit_cost_cents': unitCostCents,
+      if (lineCostCents != null) 'line_cost_cents': lineCostCents,
+      if (isVoided != null) 'is_voided': isVoided,
+      if (voidedAt != null) 'voided_at': voidedAt,
+      if (createdAt != null) 'created_at': createdAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SaleItemLotAllocationsCompanion copyWith(
+      {Value<String>? id,
+      Value<String>? saleId,
+      Value<String>? saleItemId,
+      Value<String>? productId,
+      Value<String>? warehouseId,
+      Value<String?>? lotId,
+      Value<double>? qty,
+      Value<int>? unitCostCents,
+      Value<int>? lineCostCents,
+      Value<bool>? isVoided,
+      Value<DateTime?>? voidedAt,
+      Value<DateTime>? createdAt,
+      Value<int>? rowid}) {
+    return SaleItemLotAllocationsCompanion(
+      id: id ?? this.id,
+      saleId: saleId ?? this.saleId,
+      saleItemId: saleItemId ?? this.saleItemId,
+      productId: productId ?? this.productId,
+      warehouseId: warehouseId ?? this.warehouseId,
+      lotId: lotId ?? this.lotId,
+      qty: qty ?? this.qty,
+      unitCostCents: unitCostCents ?? this.unitCostCents,
+      lineCostCents: lineCostCents ?? this.lineCostCents,
+      isVoided: isVoided ?? this.isVoided,
+      voidedAt: voidedAt ?? this.voidedAt,
+      createdAt: createdAt ?? this.createdAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (saleId.present) {
+      map['sale_id'] = Variable<String>(saleId.value);
+    }
+    if (saleItemId.present) {
+      map['sale_item_id'] = Variable<String>(saleItemId.value);
+    }
+    if (productId.present) {
+      map['product_id'] = Variable<String>(productId.value);
+    }
+    if (warehouseId.present) {
+      map['warehouse_id'] = Variable<String>(warehouseId.value);
+    }
+    if (lotId.present) {
+      map['lot_id'] = Variable<String>(lotId.value);
+    }
+    if (qty.present) {
+      map['qty'] = Variable<double>(qty.value);
+    }
+    if (unitCostCents.present) {
+      map['unit_cost_cents'] = Variable<int>(unitCostCents.value);
+    }
+    if (lineCostCents.present) {
+      map['line_cost_cents'] = Variable<int>(lineCostCents.value);
+    }
+    if (isVoided.present) {
+      map['is_voided'] = Variable<bool>(isVoided.value);
+    }
+    if (voidedAt.present) {
+      map['voided_at'] = Variable<DateTime>(voidedAt.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SaleItemLotAllocationsCompanion(')
+          ..write('id: $id, ')
+          ..write('saleId: $saleId, ')
+          ..write('saleItemId: $saleItemId, ')
+          ..write('productId: $productId, ')
+          ..write('warehouseId: $warehouseId, ')
+          ..write('lotId: $lotId, ')
+          ..write('qty: $qty, ')
+          ..write('unitCostCents: $unitCostCents, ')
+          ..write('lineCostCents: $lineCostCents, ')
+          ..write('isVoided: $isVoided, ')
+          ..write('voidedAt: $voidedAt, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $AppSettingsTable extends AppSettings
     with TableInfo<$AppSettingsTable, AppSetting> {
   @override
@@ -12082,6 +14214,11 @@ abstract class _$AppDatabase extends GeneratedDatabase {
       $ManualIpvReportsTable(this);
   late final $ManualIpvReportLinesTable manualIpvReportLines =
       $ManualIpvReportLinesTable(this);
+  late final $PurchasesTable purchases = $PurchasesTable(this);
+  late final $PurchaseItemsTable purchaseItems = $PurchaseItemsTable(this);
+  late final $StockLotsTable stockLots = $StockLotsTable(this);
+  late final $SaleItemLotAllocationsTable saleItemLotAllocations =
+      $SaleItemLotAllocationsTable(this);
   late final $AppSettingsTable appSettings = $AppSettingsTable(this);
   late final $AuditLogsTable auditLogs = $AuditLogsTable(this);
   @override
@@ -12113,6 +14250,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         ipvReportLines,
         manualIpvReports,
         manualIpvReportLines,
+        purchases,
+        purchaseItems,
+        stockLots,
+        saleItemLotAllocations,
         appSettings,
         auditLogs
       ];
@@ -12275,6 +14416,20 @@ final class $$UsersTableReferences
 
     final cache =
         $_typedResult.readTableOrNull(_manualIpvReportsRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
+
+  static MultiTypedResultKey<$PurchasesTable, List<Purchase>>
+      _createdPurchasesTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+          db.purchases,
+          aliasName: $_aliasNameGenerator(db.users.id, db.purchases.createdBy));
+
+  $$PurchasesTableProcessedTableManager get createdPurchases {
+    final manager = $$PurchasesTableTableManager($_db, $_db.purchases)
+        .filter((f) => f.createdBy.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_createdPurchasesTable($_db));
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
@@ -12507,6 +14662,27 @@ class $$UsersTableFilterComposer extends Composer<_$AppDatabase, $UsersTable> {
             $$ManualIpvReportsTableFilterComposer(
               $db: $db,
               $table: $db.manualIpvReports,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<bool> createdPurchases(
+      Expression<bool> Function($$PurchasesTableFilterComposer f) f) {
+    final $$PurchasesTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.purchases,
+        getReferencedColumn: (t) => t.createdBy,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$PurchasesTableFilterComposer(
+              $db: $db,
+              $table: $db.purchases,
               $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
               joinBuilder: joinBuilder,
               $removeJoinBuilderFromRootComposer:
@@ -12794,6 +14970,27 @@ class $$UsersTableAnnotationComposer
     return f(composer);
   }
 
+  Expression<T> createdPurchases<T extends Object>(
+      Expression<T> Function($$PurchasesTableAnnotationComposer a) f) {
+    final $$PurchasesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.purchases,
+        getReferencedColumn: (t) => t.createdBy,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$PurchasesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.purchases,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
   Expression<T> auditLogsRefs<T extends Object>(
       Expression<T> Function($$AuditLogsTableAnnotationComposer a) f) {
     final $$AuditLogsTableAnnotationComposer composer = $composerBuilder(
@@ -12837,6 +15034,7 @@ class $$UsersTableTableManager extends RootTableManager<
         bool openedIpvReports,
         bool closedIpvReports,
         bool manualIpvReportsRefs,
+        bool createdPurchases,
         bool auditLogsRefs})> {
   $$UsersTableTableManager(_$AppDatabase db, $UsersTable table)
       : super(TableManagerState(
@@ -12906,6 +15104,7 @@ class $$UsersTableTableManager extends RootTableManager<
               openedIpvReports = false,
               closedIpvReports = false,
               manualIpvReportsRefs = false,
+              createdPurchases = false,
               auditLogsRefs = false}) {
             return PrefetchHooks(
               db: db,
@@ -12919,6 +15118,7 @@ class $$UsersTableTableManager extends RootTableManager<
                 if (openedIpvReports) db.ipvReports,
                 if (closedIpvReports) db.ipvReports,
                 if (manualIpvReportsRefs) db.manualIpvReports,
+                if (createdPurchases) db.purchases,
                 if (auditLogsRefs) db.auditLogs
               ],
               addJoins: null,
@@ -13030,6 +15230,18 @@ class $$UsersTableTableManager extends RootTableManager<
                             (item, referencedItems) => referencedItems
                                 .where((e) => e.createdBy == item.id),
                         typedResults: items),
+                  if (createdPurchases)
+                    await $_getPrefetchedData<User, $UsersTable, Purchase>(
+                        currentTable: table,
+                        referencedTable:
+                            $$UsersTableReferences._createdPurchasesTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$UsersTableReferences(db, table, p0)
+                                .createdPurchases,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.createdBy == item.id),
+                        typedResults: items),
                   if (auditLogsRefs)
                     await $_getPrefetchedData<User, $UsersTable, AuditLog>(
                         currentTable: table,
@@ -13069,6 +15281,7 @@ typedef $$UsersTableProcessedTableManager = ProcessedTableManager<
         bool openedIpvReports,
         bool closedIpvReports,
         bool manualIpvReportsRefs,
+        bool createdPurchases,
         bool auditLogsRefs})>;
 typedef $$RolesTableCreateCompanionBuilder = RolesCompanion Function({
   required String id,
@@ -14441,6 +16654,55 @@ final class $$ProductsTableReferences
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
+
+  static MultiTypedResultKey<$PurchaseItemsTable, List<PurchaseItem>>
+      _purchaseItemsRefsTable(_$AppDatabase db) =>
+          MultiTypedResultKey.fromTable(db.purchaseItems,
+              aliasName: $_aliasNameGenerator(
+                  db.products.id, db.purchaseItems.productId));
+
+  $$PurchaseItemsTableProcessedTableManager get purchaseItemsRefs {
+    final manager = $$PurchaseItemsTableTableManager($_db, $_db.purchaseItems)
+        .filter((f) => f.productId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_purchaseItemsRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
+
+  static MultiTypedResultKey<$StockLotsTable, List<StockLot>>
+      _stockLotsRefsTable(_$AppDatabase db) =>
+          MultiTypedResultKey.fromTable(db.stockLots,
+              aliasName:
+                  $_aliasNameGenerator(db.products.id, db.stockLots.productId));
+
+  $$StockLotsTableProcessedTableManager get stockLotsRefs {
+    final manager = $$StockLotsTableTableManager($_db, $_db.stockLots)
+        .filter((f) => f.productId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_stockLotsRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
+
+  static MultiTypedResultKey<$SaleItemLotAllocationsTable,
+      List<SaleItemLotAllocation>> _saleItemLotAllocationsRefsTable(
+          _$AppDatabase db) =>
+      MultiTypedResultKey.fromTable(db.saleItemLotAllocations,
+          aliasName: $_aliasNameGenerator(
+              db.products.id, db.saleItemLotAllocations.productId));
+
+  $$SaleItemLotAllocationsTableProcessedTableManager
+      get saleItemLotAllocationsRefs {
+    final manager = $$SaleItemLotAllocationsTableTableManager(
+            $_db, $_db.saleItemLotAllocations)
+        .filter((f) => f.productId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache =
+        $_typedResult.readTableOrNull(_saleItemLotAllocationsRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
 }
 
 class $$ProductsTableFilterComposer
@@ -14601,6 +16863,71 @@ class $$ProductsTableFilterComposer
               $removeJoinBuilderFromRootComposer:
                   $removeJoinBuilderFromRootComposer,
             ));
+    return f(composer);
+  }
+
+  Expression<bool> purchaseItemsRefs(
+      Expression<bool> Function($$PurchaseItemsTableFilterComposer f) f) {
+    final $$PurchaseItemsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.purchaseItems,
+        getReferencedColumn: (t) => t.productId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$PurchaseItemsTableFilterComposer(
+              $db: $db,
+              $table: $db.purchaseItems,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<bool> stockLotsRefs(
+      Expression<bool> Function($$StockLotsTableFilterComposer f) f) {
+    final $$StockLotsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.stockLots,
+        getReferencedColumn: (t) => t.productId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$StockLotsTableFilterComposer(
+              $db: $db,
+              $table: $db.stockLots,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<bool> saleItemLotAllocationsRefs(
+      Expression<bool> Function($$SaleItemLotAllocationsTableFilterComposer f)
+          f) {
+    final $$SaleItemLotAllocationsTableFilterComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.saleItemLotAllocations,
+            getReferencedColumn: (t) => t.productId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$SaleItemLotAllocationsTableFilterComposer(
+                  $db: $db,
+                  $table: $db.saleItemLotAllocations,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
     return f(composer);
   }
 }
@@ -14822,6 +17149,71 @@ class $$ProductsTableAnnotationComposer
                 ));
     return f(composer);
   }
+
+  Expression<T> purchaseItemsRefs<T extends Object>(
+      Expression<T> Function($$PurchaseItemsTableAnnotationComposer a) f) {
+    final $$PurchaseItemsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.purchaseItems,
+        getReferencedColumn: (t) => t.productId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$PurchaseItemsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.purchaseItems,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<T> stockLotsRefs<T extends Object>(
+      Expression<T> Function($$StockLotsTableAnnotationComposer a) f) {
+    final $$StockLotsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.stockLots,
+        getReferencedColumn: (t) => t.productId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$StockLotsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.stockLots,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<T> saleItemLotAllocationsRefs<T extends Object>(
+      Expression<T> Function($$SaleItemLotAllocationsTableAnnotationComposer a)
+          f) {
+    final $$SaleItemLotAllocationsTableAnnotationComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.saleItemLotAllocations,
+            getReferencedColumn: (t) => t.productId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$SaleItemLotAllocationsTableAnnotationComposer(
+                  $db: $db,
+                  $table: $db.saleItemLotAllocations,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return f(composer);
+  }
 }
 
 class $$ProductsTableTableManager extends RootTableManager<
@@ -14840,7 +17232,10 @@ class $$ProductsTableTableManager extends RootTableManager<
         bool stockMovementsRefs,
         bool saleItemsRefs,
         bool ipvReportLinesRefs,
-        bool manualIpvReportLinesRefs})> {
+        bool manualIpvReportLinesRefs,
+        bool purchaseItemsRefs,
+        bool stockLotsRefs,
+        bool saleItemLotAllocationsRefs})> {
   $$ProductsTableTableManager(_$AppDatabase db, $ProductsTable table)
       : super(TableManagerState(
           db: db,
@@ -14932,7 +17327,10 @@ class $$ProductsTableTableManager extends RootTableManager<
               stockMovementsRefs = false,
               saleItemsRefs = false,
               ipvReportLinesRefs = false,
-              manualIpvReportLinesRefs = false}) {
+              manualIpvReportLinesRefs = false,
+              purchaseItemsRefs = false,
+              stockLotsRefs = false,
+              saleItemLotAllocationsRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
@@ -14940,7 +17338,10 @@ class $$ProductsTableTableManager extends RootTableManager<
                 if (stockMovementsRefs) db.stockMovements,
                 if (saleItemsRefs) db.saleItems,
                 if (ipvReportLinesRefs) db.ipvReportLines,
-                if (manualIpvReportLinesRefs) db.manualIpvReportLines
+                if (manualIpvReportLinesRefs) db.manualIpvReportLines,
+                if (purchaseItemsRefs) db.purchaseItems,
+                if (stockLotsRefs) db.stockLots,
+                if (saleItemLotAllocationsRefs) db.saleItemLotAllocations
               ],
               addJoins: null,
               getPrefetchedDataCallback: (items) async {
@@ -15009,6 +17410,45 @@ class $$ProductsTableTableManager extends RootTableManager<
                         referencedItemsForCurrentItem:
                             (item, referencedItems) => referencedItems
                                 .where((e) => e.productId == item.id),
+                        typedResults: items),
+                  if (purchaseItemsRefs)
+                    await $_getPrefetchedData<Product, $ProductsTable,
+                            PurchaseItem>(
+                        currentTable: table,
+                        referencedTable: $$ProductsTableReferences
+                            ._purchaseItemsRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$ProductsTableReferences(db, table, p0)
+                                .purchaseItemsRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.productId == item.id),
+                        typedResults: items),
+                  if (stockLotsRefs)
+                    await $_getPrefetchedData<Product, $ProductsTable,
+                            StockLot>(
+                        currentTable: table,
+                        referencedTable:
+                            $$ProductsTableReferences._stockLotsRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$ProductsTableReferences(db, table, p0)
+                                .stockLotsRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.productId == item.id),
+                        typedResults: items),
+                  if (saleItemLotAllocationsRefs)
+                    await $_getPrefetchedData<Product, $ProductsTable,
+                            SaleItemLotAllocation>(
+                        currentTable: table,
+                        referencedTable: $$ProductsTableReferences
+                            ._saleItemLotAllocationsRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$ProductsTableReferences(db, table, p0)
+                                .saleItemLotAllocationsRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.productId == item.id),
                         typedResults: items)
                 ];
               },
@@ -15033,7 +17473,10 @@ typedef $$ProductsTableProcessedTableManager = ProcessedTableManager<
         bool stockMovementsRefs,
         bool saleItemsRefs,
         bool ipvReportLinesRefs,
-        bool manualIpvReportLinesRefs})>;
+        bool manualIpvReportLinesRefs,
+        bool purchaseItemsRefs,
+        bool stockLotsRefs,
+        bool saleItemLotAllocationsRefs})>;
 typedef $$ProductCatalogItemsTableCreateCompanionBuilder
     = ProductCatalogItemsCompanion Function({
   required String id,
@@ -15322,6 +17765,55 @@ final class $$WarehousesTableReferences
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
+
+  static MultiTypedResultKey<$PurchasesTable, List<Purchase>>
+      _purchasesRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+          db.purchases,
+          aliasName:
+              $_aliasNameGenerator(db.warehouses.id, db.purchases.warehouseId));
+
+  $$PurchasesTableProcessedTableManager get purchasesRefs {
+    final manager = $$PurchasesTableTableManager($_db, $_db.purchases)
+        .filter((f) => f.warehouseId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_purchasesRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
+
+  static MultiTypedResultKey<$StockLotsTable, List<StockLot>>
+      _stockLotsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+          db.stockLots,
+          aliasName:
+              $_aliasNameGenerator(db.warehouses.id, db.stockLots.warehouseId));
+
+  $$StockLotsTableProcessedTableManager get stockLotsRefs {
+    final manager = $$StockLotsTableTableManager($_db, $_db.stockLots)
+        .filter((f) => f.warehouseId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_stockLotsRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
+
+  static MultiTypedResultKey<$SaleItemLotAllocationsTable,
+      List<SaleItemLotAllocation>> _saleItemLotAllocationsRefsTable(
+          _$AppDatabase db) =>
+      MultiTypedResultKey.fromTable(db.saleItemLotAllocations,
+          aliasName: $_aliasNameGenerator(
+              db.warehouses.id, db.saleItemLotAllocations.warehouseId));
+
+  $$SaleItemLotAllocationsTableProcessedTableManager
+      get saleItemLotAllocationsRefs {
+    final manager = $$SaleItemLotAllocationsTableTableManager(
+            $_db, $_db.saleItemLotAllocations)
+        .filter((f) => f.warehouseId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache =
+        $_typedResult.readTableOrNull(_saleItemLotAllocationsRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
 }
 
 class $$WarehousesTableFilterComposer
@@ -15450,6 +17942,71 @@ class $$WarehousesTableFilterComposer
               $removeJoinBuilderFromRootComposer:
                   $removeJoinBuilderFromRootComposer,
             ));
+    return f(composer);
+  }
+
+  Expression<bool> purchasesRefs(
+      Expression<bool> Function($$PurchasesTableFilterComposer f) f) {
+    final $$PurchasesTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.purchases,
+        getReferencedColumn: (t) => t.warehouseId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$PurchasesTableFilterComposer(
+              $db: $db,
+              $table: $db.purchases,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<bool> stockLotsRefs(
+      Expression<bool> Function($$StockLotsTableFilterComposer f) f) {
+    final $$StockLotsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.stockLots,
+        getReferencedColumn: (t) => t.warehouseId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$StockLotsTableFilterComposer(
+              $db: $db,
+              $table: $db.stockLots,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<bool> saleItemLotAllocationsRefs(
+      Expression<bool> Function($$SaleItemLotAllocationsTableFilterComposer f)
+          f) {
+    final $$SaleItemLotAllocationsTableFilterComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.saleItemLotAllocations,
+            getReferencedColumn: (t) => t.warehouseId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$SaleItemLotAllocationsTableFilterComposer(
+                  $db: $db,
+                  $table: $db.saleItemLotAllocations,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
     return f(composer);
   }
 }
@@ -15608,6 +18165,71 @@ class $$WarehousesTableAnnotationComposer
             ));
     return f(composer);
   }
+
+  Expression<T> purchasesRefs<T extends Object>(
+      Expression<T> Function($$PurchasesTableAnnotationComposer a) f) {
+    final $$PurchasesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.purchases,
+        getReferencedColumn: (t) => t.warehouseId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$PurchasesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.purchases,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<T> stockLotsRefs<T extends Object>(
+      Expression<T> Function($$StockLotsTableAnnotationComposer a) f) {
+    final $$StockLotsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.stockLots,
+        getReferencedColumn: (t) => t.warehouseId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$StockLotsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.stockLots,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<T> saleItemLotAllocationsRefs<T extends Object>(
+      Expression<T> Function($$SaleItemLotAllocationsTableAnnotationComposer a)
+          f) {
+    final $$SaleItemLotAllocationsTableAnnotationComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.saleItemLotAllocations,
+            getReferencedColumn: (t) => t.warehouseId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$SaleItemLotAllocationsTableAnnotationComposer(
+                  $db: $db,
+                  $table: $db.saleItemLotAllocations,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return f(composer);
+  }
 }
 
 class $$WarehousesTableTableManager extends RootTableManager<
@@ -15626,7 +18248,10 @@ class $$WarehousesTableTableManager extends RootTableManager<
         bool stockBalancesRefs,
         bool stockMovementsRefs,
         bool salesRefs,
-        bool ipvReportsRefs})> {
+        bool ipvReportsRefs,
+        bool purchasesRefs,
+        bool stockLotsRefs,
+        bool saleItemLotAllocationsRefs})> {
   $$WarehousesTableTableManager(_$AppDatabase db, $WarehousesTable table)
       : super(TableManagerState(
           db: db,
@@ -15680,7 +18305,10 @@ class $$WarehousesTableTableManager extends RootTableManager<
               stockBalancesRefs = false,
               stockMovementsRefs = false,
               salesRefs = false,
-              ipvReportsRefs = false}) {
+              ipvReportsRefs = false,
+              purchasesRefs = false,
+              stockLotsRefs = false,
+              saleItemLotAllocationsRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
@@ -15688,7 +18316,10 @@ class $$WarehousesTableTableManager extends RootTableManager<
                 if (stockBalancesRefs) db.stockBalances,
                 if (stockMovementsRefs) db.stockMovements,
                 if (salesRefs) db.sales,
-                if (ipvReportsRefs) db.ipvReports
+                if (ipvReportsRefs) db.ipvReports,
+                if (purchasesRefs) db.purchases,
+                if (stockLotsRefs) db.stockLots,
+                if (saleItemLotAllocationsRefs) db.saleItemLotAllocations
               ],
               addJoins: null,
               getPrefetchedDataCallback: (items) async {
@@ -15757,6 +18388,45 @@ class $$WarehousesTableTableManager extends RootTableManager<
                         referencedItemsForCurrentItem:
                             (item, referencedItems) => referencedItems
                                 .where((e) => e.warehouseId == item.id),
+                        typedResults: items),
+                  if (purchasesRefs)
+                    await $_getPrefetchedData<Warehouse, $WarehousesTable,
+                            Purchase>(
+                        currentTable: table,
+                        referencedTable:
+                            $$WarehousesTableReferences._purchasesRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$WarehousesTableReferences(db, table, p0)
+                                .purchasesRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.warehouseId == item.id),
+                        typedResults: items),
+                  if (stockLotsRefs)
+                    await $_getPrefetchedData<Warehouse, $WarehousesTable,
+                            StockLot>(
+                        currentTable: table,
+                        referencedTable:
+                            $$WarehousesTableReferences._stockLotsRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$WarehousesTableReferences(db, table, p0)
+                                .stockLotsRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.warehouseId == item.id),
+                        typedResults: items),
+                  if (saleItemLotAllocationsRefs)
+                    await $_getPrefetchedData<Warehouse, $WarehousesTable,
+                            SaleItemLotAllocation>(
+                        currentTable: table,
+                        referencedTable: $$WarehousesTableReferences
+                            ._saleItemLotAllocationsRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$WarehousesTableReferences(db, table, p0)
+                                .saleItemLotAllocationsRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.warehouseId == item.id),
                         typedResults: items)
                 ];
               },
@@ -15781,7 +18451,10 @@ typedef $$WarehousesTableProcessedTableManager = ProcessedTableManager<
         bool stockBalancesRefs,
         bool stockMovementsRefs,
         bool salesRefs,
-        bool ipvReportsRefs})>;
+        bool ipvReportsRefs,
+        bool purchasesRefs,
+        bool stockLotsRefs,
+        bool saleItemLotAllocationsRefs})>;
 typedef $$PosTerminalsTableCreateCompanionBuilder = PosTerminalsCompanion
     Function({
   required String id,
@@ -20249,6 +22922,25 @@ final class $$SalesTableReferences
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
+
+  static MultiTypedResultKey<$SaleItemLotAllocationsTable,
+      List<SaleItemLotAllocation>> _saleItemLotAllocationsRefsTable(
+          _$AppDatabase db) =>
+      MultiTypedResultKey.fromTable(db.saleItemLotAllocations,
+          aliasName: $_aliasNameGenerator(
+              db.sales.id, db.saleItemLotAllocations.saleId));
+
+  $$SaleItemLotAllocationsTableProcessedTableManager
+      get saleItemLotAllocationsRefs {
+    final manager = $$SaleItemLotAllocationsTableTableManager(
+            $_db, $_db.saleItemLotAllocations)
+        .filter((f) => f.saleId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache =
+        $_typedResult.readTableOrNull(_saleItemLotAllocationsRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
 }
 
 class $$SalesTableFilterComposer extends Composer<_$AppDatabase, $SalesTable> {
@@ -20419,6 +23111,29 @@ class $$SalesTableFilterComposer extends Composer<_$AppDatabase, $SalesTable> {
               $removeJoinBuilderFromRootComposer:
                   $removeJoinBuilderFromRootComposer,
             ));
+    return f(composer);
+  }
+
+  Expression<bool> saleItemLotAllocationsRefs(
+      Expression<bool> Function($$SaleItemLotAllocationsTableFilterComposer f)
+          f) {
+    final $$SaleItemLotAllocationsTableFilterComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.saleItemLotAllocations,
+            getReferencedColumn: (t) => t.saleId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$SaleItemLotAllocationsTableFilterComposer(
+                  $db: $db,
+                  $table: $db.saleItemLotAllocations,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
     return f(composer);
   }
 }
@@ -20726,6 +23441,29 @@ class $$SalesTableAnnotationComposer
             ));
     return f(composer);
   }
+
+  Expression<T> saleItemLotAllocationsRefs<T extends Object>(
+      Expression<T> Function($$SaleItemLotAllocationsTableAnnotationComposer a)
+          f) {
+    final $$SaleItemLotAllocationsTableAnnotationComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.saleItemLotAllocations,
+            getReferencedColumn: (t) => t.saleId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$SaleItemLotAllocationsTableAnnotationComposer(
+                  $db: $db,
+                  $table: $db.saleItemLotAllocations,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return f(composer);
+  }
 }
 
 class $$SalesTableTableManager extends RootTableManager<
@@ -20746,7 +23484,8 @@ class $$SalesTableTableManager extends RootTableManager<
         bool terminalId,
         bool terminalSessionId,
         bool saleItemsRefs,
-        bool paymentsRefs})> {
+        bool paymentsRefs,
+        bool saleItemLotAllocationsRefs})> {
   $$SalesTableTableManager(_$AppDatabase db, $SalesTable table)
       : super(TableManagerState(
           db: db,
@@ -20828,12 +23567,14 @@ class $$SalesTableTableManager extends RootTableManager<
               terminalId = false,
               terminalSessionId = false,
               saleItemsRefs = false,
-              paymentsRefs = false}) {
+              paymentsRefs = false,
+              saleItemLotAllocationsRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
                 if (saleItemsRefs) db.saleItems,
-                if (paymentsRefs) db.payments
+                if (paymentsRefs) db.payments,
+                if (saleItemLotAllocationsRefs) db.saleItemLotAllocations
               ],
               addJoins: <
                   T extends TableManagerState<
@@ -20923,6 +23664,19 @@ class $$SalesTableTableManager extends RootTableManager<
                         referencedItemsForCurrentItem: (item,
                                 referencedItems) =>
                             referencedItems.where((e) => e.saleId == item.id),
+                        typedResults: items),
+                  if (saleItemLotAllocationsRefs)
+                    await $_getPrefetchedData<Sale, $SalesTable,
+                            SaleItemLotAllocation>(
+                        currentTable: table,
+                        referencedTable: $$SalesTableReferences
+                            ._saleItemLotAllocationsRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$SalesTableReferences(db, table, p0)
+                                .saleItemLotAllocationsRefs,
+                        referencedItemsForCurrentItem: (item,
+                                referencedItems) =>
+                            referencedItems.where((e) => e.saleId == item.id),
                         typedResults: items)
                 ];
               },
@@ -20949,7 +23703,8 @@ typedef $$SalesTableProcessedTableManager = ProcessedTableManager<
         bool terminalId,
         bool terminalSessionId,
         bool saleItemsRefs,
-        bool paymentsRefs})>;
+        bool paymentsRefs,
+        bool saleItemLotAllocationsRefs})>;
 typedef $$SaleItemsTableCreateCompanionBuilder = SaleItemsCompanion Function({
   required String id,
   required String saleId,
@@ -21010,6 +23765,25 @@ final class $$SaleItemsTableReferences
     if (item == null) return manager;
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static MultiTypedResultKey<$SaleItemLotAllocationsTable,
+      List<SaleItemLotAllocation>> _saleItemLotAllocationsRefsTable(
+          _$AppDatabase db) =>
+      MultiTypedResultKey.fromTable(db.saleItemLotAllocations,
+          aliasName: $_aliasNameGenerator(
+              db.saleItems.id, db.saleItemLotAllocations.saleItemId));
+
+  $$SaleItemLotAllocationsTableProcessedTableManager
+      get saleItemLotAllocationsRefs {
+    final manager = $$SaleItemLotAllocationsTableTableManager(
+            $_db, $_db.saleItemLotAllocations)
+        .filter((f) => f.saleItemId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache =
+        $_typedResult.readTableOrNull(_saleItemLotAllocationsRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
   }
 }
 
@@ -21090,6 +23864,29 @@ class $$SaleItemsTableFilterComposer
                   $removeJoinBuilderFromRootComposer,
             ));
     return composer;
+  }
+
+  Expression<bool> saleItemLotAllocationsRefs(
+      Expression<bool> Function($$SaleItemLotAllocationsTableFilterComposer f)
+          f) {
+    final $$SaleItemLotAllocationsTableFilterComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.saleItemLotAllocations,
+            getReferencedColumn: (t) => t.saleItemId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$SaleItemLotAllocationsTableFilterComposer(
+                  $db: $db,
+                  $table: $db.saleItemLotAllocations,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return f(composer);
   }
 }
 
@@ -21251,6 +24048,29 @@ class $$SaleItemsTableAnnotationComposer
             ));
     return composer;
   }
+
+  Expression<T> saleItemLotAllocationsRefs<T extends Object>(
+      Expression<T> Function($$SaleItemLotAllocationsTableAnnotationComposer a)
+          f) {
+    final $$SaleItemLotAllocationsTableAnnotationComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.saleItemLotAllocations,
+            getReferencedColumn: (t) => t.saleItemId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$SaleItemLotAllocationsTableAnnotationComposer(
+                  $db: $db,
+                  $table: $db.saleItemLotAllocations,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return f(composer);
+  }
 }
 
 class $$SaleItemsTableTableManager extends RootTableManager<
@@ -21264,7 +24084,8 @@ class $$SaleItemsTableTableManager extends RootTableManager<
     $$SaleItemsTableUpdateCompanionBuilder,
     (SaleItem, $$SaleItemsTableReferences),
     SaleItem,
-    PrefetchHooks Function({bool saleId, bool productId})> {
+    PrefetchHooks Function(
+        {bool saleId, bool productId, bool saleItemLotAllocationsRefs})> {
   $$SaleItemsTableTableManager(_$AppDatabase db, $SaleItemsTable table)
       : super(TableManagerState(
           db: db,
@@ -21337,10 +24158,15 @@ class $$SaleItemsTableTableManager extends RootTableManager<
                     $$SaleItemsTableReferences(db, table, e)
                   ))
               .toList(),
-          prefetchHooksCallback: ({saleId = false, productId = false}) {
+          prefetchHooksCallback: (
+              {saleId = false,
+              productId = false,
+              saleItemLotAllocationsRefs = false}) {
             return PrefetchHooks(
               db: db,
-              explicitlyWatchedTables: [],
+              explicitlyWatchedTables: [
+                if (saleItemLotAllocationsRefs) db.saleItemLotAllocations
+              ],
               addJoins: <
                   T extends TableManagerState<
                       dynamic,
@@ -21378,7 +24204,21 @@ class $$SaleItemsTableTableManager extends RootTableManager<
                 return state;
               },
               getPrefetchedDataCallback: (items) async {
-                return [];
+                return [
+                  if (saleItemLotAllocationsRefs)
+                    await $_getPrefetchedData<SaleItem, $SaleItemsTable,
+                            SaleItemLotAllocation>(
+                        currentTable: table,
+                        referencedTable: $$SaleItemsTableReferences
+                            ._saleItemLotAllocationsRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$SaleItemsTableReferences(db, table, p0)
+                                .saleItemLotAllocationsRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.saleItemId == item.id),
+                        typedResults: items)
+                ];
               },
             );
           },
@@ -21396,7 +24236,8 @@ typedef $$SaleItemsTableProcessedTableManager = ProcessedTableManager<
     $$SaleItemsTableUpdateCompanionBuilder,
     (SaleItem, $$SaleItemsTableReferences),
     SaleItem,
-    PrefetchHooks Function({bool saleId, bool productId})>;
+    PrefetchHooks Function(
+        {bool saleId, bool productId, bool saleItemLotAllocationsRefs})>;
 typedef $$PaymentsTableCreateCompanionBuilder = PaymentsCompanion Function({
   required String id,
   required String saleId,
@@ -23898,6 +26739,2289 @@ typedef $$ManualIpvReportLinesTableProcessedTableManager
         (ManualIpvReportLine, $$ManualIpvReportLinesTableReferences),
         ManualIpvReportLine,
         PrefetchHooks Function({bool reportId, bool productId})>;
+typedef $$PurchasesTableCreateCompanionBuilder = PurchasesCompanion Function({
+  required String id,
+  required String folio,
+  required String warehouseId,
+  Value<String?> supplierName,
+  Value<String?> supplierDoc,
+  Value<String> status,
+  Value<String?> note,
+  required String createdBy,
+  Value<DateTime> createdAt,
+  Value<int> rowid,
+});
+typedef $$PurchasesTableUpdateCompanionBuilder = PurchasesCompanion Function({
+  Value<String> id,
+  Value<String> folio,
+  Value<String> warehouseId,
+  Value<String?> supplierName,
+  Value<String?> supplierDoc,
+  Value<String> status,
+  Value<String?> note,
+  Value<String> createdBy,
+  Value<DateTime> createdAt,
+  Value<int> rowid,
+});
+
+final class $$PurchasesTableReferences
+    extends BaseReferences<_$AppDatabase, $PurchasesTable, Purchase> {
+  $$PurchasesTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $WarehousesTable _warehouseIdTable(_$AppDatabase db) =>
+      db.warehouses.createAlias(
+          $_aliasNameGenerator(db.purchases.warehouseId, db.warehouses.id));
+
+  $$WarehousesTableProcessedTableManager get warehouseId {
+    final $_column = $_itemColumn<String>('warehouse_id')!;
+
+    final manager = $$WarehousesTableTableManager($_db, $_db.warehouses)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_warehouseIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static $UsersTable _createdByTable(_$AppDatabase db) => db.users
+      .createAlias($_aliasNameGenerator(db.purchases.createdBy, db.users.id));
+
+  $$UsersTableProcessedTableManager get createdBy {
+    final $_column = $_itemColumn<String>('created_by')!;
+
+    final manager = $$UsersTableTableManager($_db, $_db.users)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_createdByTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static MultiTypedResultKey<$PurchaseItemsTable, List<PurchaseItem>>
+      _purchaseItemsRefsTable(_$AppDatabase db) =>
+          MultiTypedResultKey.fromTable(db.purchaseItems,
+              aliasName: $_aliasNameGenerator(
+                  db.purchases.id, db.purchaseItems.purchaseId));
+
+  $$PurchaseItemsTableProcessedTableManager get purchaseItemsRefs {
+    final manager = $$PurchaseItemsTableTableManager($_db, $_db.purchaseItems)
+        .filter((f) => f.purchaseId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_purchaseItemsRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
+}
+
+class $$PurchasesTableFilterComposer
+    extends Composer<_$AppDatabase, $PurchasesTable> {
+  $$PurchasesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get folio => $composableBuilder(
+      column: $table.folio, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get supplierName => $composableBuilder(
+      column: $table.supplierName, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get supplierDoc => $composableBuilder(
+      column: $table.supplierDoc, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get status => $composableBuilder(
+      column: $table.status, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get note => $composableBuilder(
+      column: $table.note, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+
+  $$WarehousesTableFilterComposer get warehouseId {
+    final $$WarehousesTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.warehouseId,
+        referencedTable: $db.warehouses,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$WarehousesTableFilterComposer(
+              $db: $db,
+              $table: $db.warehouses,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$UsersTableFilterComposer get createdBy {
+    final $$UsersTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.createdBy,
+        referencedTable: $db.users,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$UsersTableFilterComposer(
+              $db: $db,
+              $table: $db.users,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  Expression<bool> purchaseItemsRefs(
+      Expression<bool> Function($$PurchaseItemsTableFilterComposer f) f) {
+    final $$PurchaseItemsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.purchaseItems,
+        getReferencedColumn: (t) => t.purchaseId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$PurchaseItemsTableFilterComposer(
+              $db: $db,
+              $table: $db.purchaseItems,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+}
+
+class $$PurchasesTableOrderingComposer
+    extends Composer<_$AppDatabase, $PurchasesTable> {
+  $$PurchasesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get folio => $composableBuilder(
+      column: $table.folio, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get supplierName => $composableBuilder(
+      column: $table.supplierName,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get supplierDoc => $composableBuilder(
+      column: $table.supplierDoc, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get status => $composableBuilder(
+      column: $table.status, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get note => $composableBuilder(
+      column: $table.note, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+
+  $$WarehousesTableOrderingComposer get warehouseId {
+    final $$WarehousesTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.warehouseId,
+        referencedTable: $db.warehouses,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$WarehousesTableOrderingComposer(
+              $db: $db,
+              $table: $db.warehouses,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$UsersTableOrderingComposer get createdBy {
+    final $$UsersTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.createdBy,
+        referencedTable: $db.users,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$UsersTableOrderingComposer(
+              $db: $db,
+              $table: $db.users,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$PurchasesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $PurchasesTable> {
+  $$PurchasesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get folio =>
+      $composableBuilder(column: $table.folio, builder: (column) => column);
+
+  GeneratedColumn<String> get supplierName => $composableBuilder(
+      column: $table.supplierName, builder: (column) => column);
+
+  GeneratedColumn<String> get supplierDoc => $composableBuilder(
+      column: $table.supplierDoc, builder: (column) => column);
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<String> get note =>
+      $composableBuilder(column: $table.note, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  $$WarehousesTableAnnotationComposer get warehouseId {
+    final $$WarehousesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.warehouseId,
+        referencedTable: $db.warehouses,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$WarehousesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.warehouses,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$UsersTableAnnotationComposer get createdBy {
+    final $$UsersTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.createdBy,
+        referencedTable: $db.users,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$UsersTableAnnotationComposer(
+              $db: $db,
+              $table: $db.users,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  Expression<T> purchaseItemsRefs<T extends Object>(
+      Expression<T> Function($$PurchaseItemsTableAnnotationComposer a) f) {
+    final $$PurchaseItemsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.purchaseItems,
+        getReferencedColumn: (t) => t.purchaseId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$PurchaseItemsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.purchaseItems,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+}
+
+class $$PurchasesTableTableManager extends RootTableManager<
+    _$AppDatabase,
+    $PurchasesTable,
+    Purchase,
+    $$PurchasesTableFilterComposer,
+    $$PurchasesTableOrderingComposer,
+    $$PurchasesTableAnnotationComposer,
+    $$PurchasesTableCreateCompanionBuilder,
+    $$PurchasesTableUpdateCompanionBuilder,
+    (Purchase, $$PurchasesTableReferences),
+    Purchase,
+    PrefetchHooks Function(
+        {bool warehouseId, bool createdBy, bool purchaseItemsRefs})> {
+  $$PurchasesTableTableManager(_$AppDatabase db, $PurchasesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$PurchasesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$PurchasesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$PurchasesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> id = const Value.absent(),
+            Value<String> folio = const Value.absent(),
+            Value<String> warehouseId = const Value.absent(),
+            Value<String?> supplierName = const Value.absent(),
+            Value<String?> supplierDoc = const Value.absent(),
+            Value<String> status = const Value.absent(),
+            Value<String?> note = const Value.absent(),
+            Value<String> createdBy = const Value.absent(),
+            Value<DateTime> createdAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              PurchasesCompanion(
+            id: id,
+            folio: folio,
+            warehouseId: warehouseId,
+            supplierName: supplierName,
+            supplierDoc: supplierDoc,
+            status: status,
+            note: note,
+            createdBy: createdBy,
+            createdAt: createdAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String id,
+            required String folio,
+            required String warehouseId,
+            Value<String?> supplierName = const Value.absent(),
+            Value<String?> supplierDoc = const Value.absent(),
+            Value<String> status = const Value.absent(),
+            Value<String?> note = const Value.absent(),
+            required String createdBy,
+            Value<DateTime> createdAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              PurchasesCompanion.insert(
+            id: id,
+            folio: folio,
+            warehouseId: warehouseId,
+            supplierName: supplierName,
+            supplierDoc: supplierDoc,
+            status: status,
+            note: note,
+            createdBy: createdBy,
+            createdAt: createdAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$PurchasesTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: (
+              {warehouseId = false,
+              createdBy = false,
+              purchaseItemsRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [
+                if (purchaseItemsRefs) db.purchaseItems
+              ],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (warehouseId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.warehouseId,
+                    referencedTable:
+                        $$PurchasesTableReferences._warehouseIdTable(db),
+                    referencedColumn:
+                        $$PurchasesTableReferences._warehouseIdTable(db).id,
+                  ) as T;
+                }
+                if (createdBy) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.createdBy,
+                    referencedTable:
+                        $$PurchasesTableReferences._createdByTable(db),
+                    referencedColumn:
+                        $$PurchasesTableReferences._createdByTable(db).id,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (purchaseItemsRefs)
+                    await $_getPrefetchedData<Purchase, $PurchasesTable,
+                            PurchaseItem>(
+                        currentTable: table,
+                        referencedTable: $$PurchasesTableReferences
+                            ._purchaseItemsRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$PurchasesTableReferences(db, table, p0)
+                                .purchaseItemsRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.purchaseId == item.id),
+                        typedResults: items)
+                ];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$PurchasesTableProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    $PurchasesTable,
+    Purchase,
+    $$PurchasesTableFilterComposer,
+    $$PurchasesTableOrderingComposer,
+    $$PurchasesTableAnnotationComposer,
+    $$PurchasesTableCreateCompanionBuilder,
+    $$PurchasesTableUpdateCompanionBuilder,
+    (Purchase, $$PurchasesTableReferences),
+    Purchase,
+    PrefetchHooks Function(
+        {bool warehouseId, bool createdBy, bool purchaseItemsRefs})>;
+typedef $$PurchaseItemsTableCreateCompanionBuilder = PurchaseItemsCompanion
+    Function({
+  required String id,
+  required String purchaseId,
+  required String productId,
+  required double qty,
+  Value<int> unitCostCents,
+  Value<int> lineCostCents,
+  Value<int> unitPriceSnapshotCents,
+  Value<int> rowid,
+});
+typedef $$PurchaseItemsTableUpdateCompanionBuilder = PurchaseItemsCompanion
+    Function({
+  Value<String> id,
+  Value<String> purchaseId,
+  Value<String> productId,
+  Value<double> qty,
+  Value<int> unitCostCents,
+  Value<int> lineCostCents,
+  Value<int> unitPriceSnapshotCents,
+  Value<int> rowid,
+});
+
+final class $$PurchaseItemsTableReferences
+    extends BaseReferences<_$AppDatabase, $PurchaseItemsTable, PurchaseItem> {
+  $$PurchaseItemsTableReferences(
+      super.$_db, super.$_table, super.$_typedResult);
+
+  static $PurchasesTable _purchaseIdTable(_$AppDatabase db) =>
+      db.purchases.createAlias(
+          $_aliasNameGenerator(db.purchaseItems.purchaseId, db.purchases.id));
+
+  $$PurchasesTableProcessedTableManager get purchaseId {
+    final $_column = $_itemColumn<String>('purchase_id')!;
+
+    final manager = $$PurchasesTableTableManager($_db, $_db.purchases)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_purchaseIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static $ProductsTable _productIdTable(_$AppDatabase db) =>
+      db.products.createAlias(
+          $_aliasNameGenerator(db.purchaseItems.productId, db.products.id));
+
+  $$ProductsTableProcessedTableManager get productId {
+    final $_column = $_itemColumn<String>('product_id')!;
+
+    final manager = $$ProductsTableTableManager($_db, $_db.products)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_productIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static MultiTypedResultKey<$StockLotsTable, List<StockLot>>
+      _stockLotsRefsTable(_$AppDatabase db) =>
+          MultiTypedResultKey.fromTable(db.stockLots,
+              aliasName: $_aliasNameGenerator(
+                  db.purchaseItems.id, db.stockLots.purchaseItemId));
+
+  $$StockLotsTableProcessedTableManager get stockLotsRefs {
+    final manager = $$StockLotsTableTableManager($_db, $_db.stockLots).filter(
+        (f) => f.purchaseItemId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_stockLotsRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
+}
+
+class $$PurchaseItemsTableFilterComposer
+    extends Composer<_$AppDatabase, $PurchaseItemsTable> {
+  $$PurchaseItemsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get qty => $composableBuilder(
+      column: $table.qty, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get unitCostCents => $composableBuilder(
+      column: $table.unitCostCents, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get lineCostCents => $composableBuilder(
+      column: $table.lineCostCents, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get unitPriceSnapshotCents => $composableBuilder(
+      column: $table.unitPriceSnapshotCents,
+      builder: (column) => ColumnFilters(column));
+
+  $$PurchasesTableFilterComposer get purchaseId {
+    final $$PurchasesTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.purchaseId,
+        referencedTable: $db.purchases,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$PurchasesTableFilterComposer(
+              $db: $db,
+              $table: $db.purchases,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$ProductsTableFilterComposer get productId {
+    final $$ProductsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.productId,
+        referencedTable: $db.products,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ProductsTableFilterComposer(
+              $db: $db,
+              $table: $db.products,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  Expression<bool> stockLotsRefs(
+      Expression<bool> Function($$StockLotsTableFilterComposer f) f) {
+    final $$StockLotsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.stockLots,
+        getReferencedColumn: (t) => t.purchaseItemId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$StockLotsTableFilterComposer(
+              $db: $db,
+              $table: $db.stockLots,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+}
+
+class $$PurchaseItemsTableOrderingComposer
+    extends Composer<_$AppDatabase, $PurchaseItemsTable> {
+  $$PurchaseItemsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get qty => $composableBuilder(
+      column: $table.qty, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get unitCostCents => $composableBuilder(
+      column: $table.unitCostCents,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get lineCostCents => $composableBuilder(
+      column: $table.lineCostCents,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get unitPriceSnapshotCents => $composableBuilder(
+      column: $table.unitPriceSnapshotCents,
+      builder: (column) => ColumnOrderings(column));
+
+  $$PurchasesTableOrderingComposer get purchaseId {
+    final $$PurchasesTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.purchaseId,
+        referencedTable: $db.purchases,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$PurchasesTableOrderingComposer(
+              $db: $db,
+              $table: $db.purchases,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$ProductsTableOrderingComposer get productId {
+    final $$ProductsTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.productId,
+        referencedTable: $db.products,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ProductsTableOrderingComposer(
+              $db: $db,
+              $table: $db.products,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$PurchaseItemsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $PurchaseItemsTable> {
+  $$PurchaseItemsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<double> get qty =>
+      $composableBuilder(column: $table.qty, builder: (column) => column);
+
+  GeneratedColumn<int> get unitCostCents => $composableBuilder(
+      column: $table.unitCostCents, builder: (column) => column);
+
+  GeneratedColumn<int> get lineCostCents => $composableBuilder(
+      column: $table.lineCostCents, builder: (column) => column);
+
+  GeneratedColumn<int> get unitPriceSnapshotCents => $composableBuilder(
+      column: $table.unitPriceSnapshotCents, builder: (column) => column);
+
+  $$PurchasesTableAnnotationComposer get purchaseId {
+    final $$PurchasesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.purchaseId,
+        referencedTable: $db.purchases,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$PurchasesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.purchases,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$ProductsTableAnnotationComposer get productId {
+    final $$ProductsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.productId,
+        referencedTable: $db.products,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ProductsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.products,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  Expression<T> stockLotsRefs<T extends Object>(
+      Expression<T> Function($$StockLotsTableAnnotationComposer a) f) {
+    final $$StockLotsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.stockLots,
+        getReferencedColumn: (t) => t.purchaseItemId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$StockLotsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.stockLots,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+}
+
+class $$PurchaseItemsTableTableManager extends RootTableManager<
+    _$AppDatabase,
+    $PurchaseItemsTable,
+    PurchaseItem,
+    $$PurchaseItemsTableFilterComposer,
+    $$PurchaseItemsTableOrderingComposer,
+    $$PurchaseItemsTableAnnotationComposer,
+    $$PurchaseItemsTableCreateCompanionBuilder,
+    $$PurchaseItemsTableUpdateCompanionBuilder,
+    (PurchaseItem, $$PurchaseItemsTableReferences),
+    PurchaseItem,
+    PrefetchHooks Function(
+        {bool purchaseId, bool productId, bool stockLotsRefs})> {
+  $$PurchaseItemsTableTableManager(_$AppDatabase db, $PurchaseItemsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$PurchaseItemsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$PurchaseItemsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$PurchaseItemsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> id = const Value.absent(),
+            Value<String> purchaseId = const Value.absent(),
+            Value<String> productId = const Value.absent(),
+            Value<double> qty = const Value.absent(),
+            Value<int> unitCostCents = const Value.absent(),
+            Value<int> lineCostCents = const Value.absent(),
+            Value<int> unitPriceSnapshotCents = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              PurchaseItemsCompanion(
+            id: id,
+            purchaseId: purchaseId,
+            productId: productId,
+            qty: qty,
+            unitCostCents: unitCostCents,
+            lineCostCents: lineCostCents,
+            unitPriceSnapshotCents: unitPriceSnapshotCents,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String id,
+            required String purchaseId,
+            required String productId,
+            required double qty,
+            Value<int> unitCostCents = const Value.absent(),
+            Value<int> lineCostCents = const Value.absent(),
+            Value<int> unitPriceSnapshotCents = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              PurchaseItemsCompanion.insert(
+            id: id,
+            purchaseId: purchaseId,
+            productId: productId,
+            qty: qty,
+            unitCostCents: unitCostCents,
+            lineCostCents: lineCostCents,
+            unitPriceSnapshotCents: unitPriceSnapshotCents,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$PurchaseItemsTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: (
+              {purchaseId = false, productId = false, stockLotsRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [if (stockLotsRefs) db.stockLots],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (purchaseId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.purchaseId,
+                    referencedTable:
+                        $$PurchaseItemsTableReferences._purchaseIdTable(db),
+                    referencedColumn:
+                        $$PurchaseItemsTableReferences._purchaseIdTable(db).id,
+                  ) as T;
+                }
+                if (productId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.productId,
+                    referencedTable:
+                        $$PurchaseItemsTableReferences._productIdTable(db),
+                    referencedColumn:
+                        $$PurchaseItemsTableReferences._productIdTable(db).id,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (stockLotsRefs)
+                    await $_getPrefetchedData<PurchaseItem, $PurchaseItemsTable,
+                            StockLot>(
+                        currentTable: table,
+                        referencedTable: $$PurchaseItemsTableReferences
+                            ._stockLotsRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$PurchaseItemsTableReferences(db, table, p0)
+                                .stockLotsRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.purchaseItemId == item.id),
+                        typedResults: items)
+                ];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$PurchaseItemsTableProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    $PurchaseItemsTable,
+    PurchaseItem,
+    $$PurchaseItemsTableFilterComposer,
+    $$PurchaseItemsTableOrderingComposer,
+    $$PurchaseItemsTableAnnotationComposer,
+    $$PurchaseItemsTableCreateCompanionBuilder,
+    $$PurchaseItemsTableUpdateCompanionBuilder,
+    (PurchaseItem, $$PurchaseItemsTableReferences),
+    PurchaseItem,
+    PrefetchHooks Function(
+        {bool purchaseId, bool productId, bool stockLotsRefs})>;
+typedef $$StockLotsTableCreateCompanionBuilder = StockLotsCompanion Function({
+  required String id,
+  required String productId,
+  required String warehouseId,
+  Value<String?> purchaseItemId,
+  Value<String> sourceType,
+  Value<String?> sourceId,
+  Value<double> qtyIn,
+  Value<double> qtyRemaining,
+  Value<int> unitCostCents,
+  Value<DateTime> receivedAt,
+  Value<DateTime> createdAt,
+  Value<String?> note,
+  Value<int> rowid,
+});
+typedef $$StockLotsTableUpdateCompanionBuilder = StockLotsCompanion Function({
+  Value<String> id,
+  Value<String> productId,
+  Value<String> warehouseId,
+  Value<String?> purchaseItemId,
+  Value<String> sourceType,
+  Value<String?> sourceId,
+  Value<double> qtyIn,
+  Value<double> qtyRemaining,
+  Value<int> unitCostCents,
+  Value<DateTime> receivedAt,
+  Value<DateTime> createdAt,
+  Value<String?> note,
+  Value<int> rowid,
+});
+
+final class $$StockLotsTableReferences
+    extends BaseReferences<_$AppDatabase, $StockLotsTable, StockLot> {
+  $$StockLotsTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $ProductsTable _productIdTable(_$AppDatabase db) =>
+      db.products.createAlias(
+          $_aliasNameGenerator(db.stockLots.productId, db.products.id));
+
+  $$ProductsTableProcessedTableManager get productId {
+    final $_column = $_itemColumn<String>('product_id')!;
+
+    final manager = $$ProductsTableTableManager($_db, $_db.products)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_productIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static $WarehousesTable _warehouseIdTable(_$AppDatabase db) =>
+      db.warehouses.createAlias(
+          $_aliasNameGenerator(db.stockLots.warehouseId, db.warehouses.id));
+
+  $$WarehousesTableProcessedTableManager get warehouseId {
+    final $_column = $_itemColumn<String>('warehouse_id')!;
+
+    final manager = $$WarehousesTableTableManager($_db, $_db.warehouses)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_warehouseIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static $PurchaseItemsTable _purchaseItemIdTable(_$AppDatabase db) =>
+      db.purchaseItems.createAlias($_aliasNameGenerator(
+          db.stockLots.purchaseItemId, db.purchaseItems.id));
+
+  $$PurchaseItemsTableProcessedTableManager? get purchaseItemId {
+    final $_column = $_itemColumn<String>('purchase_item_id');
+    if ($_column == null) return null;
+    final manager = $$PurchaseItemsTableTableManager($_db, $_db.purchaseItems)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_purchaseItemIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static MultiTypedResultKey<$SaleItemLotAllocationsTable,
+      List<SaleItemLotAllocation>> _saleItemLotAllocationsRefsTable(
+          _$AppDatabase db) =>
+      MultiTypedResultKey.fromTable(db.saleItemLotAllocations,
+          aliasName: $_aliasNameGenerator(
+              db.stockLots.id, db.saleItemLotAllocations.lotId));
+
+  $$SaleItemLotAllocationsTableProcessedTableManager
+      get saleItemLotAllocationsRefs {
+    final manager = $$SaleItemLotAllocationsTableTableManager(
+            $_db, $_db.saleItemLotAllocations)
+        .filter((f) => f.lotId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache =
+        $_typedResult.readTableOrNull(_saleItemLotAllocationsRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
+}
+
+class $$StockLotsTableFilterComposer
+    extends Composer<_$AppDatabase, $StockLotsTable> {
+  $$StockLotsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get sourceType => $composableBuilder(
+      column: $table.sourceType, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get sourceId => $composableBuilder(
+      column: $table.sourceId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get qtyIn => $composableBuilder(
+      column: $table.qtyIn, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get qtyRemaining => $composableBuilder(
+      column: $table.qtyRemaining, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get unitCostCents => $composableBuilder(
+      column: $table.unitCostCents, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get receivedAt => $composableBuilder(
+      column: $table.receivedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get note => $composableBuilder(
+      column: $table.note, builder: (column) => ColumnFilters(column));
+
+  $$ProductsTableFilterComposer get productId {
+    final $$ProductsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.productId,
+        referencedTable: $db.products,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ProductsTableFilterComposer(
+              $db: $db,
+              $table: $db.products,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$WarehousesTableFilterComposer get warehouseId {
+    final $$WarehousesTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.warehouseId,
+        referencedTable: $db.warehouses,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$WarehousesTableFilterComposer(
+              $db: $db,
+              $table: $db.warehouses,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$PurchaseItemsTableFilterComposer get purchaseItemId {
+    final $$PurchaseItemsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.purchaseItemId,
+        referencedTable: $db.purchaseItems,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$PurchaseItemsTableFilterComposer(
+              $db: $db,
+              $table: $db.purchaseItems,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  Expression<bool> saleItemLotAllocationsRefs(
+      Expression<bool> Function($$SaleItemLotAllocationsTableFilterComposer f)
+          f) {
+    final $$SaleItemLotAllocationsTableFilterComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.saleItemLotAllocations,
+            getReferencedColumn: (t) => t.lotId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$SaleItemLotAllocationsTableFilterComposer(
+                  $db: $db,
+                  $table: $db.saleItemLotAllocations,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return f(composer);
+  }
+}
+
+class $$StockLotsTableOrderingComposer
+    extends Composer<_$AppDatabase, $StockLotsTable> {
+  $$StockLotsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get sourceType => $composableBuilder(
+      column: $table.sourceType, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get sourceId => $composableBuilder(
+      column: $table.sourceId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get qtyIn => $composableBuilder(
+      column: $table.qtyIn, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get qtyRemaining => $composableBuilder(
+      column: $table.qtyRemaining,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get unitCostCents => $composableBuilder(
+      column: $table.unitCostCents,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get receivedAt => $composableBuilder(
+      column: $table.receivedAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get note => $composableBuilder(
+      column: $table.note, builder: (column) => ColumnOrderings(column));
+
+  $$ProductsTableOrderingComposer get productId {
+    final $$ProductsTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.productId,
+        referencedTable: $db.products,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ProductsTableOrderingComposer(
+              $db: $db,
+              $table: $db.products,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$WarehousesTableOrderingComposer get warehouseId {
+    final $$WarehousesTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.warehouseId,
+        referencedTable: $db.warehouses,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$WarehousesTableOrderingComposer(
+              $db: $db,
+              $table: $db.warehouses,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$PurchaseItemsTableOrderingComposer get purchaseItemId {
+    final $$PurchaseItemsTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.purchaseItemId,
+        referencedTable: $db.purchaseItems,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$PurchaseItemsTableOrderingComposer(
+              $db: $db,
+              $table: $db.purchaseItems,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$StockLotsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $StockLotsTable> {
+  $$StockLotsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceType => $composableBuilder(
+      column: $table.sourceType, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceId =>
+      $composableBuilder(column: $table.sourceId, builder: (column) => column);
+
+  GeneratedColumn<double> get qtyIn =>
+      $composableBuilder(column: $table.qtyIn, builder: (column) => column);
+
+  GeneratedColumn<double> get qtyRemaining => $composableBuilder(
+      column: $table.qtyRemaining, builder: (column) => column);
+
+  GeneratedColumn<int> get unitCostCents => $composableBuilder(
+      column: $table.unitCostCents, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get receivedAt => $composableBuilder(
+      column: $table.receivedAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<String> get note =>
+      $composableBuilder(column: $table.note, builder: (column) => column);
+
+  $$ProductsTableAnnotationComposer get productId {
+    final $$ProductsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.productId,
+        referencedTable: $db.products,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ProductsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.products,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$WarehousesTableAnnotationComposer get warehouseId {
+    final $$WarehousesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.warehouseId,
+        referencedTable: $db.warehouses,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$WarehousesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.warehouses,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$PurchaseItemsTableAnnotationComposer get purchaseItemId {
+    final $$PurchaseItemsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.purchaseItemId,
+        referencedTable: $db.purchaseItems,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$PurchaseItemsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.purchaseItems,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  Expression<T> saleItemLotAllocationsRefs<T extends Object>(
+      Expression<T> Function($$SaleItemLotAllocationsTableAnnotationComposer a)
+          f) {
+    final $$SaleItemLotAllocationsTableAnnotationComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.saleItemLotAllocations,
+            getReferencedColumn: (t) => t.lotId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$SaleItemLotAllocationsTableAnnotationComposer(
+                  $db: $db,
+                  $table: $db.saleItemLotAllocations,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return f(composer);
+  }
+}
+
+class $$StockLotsTableTableManager extends RootTableManager<
+    _$AppDatabase,
+    $StockLotsTable,
+    StockLot,
+    $$StockLotsTableFilterComposer,
+    $$StockLotsTableOrderingComposer,
+    $$StockLotsTableAnnotationComposer,
+    $$StockLotsTableCreateCompanionBuilder,
+    $$StockLotsTableUpdateCompanionBuilder,
+    (StockLot, $$StockLotsTableReferences),
+    StockLot,
+    PrefetchHooks Function(
+        {bool productId,
+        bool warehouseId,
+        bool purchaseItemId,
+        bool saleItemLotAllocationsRefs})> {
+  $$StockLotsTableTableManager(_$AppDatabase db, $StockLotsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$StockLotsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$StockLotsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$StockLotsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> id = const Value.absent(),
+            Value<String> productId = const Value.absent(),
+            Value<String> warehouseId = const Value.absent(),
+            Value<String?> purchaseItemId = const Value.absent(),
+            Value<String> sourceType = const Value.absent(),
+            Value<String?> sourceId = const Value.absent(),
+            Value<double> qtyIn = const Value.absent(),
+            Value<double> qtyRemaining = const Value.absent(),
+            Value<int> unitCostCents = const Value.absent(),
+            Value<DateTime> receivedAt = const Value.absent(),
+            Value<DateTime> createdAt = const Value.absent(),
+            Value<String?> note = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              StockLotsCompanion(
+            id: id,
+            productId: productId,
+            warehouseId: warehouseId,
+            purchaseItemId: purchaseItemId,
+            sourceType: sourceType,
+            sourceId: sourceId,
+            qtyIn: qtyIn,
+            qtyRemaining: qtyRemaining,
+            unitCostCents: unitCostCents,
+            receivedAt: receivedAt,
+            createdAt: createdAt,
+            note: note,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String id,
+            required String productId,
+            required String warehouseId,
+            Value<String?> purchaseItemId = const Value.absent(),
+            Value<String> sourceType = const Value.absent(),
+            Value<String?> sourceId = const Value.absent(),
+            Value<double> qtyIn = const Value.absent(),
+            Value<double> qtyRemaining = const Value.absent(),
+            Value<int> unitCostCents = const Value.absent(),
+            Value<DateTime> receivedAt = const Value.absent(),
+            Value<DateTime> createdAt = const Value.absent(),
+            Value<String?> note = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              StockLotsCompanion.insert(
+            id: id,
+            productId: productId,
+            warehouseId: warehouseId,
+            purchaseItemId: purchaseItemId,
+            sourceType: sourceType,
+            sourceId: sourceId,
+            qtyIn: qtyIn,
+            qtyRemaining: qtyRemaining,
+            unitCostCents: unitCostCents,
+            receivedAt: receivedAt,
+            createdAt: createdAt,
+            note: note,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$StockLotsTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: (
+              {productId = false,
+              warehouseId = false,
+              purchaseItemId = false,
+              saleItemLotAllocationsRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [
+                if (saleItemLotAllocationsRefs) db.saleItemLotAllocations
+              ],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (productId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.productId,
+                    referencedTable:
+                        $$StockLotsTableReferences._productIdTable(db),
+                    referencedColumn:
+                        $$StockLotsTableReferences._productIdTable(db).id,
+                  ) as T;
+                }
+                if (warehouseId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.warehouseId,
+                    referencedTable:
+                        $$StockLotsTableReferences._warehouseIdTable(db),
+                    referencedColumn:
+                        $$StockLotsTableReferences._warehouseIdTable(db).id,
+                  ) as T;
+                }
+                if (purchaseItemId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.purchaseItemId,
+                    referencedTable:
+                        $$StockLotsTableReferences._purchaseItemIdTable(db),
+                    referencedColumn:
+                        $$StockLotsTableReferences._purchaseItemIdTable(db).id,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (saleItemLotAllocationsRefs)
+                    await $_getPrefetchedData<StockLot, $StockLotsTable,
+                            SaleItemLotAllocation>(
+                        currentTable: table,
+                        referencedTable: $$StockLotsTableReferences
+                            ._saleItemLotAllocationsRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$StockLotsTableReferences(db, table, p0)
+                                .saleItemLotAllocationsRefs,
+                        referencedItemsForCurrentItem: (item,
+                                referencedItems) =>
+                            referencedItems.where((e) => e.lotId == item.id),
+                        typedResults: items)
+                ];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$StockLotsTableProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    $StockLotsTable,
+    StockLot,
+    $$StockLotsTableFilterComposer,
+    $$StockLotsTableOrderingComposer,
+    $$StockLotsTableAnnotationComposer,
+    $$StockLotsTableCreateCompanionBuilder,
+    $$StockLotsTableUpdateCompanionBuilder,
+    (StockLot, $$StockLotsTableReferences),
+    StockLot,
+    PrefetchHooks Function(
+        {bool productId,
+        bool warehouseId,
+        bool purchaseItemId,
+        bool saleItemLotAllocationsRefs})>;
+typedef $$SaleItemLotAllocationsTableCreateCompanionBuilder
+    = SaleItemLotAllocationsCompanion Function({
+  required String id,
+  required String saleId,
+  required String saleItemId,
+  required String productId,
+  required String warehouseId,
+  Value<String?> lotId,
+  Value<double> qty,
+  Value<int> unitCostCents,
+  Value<int> lineCostCents,
+  Value<bool> isVoided,
+  Value<DateTime?> voidedAt,
+  Value<DateTime> createdAt,
+  Value<int> rowid,
+});
+typedef $$SaleItemLotAllocationsTableUpdateCompanionBuilder
+    = SaleItemLotAllocationsCompanion Function({
+  Value<String> id,
+  Value<String> saleId,
+  Value<String> saleItemId,
+  Value<String> productId,
+  Value<String> warehouseId,
+  Value<String?> lotId,
+  Value<double> qty,
+  Value<int> unitCostCents,
+  Value<int> lineCostCents,
+  Value<bool> isVoided,
+  Value<DateTime?> voidedAt,
+  Value<DateTime> createdAt,
+  Value<int> rowid,
+});
+
+final class $$SaleItemLotAllocationsTableReferences extends BaseReferences<
+    _$AppDatabase, $SaleItemLotAllocationsTable, SaleItemLotAllocation> {
+  $$SaleItemLotAllocationsTableReferences(
+      super.$_db, super.$_table, super.$_typedResult);
+
+  static $SalesTable _saleIdTable(_$AppDatabase db) => db.sales.createAlias(
+      $_aliasNameGenerator(db.saleItemLotAllocations.saleId, db.sales.id));
+
+  $$SalesTableProcessedTableManager get saleId {
+    final $_column = $_itemColumn<String>('sale_id')!;
+
+    final manager = $$SalesTableTableManager($_db, $_db.sales)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_saleIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static $SaleItemsTable _saleItemIdTable(_$AppDatabase db) =>
+      db.saleItems.createAlias($_aliasNameGenerator(
+          db.saleItemLotAllocations.saleItemId, db.saleItems.id));
+
+  $$SaleItemsTableProcessedTableManager get saleItemId {
+    final $_column = $_itemColumn<String>('sale_item_id')!;
+
+    final manager = $$SaleItemsTableTableManager($_db, $_db.saleItems)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_saleItemIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static $ProductsTable _productIdTable(_$AppDatabase db) =>
+      db.products.createAlias($_aliasNameGenerator(
+          db.saleItemLotAllocations.productId, db.products.id));
+
+  $$ProductsTableProcessedTableManager get productId {
+    final $_column = $_itemColumn<String>('product_id')!;
+
+    final manager = $$ProductsTableTableManager($_db, $_db.products)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_productIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static $WarehousesTable _warehouseIdTable(_$AppDatabase db) =>
+      db.warehouses.createAlias($_aliasNameGenerator(
+          db.saleItemLotAllocations.warehouseId, db.warehouses.id));
+
+  $$WarehousesTableProcessedTableManager get warehouseId {
+    final $_column = $_itemColumn<String>('warehouse_id')!;
+
+    final manager = $$WarehousesTableTableManager($_db, $_db.warehouses)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_warehouseIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static $StockLotsTable _lotIdTable(_$AppDatabase db) =>
+      db.stockLots.createAlias($_aliasNameGenerator(
+          db.saleItemLotAllocations.lotId, db.stockLots.id));
+
+  $$StockLotsTableProcessedTableManager? get lotId {
+    final $_column = $_itemColumn<String>('lot_id');
+    if ($_column == null) return null;
+    final manager = $$StockLotsTableTableManager($_db, $_db.stockLots)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_lotIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+}
+
+class $$SaleItemLotAllocationsTableFilterComposer
+    extends Composer<_$AppDatabase, $SaleItemLotAllocationsTable> {
+  $$SaleItemLotAllocationsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get qty => $composableBuilder(
+      column: $table.qty, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get unitCostCents => $composableBuilder(
+      column: $table.unitCostCents, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get lineCostCents => $composableBuilder(
+      column: $table.lineCostCents, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get isVoided => $composableBuilder(
+      column: $table.isVoided, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get voidedAt => $composableBuilder(
+      column: $table.voidedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+
+  $$SalesTableFilterComposer get saleId {
+    final $$SalesTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.saleId,
+        referencedTable: $db.sales,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$SalesTableFilterComposer(
+              $db: $db,
+              $table: $db.sales,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$SaleItemsTableFilterComposer get saleItemId {
+    final $$SaleItemsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.saleItemId,
+        referencedTable: $db.saleItems,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$SaleItemsTableFilterComposer(
+              $db: $db,
+              $table: $db.saleItems,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$ProductsTableFilterComposer get productId {
+    final $$ProductsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.productId,
+        referencedTable: $db.products,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ProductsTableFilterComposer(
+              $db: $db,
+              $table: $db.products,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$WarehousesTableFilterComposer get warehouseId {
+    final $$WarehousesTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.warehouseId,
+        referencedTable: $db.warehouses,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$WarehousesTableFilterComposer(
+              $db: $db,
+              $table: $db.warehouses,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$StockLotsTableFilterComposer get lotId {
+    final $$StockLotsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.lotId,
+        referencedTable: $db.stockLots,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$StockLotsTableFilterComposer(
+              $db: $db,
+              $table: $db.stockLots,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$SaleItemLotAllocationsTableOrderingComposer
+    extends Composer<_$AppDatabase, $SaleItemLotAllocationsTable> {
+  $$SaleItemLotAllocationsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get qty => $composableBuilder(
+      column: $table.qty, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get unitCostCents => $composableBuilder(
+      column: $table.unitCostCents,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get lineCostCents => $composableBuilder(
+      column: $table.lineCostCents,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get isVoided => $composableBuilder(
+      column: $table.isVoided, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get voidedAt => $composableBuilder(
+      column: $table.voidedAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+
+  $$SalesTableOrderingComposer get saleId {
+    final $$SalesTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.saleId,
+        referencedTable: $db.sales,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$SalesTableOrderingComposer(
+              $db: $db,
+              $table: $db.sales,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$SaleItemsTableOrderingComposer get saleItemId {
+    final $$SaleItemsTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.saleItemId,
+        referencedTable: $db.saleItems,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$SaleItemsTableOrderingComposer(
+              $db: $db,
+              $table: $db.saleItems,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$ProductsTableOrderingComposer get productId {
+    final $$ProductsTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.productId,
+        referencedTable: $db.products,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ProductsTableOrderingComposer(
+              $db: $db,
+              $table: $db.products,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$WarehousesTableOrderingComposer get warehouseId {
+    final $$WarehousesTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.warehouseId,
+        referencedTable: $db.warehouses,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$WarehousesTableOrderingComposer(
+              $db: $db,
+              $table: $db.warehouses,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$StockLotsTableOrderingComposer get lotId {
+    final $$StockLotsTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.lotId,
+        referencedTable: $db.stockLots,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$StockLotsTableOrderingComposer(
+              $db: $db,
+              $table: $db.stockLots,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$SaleItemLotAllocationsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $SaleItemLotAllocationsTable> {
+  $$SaleItemLotAllocationsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<double> get qty =>
+      $composableBuilder(column: $table.qty, builder: (column) => column);
+
+  GeneratedColumn<int> get unitCostCents => $composableBuilder(
+      column: $table.unitCostCents, builder: (column) => column);
+
+  GeneratedColumn<int> get lineCostCents => $composableBuilder(
+      column: $table.lineCostCents, builder: (column) => column);
+
+  GeneratedColumn<bool> get isVoided =>
+      $composableBuilder(column: $table.isVoided, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get voidedAt =>
+      $composableBuilder(column: $table.voidedAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  $$SalesTableAnnotationComposer get saleId {
+    final $$SalesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.saleId,
+        referencedTable: $db.sales,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$SalesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.sales,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$SaleItemsTableAnnotationComposer get saleItemId {
+    final $$SaleItemsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.saleItemId,
+        referencedTable: $db.saleItems,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$SaleItemsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.saleItems,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$ProductsTableAnnotationComposer get productId {
+    final $$ProductsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.productId,
+        referencedTable: $db.products,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$ProductsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.products,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$WarehousesTableAnnotationComposer get warehouseId {
+    final $$WarehousesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.warehouseId,
+        referencedTable: $db.warehouses,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$WarehousesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.warehouses,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$StockLotsTableAnnotationComposer get lotId {
+    final $$StockLotsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.lotId,
+        referencedTable: $db.stockLots,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$StockLotsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.stockLots,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$SaleItemLotAllocationsTableTableManager extends RootTableManager<
+    _$AppDatabase,
+    $SaleItemLotAllocationsTable,
+    SaleItemLotAllocation,
+    $$SaleItemLotAllocationsTableFilterComposer,
+    $$SaleItemLotAllocationsTableOrderingComposer,
+    $$SaleItemLotAllocationsTableAnnotationComposer,
+    $$SaleItemLotAllocationsTableCreateCompanionBuilder,
+    $$SaleItemLotAllocationsTableUpdateCompanionBuilder,
+    (SaleItemLotAllocation, $$SaleItemLotAllocationsTableReferences),
+    SaleItemLotAllocation,
+    PrefetchHooks Function(
+        {bool saleId,
+        bool saleItemId,
+        bool productId,
+        bool warehouseId,
+        bool lotId})> {
+  $$SaleItemLotAllocationsTableTableManager(
+      _$AppDatabase db, $SaleItemLotAllocationsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SaleItemLotAllocationsTableFilterComposer(
+                  $db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SaleItemLotAllocationsTableOrderingComposer(
+                  $db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SaleItemLotAllocationsTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> id = const Value.absent(),
+            Value<String> saleId = const Value.absent(),
+            Value<String> saleItemId = const Value.absent(),
+            Value<String> productId = const Value.absent(),
+            Value<String> warehouseId = const Value.absent(),
+            Value<String?> lotId = const Value.absent(),
+            Value<double> qty = const Value.absent(),
+            Value<int> unitCostCents = const Value.absent(),
+            Value<int> lineCostCents = const Value.absent(),
+            Value<bool> isVoided = const Value.absent(),
+            Value<DateTime?> voidedAt = const Value.absent(),
+            Value<DateTime> createdAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              SaleItemLotAllocationsCompanion(
+            id: id,
+            saleId: saleId,
+            saleItemId: saleItemId,
+            productId: productId,
+            warehouseId: warehouseId,
+            lotId: lotId,
+            qty: qty,
+            unitCostCents: unitCostCents,
+            lineCostCents: lineCostCents,
+            isVoided: isVoided,
+            voidedAt: voidedAt,
+            createdAt: createdAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String id,
+            required String saleId,
+            required String saleItemId,
+            required String productId,
+            required String warehouseId,
+            Value<String?> lotId = const Value.absent(),
+            Value<double> qty = const Value.absent(),
+            Value<int> unitCostCents = const Value.absent(),
+            Value<int> lineCostCents = const Value.absent(),
+            Value<bool> isVoided = const Value.absent(),
+            Value<DateTime?> voidedAt = const Value.absent(),
+            Value<DateTime> createdAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              SaleItemLotAllocationsCompanion.insert(
+            id: id,
+            saleId: saleId,
+            saleItemId: saleItemId,
+            productId: productId,
+            warehouseId: warehouseId,
+            lotId: lotId,
+            qty: qty,
+            unitCostCents: unitCostCents,
+            lineCostCents: lineCostCents,
+            isVoided: isVoided,
+            voidedAt: voidedAt,
+            createdAt: createdAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$SaleItemLotAllocationsTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: (
+              {saleId = false,
+              saleItemId = false,
+              productId = false,
+              warehouseId = false,
+              lotId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (saleId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.saleId,
+                    referencedTable: $$SaleItemLotAllocationsTableReferences
+                        ._saleIdTable(db),
+                    referencedColumn: $$SaleItemLotAllocationsTableReferences
+                        ._saleIdTable(db)
+                        .id,
+                  ) as T;
+                }
+                if (saleItemId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.saleItemId,
+                    referencedTable: $$SaleItemLotAllocationsTableReferences
+                        ._saleItemIdTable(db),
+                    referencedColumn: $$SaleItemLotAllocationsTableReferences
+                        ._saleItemIdTable(db)
+                        .id,
+                  ) as T;
+                }
+                if (productId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.productId,
+                    referencedTable: $$SaleItemLotAllocationsTableReferences
+                        ._productIdTable(db),
+                    referencedColumn: $$SaleItemLotAllocationsTableReferences
+                        ._productIdTable(db)
+                        .id,
+                  ) as T;
+                }
+                if (warehouseId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.warehouseId,
+                    referencedTable: $$SaleItemLotAllocationsTableReferences
+                        ._warehouseIdTable(db),
+                    referencedColumn: $$SaleItemLotAllocationsTableReferences
+                        ._warehouseIdTable(db)
+                        .id,
+                  ) as T;
+                }
+                if (lotId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.lotId,
+                    referencedTable:
+                        $$SaleItemLotAllocationsTableReferences._lotIdTable(db),
+                    referencedColumn: $$SaleItemLotAllocationsTableReferences
+                        ._lotIdTable(db)
+                        .id,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$SaleItemLotAllocationsTableProcessedTableManager
+    = ProcessedTableManager<
+        _$AppDatabase,
+        $SaleItemLotAllocationsTable,
+        SaleItemLotAllocation,
+        $$SaleItemLotAllocationsTableFilterComposer,
+        $$SaleItemLotAllocationsTableOrderingComposer,
+        $$SaleItemLotAllocationsTableAnnotationComposer,
+        $$SaleItemLotAllocationsTableCreateCompanionBuilder,
+        $$SaleItemLotAllocationsTableUpdateCompanionBuilder,
+        (SaleItemLotAllocation, $$SaleItemLotAllocationsTableReferences),
+        SaleItemLotAllocation,
+        PrefetchHooks Function(
+            {bool saleId,
+            bool saleItemId,
+            bool productId,
+            bool warehouseId,
+            bool lotId})>;
 typedef $$AppSettingsTableCreateCompanionBuilder = AppSettingsCompanion
     Function({
   required String key,
@@ -24390,6 +29514,15 @@ class $AppDatabaseManager {
       $$ManualIpvReportsTableTableManager(_db, _db.manualIpvReports);
   $$ManualIpvReportLinesTableTableManager get manualIpvReportLines =>
       $$ManualIpvReportLinesTableTableManager(_db, _db.manualIpvReportLines);
+  $$PurchasesTableTableManager get purchases =>
+      $$PurchasesTableTableManager(_db, _db.purchases);
+  $$PurchaseItemsTableTableManager get purchaseItems =>
+      $$PurchaseItemsTableTableManager(_db, _db.purchaseItems);
+  $$StockLotsTableTableManager get stockLots =>
+      $$StockLotsTableTableManager(_db, _db.stockLots);
+  $$SaleItemLotAllocationsTableTableManager get saleItemLotAllocations =>
+      $$SaleItemLotAllocationsTableTableManager(
+          _db, _db.saleItemLotAllocations);
   $$AppSettingsTableTableManager get appSettings =>
       $$AppSettingsTableTableManager(_db, _db.appSettings);
   $$AuditLogsTableTableManager get auditLogs =>

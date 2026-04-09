@@ -15,6 +15,7 @@ import '../features/configuracion/presentation/dashboard_widgets_settings_page.d
 import '../features/configuracion/presentation/currency_settings_page.dart';
 import '../features/configuracion/presentation/measurement_units_settings_page.dart';
 import '../features/configuracion/presentation/measurement_unit_types_settings_page.dart';
+import '../features/configuracion/presentation/payment_methods_settings_page.dart';
 import '../features/configuracion/presentation/product_catalog_settings_page.dart';
 import '../features/configuracion/presentation/security_page.dart';
 import '../features/auth/presentation/user_access_management_page.dart';
@@ -27,9 +28,11 @@ import '../features/inventario/presentation/inventario_page.dart';
 import '../features/inventario/presentation/movimientos_inventario_page.dart';
 import '../features/licencia/presentation/licencia_page.dart';
 import '../features/productos/presentation/productos_page.dart';
+import '../features/compras/presentation/compras_page.dart';
 import '../features/reportes/presentation/reportes_page.dart';
 import '../features/reportes/presentation/ipv_reportes_page.dart';
 import '../features/reportes/presentation/ipv_manual_page.dart';
+import '../features/reportes/presentation/lots_status_page.dart';
 import '../features/sync_manual/presentation/manual_sync_page.dart';
 import '../features/tpv/presentation/tpv_page.dart';
 import '../features/tpv/presentation/tpv_employees_page.dart';
@@ -90,7 +93,8 @@ final Provider<GoRouter> appRouterProvider = Provider<GoRouter>((Ref ref) {
         return fallback;
       }
 
-      if (route == '/reportes' && !license.canAccessGeneralReports) {
+      if ((route == '/reportes' || route == '/reportes-lotes') &&
+          !license.canAccessGeneralReports) {
         if (SessionAccess.canAccessRoute(session, '/ipv-reportes')) {
           return '/ipv-reportes';
         }
@@ -134,6 +138,10 @@ final Provider<GoRouter> appRouterProvider = Provider<GoRouter>((Ref ref) {
           _branch(
             path: '/inventario-movimientos',
             builder: (context, state) => const MovimientosInventarioPage(),
+          ),
+          _branch(
+            path: '/compras',
+            builder: (context, state) => const ComprasPage(),
           ),
           _branch(
             path: '/ventas-pos',
@@ -224,8 +232,16 @@ final Provider<GoRouter> appRouterProvider = Provider<GoRouter>((Ref ref) {
         builder: (context, state) => const ArchivedDataPage(),
       ),
       GoRoute(
+        path: '/configuracion-metodos-pago',
+        builder: (context, state) => const PaymentMethodsSettingsPage(),
+      ),
+      GoRoute(
         path: '/sync-manual',
         builder: (context, state) => const ManualSyncPage(),
+      ),
+      GoRoute(
+        path: '/reportes-lotes',
+        builder: (context, state) => const LotsStatusPage(),
       ),
       GoRoute(
         path: '/home-actividad-reciente',

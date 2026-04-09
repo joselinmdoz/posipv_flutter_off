@@ -46,6 +46,7 @@ class PosPaymentResult {
     required this.isConsignmentSale,
     this.cancelOrderRequested = false,
     this.selectedCustomer,
+    this.discountCents = 0,
     this.receivedCents = 0,
     this.changeCents = 0,
     this.changeReturned = true,
@@ -57,6 +58,7 @@ class PosPaymentResult {
   final bool isConsignmentSale;
   final bool cancelOrderRequested;
   final PosSelectedCustomer? selectedCustomer;
+  final int discountCents;
   final int receivedCents;
   final int changeCents;
   final bool changeReturned;

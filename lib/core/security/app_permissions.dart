@@ -20,6 +20,8 @@ class AppPermissionKeys {
 
   static const String inventoryView = 'inventory.view';
   static const String inventoryMovements = 'inventory.movements';
+  static const String purchasesView = 'purchases.view';
+  static const String purchasesManage = 'purchases.manage';
 
   static const String productsView = 'products.view';
   static const String productsManage = 'products.manage';
@@ -115,6 +117,18 @@ class AppPermissionsCatalog {
       module: 'Inventario',
       label: 'Movimientos de inventario',
       description: 'Registrar y consultar movimientos.',
+    ),
+    AppPermissionDefinition(
+      key: AppPermissionKeys.purchasesView,
+      module: 'Compras',
+      label: 'Ver compras',
+      description: 'Acceder al modulo de compras.',
+    ),
+    AppPermissionDefinition(
+      key: AppPermissionKeys.purchasesManage,
+      module: 'Compras',
+      label: 'Gestionar compras',
+      description: 'Registrar y administrar compras de inventario.',
     ),
     AppPermissionDefinition(
       key: AppPermissionKeys.productsView,
@@ -234,9 +248,11 @@ class AppPermissionsCatalog {
     '/clientes': AppPermissionKeys.customersView,
     '/inventario': AppPermissionKeys.inventoryView,
     '/inventario-movimientos': AppPermissionKeys.inventoryMovements,
+    '/compras': AppPermissionKeys.purchasesView,
     '/productos': AppPermissionKeys.productsView,
     '/almacenes': AppPermissionKeys.warehousesView,
     '/reportes': AppPermissionKeys.reportsGeneral,
+    '/reportes-lotes': AppPermissionKeys.reportsGeneral,
     '/ipv-reportes': AppPermissionKeys.reportsIpv,
     '/ipv-manual': AppPermissionKeys.reportsIpv,
     '/configuracion': AppPermissionKeys.settingsView,
@@ -246,6 +262,7 @@ class AppPermissionsCatalog {
     '/configuracion-unidades-medida': AppPermissionKeys.productsManage,
     '/configuracion-tipos-unidad': AppPermissionKeys.productsManage,
     '/configuracion-archivados': AppPermissionKeys.usersManage,
+    '/configuracion-metodos-pago': AppPermissionKeys.settingsData,
     '/configuracion-usuarios': AppPermissionKeys.usersManage,
     '/configuracion-roles': AppPermissionKeys.usersManage,
     '/configuracion-dashboard-widgets':
@@ -258,6 +275,7 @@ class AppPermissionsCatalog {
     '/productos': AppPermissionKeys.productsManage,
     '/almacenes': AppPermissionKeys.warehousesManage,
     '/clientes': AppPermissionKeys.customersManage,
+    '/compras': AppPermissionKeys.purchasesManage,
     '/configuracion': AppPermissionKeys.settingsData,
   };
 
@@ -268,6 +286,7 @@ class AppPermissionsCatalog {
     '/ventas-directas',
     '/clientes',
     '/inventario',
+    '/compras',
     '/productos',
     '/almacenes',
     '/ipv-reportes',

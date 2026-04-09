@@ -255,8 +255,8 @@ class _InventoryProductDetailPageState
           const SizedBox(height: 14),
           InventoryDetailInfoRow(
             icon: Icons.warehouse_outlined,
-            label: 'Stock disponible',
-            value: _formatQty(row.qty),
+            label: 'Stock total',
+            value: _formatQty(row.totalQty),
           ),
           InventoryStockByWarehouseSection(
             rows: _stockByWarehouse,

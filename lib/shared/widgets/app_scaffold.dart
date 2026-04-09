@@ -94,6 +94,12 @@ class AppScaffold extends ConsumerWidget {
       AppPermissionKeys.inventoryMovements,
     ),
     _NavItem(
+      'Compras',
+      '/compras',
+      Icons.shopping_cart_checkout_rounded,
+      AppPermissionKeys.purchasesView,
+    ),
+    _NavItem(
       'Productos',
       '/productos',
       Icons.shopping_bag_outlined,

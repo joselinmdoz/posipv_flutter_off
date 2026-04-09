@@ -4,6 +4,7 @@ import '../../../clientes/data/clientes_local_datasource.dart';
 import '../../../clientes/presentation/cliente_form_page.dart';
 import '../../../clientes/presentation/widgets/sale_customer_picker_dialog.dart';
 import '../../../clientes/presentation/widgets/sale_customer_selector_tile.dart';
+import 'payment_amount_calculator_dialog.dart';
 import 'pos_order_summary_line.dart';
 import 'pos_payment_models.dart';
 
@@ -18,6 +19,8 @@ class PosPaymentDialog extends StatefulWidget {
     required this.allowNegativeStock,
     required this.customers,
     required this.onlinePaymentMethodCodes,
+    required this.cashDenominationsCents,
+    required this.allowDiscounts,
     this.selectedCustomer,
     this.canCreateCustomer = false,
     this.reloadCustomers,
@@ -31,6 +34,8 @@ class PosPaymentDialog extends StatefulWidget {
   final bool allowNegativeStock;
   final List<ClienteListItem> customers;
   final Set<String> onlinePaymentMethodCodes;
+  final List<int> cashDenominationsCents;
+  final bool allowDiscounts;
   final PosSelectedCustomer? selectedCustomer;
   final bool canCreateCustomer;
   final Future<List<ClienteListItem>> Function()? reloadCustomers;
@@ -43,6 +48,7 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
   static const String _consignmentCode = 'consignment';
 
   final List<_PaymentDraft> _payments = <_PaymentDraft>[];
+  final TextEditingController _discountPercentCtrl = TextEditingController();
   final TextEditingController _amountCtrl = TextEditingController();
   final FocusNode _amountFocusNode = FocusNode();
   final TextEditingController _transactionCtrl = TextEditingController();
@@ -71,6 +77,7 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
             .where((PosCartLine line) => line.qty > 0)
             .map((PosCartLine line) => line.copyWith()),
       );
+    _discountPercentCtrl.text = '0';
     _amountCtrl.text = _total.toStringAsFixed(2);
     _amountFocusNode.addListener(_onAmountFocusChanged);
   }
@@ -80,6 +87,7 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
     _amountFocusNode
       ..removeListener(_onAmountFocusChanged)
       ..dispose();
+    _discountPercentCtrl.dispose();
     _amountCtrl.dispose();
     _transactionCtrl.dispose();
     for (final _PaymentDraft p in _payments) {
@@ -105,10 +113,38 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
     });
   }
 
-  int get _totalCents => _subtotalCents + _taxCents;
+  int get _grossCents => _subtotalCents + _taxCents;
+
+  double get _discountPercent {
+    if (!widget.allowDiscounts) {
+      return 0;
+    }
+    final double parsed = _toAmount(_discountPercentCtrl.text);
+    if (!parsed.isFinite || parsed <= 0) {
+      return 0;
+    }
+    if (parsed >= 100) {
+      return 100;
+    }
+    return parsed;
+  }
+
+  int get _discountCents {
+    if (!widget.allowDiscounts) {
+      return 0;
+    }
+    if (_grossCents <= 0) {
+      return 0;
+    }
+    return (_grossCents * _discountPercent / 100).round();
+  }
+
+  int get _totalCents => _grossCents - _discountCents;
 
   double get _subtotal => _subtotalCents / 100;
   double get _tax => _taxCents / 100;
+  double get _gross => _grossCents / 100;
+  double get _discount => _discountCents / 100;
   double get _total => _totalCents / 100;
 
   double _toAmount(String raw) {
@@ -163,6 +199,12 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
       return;
     }
     _amountCtrl.text = _total.toStringAsFixed(2);
+  }
+
+  void _onDiscountPercentChanged() {
+    setState(() {
+      _syncMainAmount();
+    });
   }
 
   bool _requiresTransactionId(String method) {
@@ -484,6 +526,7 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
             _editableLines.map((PosCartLine line) => line.copyWith()).toList(),
         isConsignmentSale: isConsignmentSale,
         selectedCustomer: _selectedCustomer,
+        discountCents: _discountCents,
         receivedCents: receivedCents,
         changeCents: changeCents,
         changeReturned: changeCents > 0 ? _changeReturned : true,
@@ -675,6 +718,21 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _openMainAmountCalculator() async {
+    final int? result = await PaymentAmountCalculatorDialog.show(
+      context: context,
+      currencySymbol: widget.currencySymbol,
+      denominationsCents: widget.cashDenominationsCents,
+      initialAmountCents: _toCents(_amountCtrl.text),
+    );
+    if (!mounted || result == null || result < 0) {
+      return;
+    }
+    setState(() {
+      _amountCtrl.text = (result / 100).toStringAsFixed(2);
+    });
   }
 
   @override
@@ -936,6 +994,14 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
                 _buildSummaryLine('Subtotal', _subtotal, isDark),
                 const SizedBox(height: 8),
                 _buildSummaryLine('Impuesto', _tax, isDark),
+                if (widget.allowDiscounts) ...<Widget>[
+                  const SizedBox(height: 8),
+                  _buildSummaryLine(
+                    'Descuento (${_discountPercent.toStringAsFixed(_discountPercent % 1 == 0 ? 0 : 2)}%)',
+                    -_discount,
+                    isDark,
+                  ),
+                ],
                 const SizedBox(height: 16),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -966,6 +1032,8 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
   }
 
   Widget _buildSummaryLine(String label, double amount, bool isDark) {
+    final bool negative = amount < 0;
+    final double abs = amount.abs();
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: <Widget>[
@@ -977,7 +1045,7 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
           ),
         ),
         Text(
-          '${widget.currencySymbol}${amount.toStringAsFixed(2)}',
+          '${negative ? '-' : ''}${widget.currencySymbol}${abs.toStringAsFixed(2)}',
           style: TextStyle(
             fontWeight: FontWeight.w700,
             color: isDark ? Colors.white : const Color(0xFF334155),
@@ -1093,6 +1161,47 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
                   ),
                 ),
               ],
+              if (widget.allowDiscounts) ...<Widget>[
+                const SizedBox(height: 16),
+                const Text(
+                  'Descuento (%)',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _discountPercentCtrl,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  onChanged: (_) => _onDiscountPercentChanged(),
+                  decoration: InputDecoration(
+                    suffixText: '%',
+                    hintText: '0',
+                    helperText: 'Se aplica sobre subtotal + impuesto.',
+                    filled: true,
+                    fillColor: isDark
+                        ? const Color(0xFF0F172A)
+                        : const Color(0xFFF8FAFC),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color:
+                            isDark ? Colors.white10 : const Color(0xFFE2E8F0),
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color:
+                            isDark ? Colors.white10 : const Color(0xFFE2E8F0),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 20),
               const Text(
                 'Monto Recibido',
@@ -1103,59 +1212,75 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
                 ),
               ),
               const SizedBox(height: 8),
-              TextField(
-                controller: _amountCtrl,
-                focusNode: _amountFocusNode,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                onChanged: (_) => setState(() {}),
-                onTap: _handleAmountFieldTap,
-                decoration: InputDecoration(
-                  prefixText: '${widget.currencySymbol} ',
-                  suffixIcon: overpayCents > 0
-                      ? Align(
-                          widthFactor: 1,
-                          heightFactor: 1,
-                          alignment: Alignment.topRight,
-                          child: Padding(
-                            padding: const EdgeInsets.only(
-                              top: 8,
-                              right: 10,
-                              left: 6,
-                            ),
-                            child: Text(
-                              'Cambio ${_moneyFromCents(overpayCents)}',
-                              style: const TextStyle(
-                                color: Color(0xFFB91C1C),
-                                fontWeight: FontWeight.w800,
-                                fontSize: 11,
-                              ),
-                            ),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: TextField(
+                      controller: _amountCtrl,
+                      focusNode: _amountFocusNode,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      onChanged: (_) => setState(() {}),
+                      onTap: _handleAmountFieldTap,
+                      decoration: InputDecoration(
+                        prefixText: '${widget.currencySymbol} ',
+                        suffixIcon: overpayCents > 0
+                            ? Align(
+                                widthFactor: 1,
+                                heightFactor: 1,
+                                alignment: Alignment.topRight,
+                                child: Padding(
+                                  padding: const EdgeInsets.only(
+                                    top: 8,
+                                    right: 10,
+                                    left: 6,
+                                  ),
+                                  child: Text(
+                                    'Cambio ${_moneyFromCents(overpayCents)}',
+                                    style: const TextStyle(
+                                      color: Color(0xFFB91C1C),
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : null,
+                        suffixIconConstraints: const BoxConstraints(
+                          minHeight: 24,
+                          minWidth: 24,
+                        ),
+                        filled: true,
+                        fillColor: isDark
+                            ? const Color(0xFF0F172A)
+                            : const Color(0xFFF8FAFC),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                            color: isDark
+                                ? Colors.white10
+                                : const Color(0xFFE2E8F0),
                           ),
-                        )
-                      : null,
-                  suffixIconConstraints: const BoxConstraints(
-                    minHeight: 24,
-                    minWidth: 24,
-                  ),
-                  filled: true,
-                  fillColor: isDark
-                      ? const Color(0xFF0F172A)
-                      : const Color(0xFFF8FAFC),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(
-                      color: isDark ? Colors.white10 : const Color(0xFFE2E8F0),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                            color: isDark
+                                ? Colors.white10
+                                : const Color(0xFFE2E8F0),
+                          ),
+                        ),
+                      ),
+                      style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(
-                      color: isDark ? Colors.white10 : const Color(0xFFE2E8F0),
-                    ),
+                  const SizedBox(width: 8),
+                  IconButton.filledTonal(
+                    tooltip: 'Calculadora',
+                    onPressed: _openMainAmountCalculator,
+                    icon: const Icon(Icons.calculate_rounded),
                   ),
-                ),
-                style: const TextStyle(fontWeight: FontWeight.w700),
+                ],
               ),
               if (overpayCents > 0) ...<Widget>[
                 const SizedBox(height: 6),
@@ -1342,6 +1467,22 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
                 ),
                 child: Column(
                   children: <Widget>[
+                    if (widget.allowDiscounts) ...<Widget>[
+                      _buildBreakdownRow(
+                        'Total bruto',
+                        _gross,
+                        Colors.grey,
+                        false,
+                      ),
+                      const SizedBox(height: 10),
+                      _buildBreakdownRow(
+                        'Descuento',
+                        -_discount,
+                        const Color(0xFFB42318),
+                        true,
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     _buildBreakdownRow(
                       'Total a pagar',
                       _total,
@@ -1486,6 +1627,8 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
     Color amountColor,
     bool isBold,
   ) {
+    final bool negative = amount < 0;
+    final double abs = amount.abs();
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: <Widget>[
@@ -1498,7 +1641,7 @@ class _PosPaymentDialogState extends State<PosPaymentDialog> {
           ),
         ),
         Text(
-          '${widget.currencySymbol}${amount.toStringAsFixed(2)}',
+          '${negative ? '-' : ''}${widget.currencySymbol}${abs.toStringAsFixed(2)}',
           style: TextStyle(
             color: amountColor,
             fontWeight: isBold ? FontWeight.w800 : FontWeight.w700,

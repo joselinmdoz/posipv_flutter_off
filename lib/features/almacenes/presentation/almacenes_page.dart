@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -931,6 +932,78 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
     return '\$${(cents / 100).toStringAsFixed(2)}';
   }
 
+  String _formatQty(double qty) {
+    if (qty == qty.roundToDouble()) {
+      return qty.toStringAsFixed(0);
+    }
+    return qty.toStringAsFixed(2);
+  }
+
+  bool _isOutOfStock(double qty) => qty <= 0.000001;
+
+  bool _isLowStock(double qty) => qty > 0 && qty <= 10;
+
+  Color _stockLabelColor(double qty, bool isDark) {
+    if (_isOutOfStock(qty)) {
+      return isDark ? const Color(0xFFFB7185) : const Color(0xFFE11D48);
+    }
+    if (_isLowStock(qty)) {
+      return isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706);
+    }
+    return isDark ? const Color(0xFF34D399) : const Color(0xFF059669);
+  }
+
+  Color _stockBgColor(double qty, bool isDark) {
+    if (_isOutOfStock(qty)) {
+      return isDark
+          ? const Color(0xFFE11D48).withValues(alpha: 0.12)
+          : const Color(0xFFFFF1F2);
+    }
+    if (_isLowStock(qty)) {
+      return isDark
+          ? const Color(0xFFD97706).withValues(alpha: 0.12)
+          : const Color(0xFFFEF3C7);
+    }
+    return isDark
+        ? const Color(0xFF059669).withValues(alpha: 0.12)
+        : const Color(0xFFECFDF5);
+  }
+
+  Widget _buildProductThumb(String? imagePath, bool isDark) {
+    final Color fallbackBg =
+        isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
+
+    Widget fallback() {
+      return Container(
+        color: fallbackBg,
+        child: Icon(
+          Icons.inventory_2_rounded,
+          color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+          size: 22,
+        ),
+      );
+    }
+
+    final String resolved = (imagePath ?? '').trim();
+    if (resolved.isEmpty) {
+      return fallback();
+    }
+    if (resolved.startsWith('http')) {
+      return Image.network(
+        resolved,
+        fit: BoxFit.cover,
+        cacheWidth: 200,
+        errorBuilder: (_, __, ___) => fallback(),
+      );
+    }
+    return Image.file(
+      File(resolved),
+      fit: BoxFit.cover,
+      cacheWidth: 200,
+      errorBuilder: (_, __, ___) => fallback(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
@@ -1273,78 +1346,137 @@ class _WarehouseDetailsPageState extends ConsumerState<_WarehouseDetailsPage> {
                                   controller: _stockScrollController,
                                   itemCount: pageItems.length,
                                   separatorBuilder: (_, __) =>
-                                      const Divider(height: 1),
+                                      const SizedBox(height: 10),
                                   itemBuilder:
                                       (BuildContext context, int index) {
                                     final item = pageItems[index];
+                                    final double qty = item.stockBalance.qty;
+                                    final Color cardColor = isDark
+                                        ? const Color(0xFF0F172A)
+                                        : const Color(0xFFF8FAFC);
+                                    final Color borderColor = isDark
+                                        ? const Color(0xFF334155)
+                                        : const Color(0xFFE2E8F0);
                                     return KeyedSubtree(
                                       key: ValueKey<String>(item.product.id),
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                            vertical: 10),
-                                        child: Row(
-                                          children: <Widget>[
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: <Widget>[
-                                                  Text(
-                                                    item.product.name,
-                                                    style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                      fontSize: 14,
-                                                      color: theme.colorScheme
-                                                          .onSurface,
-                                                    ),
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          color: cardColor,
+                                          borderRadius:
+                                              BorderRadius.circular(14),
+                                          border:
+                                              Border.all(color: borderColor),
+                                        ),
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(12),
+                                          child: Row(
+                                            children: <Widget>[
+                                              ClipRRect(
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                                child: SizedBox(
+                                                  width: 62,
+                                                  height: 62,
+                                                  child: _buildProductThumb(
+                                                    item.product.imagePath,
+                                                    isDark,
                                                   ),
-                                                  const SizedBox(height: 2),
-                                                  Text(
-                                                    'SKU: ${item.product.sku}',
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                      color: theme.colorScheme
-                                                          .onSurfaceVariant,
-                                                    ),
-                                                  ),
-                                                ],
+                                                ),
                                               ),
-                                            ),
-                                            Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.end,
-                                              children: <Widget>[
-                                                Text(
-                                                  item.stockBalance.qty
-                                                      .toStringAsFixed(0),
-                                                  style: TextStyle(
-                                                    fontWeight: FontWeight.w800,
-                                                    fontSize: 16,
-                                                    color:
-                                                        item.stockBalance.qty >
-                                                                0
-                                                            ? const Color(
-                                                                0xFF148A65)
-                                                            : const Color(
-                                                                0xFFE1487D),
-                                                  ),
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: <Widget>[
+                                                    Text(
+                                                      item.product.name,
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: TextStyle(
+                                                        fontSize: 14,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        color: theme.colorScheme
+                                                            .onSurface,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    Row(
+                                                      children: <Widget>[
+                                                        Container(
+                                                          padding:
+                                                              const EdgeInsets
+                                                                  .symmetric(
+                                                            horizontal: 8,
+                                                            vertical: 3,
+                                                          ),
+                                                          decoration:
+                                                              BoxDecoration(
+                                                            color:
+                                                                _stockBgColor(
+                                                              qty,
+                                                              isDark,
+                                                            ),
+                                                            borderRadius:
+                                                                BorderRadius
+                                                                    .circular(
+                                                              20,
+                                                            ),
+                                                          ),
+                                                          child: Text(
+                                                            'Stock: ${_formatQty(qty)}',
+                                                            style: TextStyle(
+                                                              color:
+                                                                  _stockLabelColor(
+                                                                qty,
+                                                                isDark,
+                                                              ),
+                                                              fontSize: 11,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w700,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        const SizedBox(
+                                                            width: 8),
+                                                        Expanded(
+                                                          child: Text(
+                                                            'SKU: ${item.product.sku}',
+                                                            maxLines: 1,
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                            style: TextStyle(
+                                                              fontSize: 12,
+                                                              color: theme
+                                                                  .colorScheme
+                                                                  .onSurfaceVariant,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ],
                                                 ),
-                                                Text(
-                                                  _formatCurrency(
-                                                    item.product.priceCents,
-                                                  ),
-                                                  style: const TextStyle(
-                                                    fontSize: 12,
-                                                    color: Color(0xFF8B83A8),
-                                                  ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                _formatCurrency(
+                                                  item.product.priceCents,
                                                 ),
-                                              ],
-                                            ),
-                                          ],
+                                                style: const TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: Color(0xFF1152D4),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
                                       ),
                                     );
