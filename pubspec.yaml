@@ -1,7 +1,7 @@
 name: posipv
 description: Offline-first POS and inventory app
 publish_to: 'none'
-version: 0.3.1+6
+version: 0.3.2+7
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -24,6 +24,7 @@ dependencies:
   mobile_scanner: ^7.2.0
   qr_flutter: ^4.1.0
   pdf: ^3.11.1
+  share_plus: ^10.1.2
 
 dev_dependencies:
   flutter_test:

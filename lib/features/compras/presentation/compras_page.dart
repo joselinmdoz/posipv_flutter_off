@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/security/app_permissions.dart';
 import '../../../shared/widgets/app_scaffold.dart';
@@ -204,11 +205,22 @@ class _ComprasPageState extends ConsumerState<ComprasPage> {
     final session = ref.watch(currentSessionProvider);
     final bool canManage =
         session?.hasPermission(AppPermissionKeys.purchasesManage) ?? false;
+    final bool canViewLotStatus =
+        session?.hasPermission(AppPermissionKeys.purchasesView) ?? false;
 
     return AppScaffold(
       title: 'Compras',
       currentRoute: '/compras',
       showTopTabs: false,
+      appBarActions: canViewLotStatus
+          ? <Widget>[
+              IconButton(
+                tooltip: 'Estado de lotes',
+                onPressed: () => context.push('/reportes-lotes'),
+                icon: const Icon(Icons.inventory_2_outlined),
+              ),
+            ]
+          : null,
       floatingActionButton: canManage
           ? FloatingActionButton.extended(
               onPressed: _saving ? null : _openCreateDialog,

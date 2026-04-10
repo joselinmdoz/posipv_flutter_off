@@ -10,6 +10,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_service.dart';
+import '../../../core/security/app_permissions.dart';
 import '../../configuracion/data/configuracion_local_datasource.dart';
 
 class SalesSummary {
@@ -218,6 +219,156 @@ class SalesPaymentReportRow {
   final String? transactionId;
   final String? sourceCurrencyCode;
   final int? sourceAmountCents;
+}
+
+class DailyReportSalesSummary {
+  const DailyReportSalesSummary({
+    required this.salesCount,
+    required this.itemsSoldQty,
+    required this.subtotalCents,
+    required this.taxCents,
+    required this.totalCents,
+    required this.profitCents,
+  });
+
+  final int salesCount;
+  final double itemsSoldQty;
+  final int subtotalCents;
+  final int taxCents;
+  final int totalCents;
+  final int profitCents;
+}
+
+class DailyReportMovementsSummary {
+  const DailyReportMovementsSummary({
+    required this.entriesCount,
+    required this.entriesQty,
+    required this.outputsCount,
+    required this.outputsQty,
+  });
+
+  final int entriesCount;
+  final double entriesQty;
+  final int outputsCount;
+  final double outputsQty;
+}
+
+class DailyReportIpvSummary {
+  const DailyReportIpvSummary({
+    required this.reportsCount,
+    required this.linesCount,
+    required this.salesQty,
+    required this.totalAmountCents,
+  });
+
+  final int reportsCount;
+  final int linesCount;
+  final double salesQty;
+  final int totalAmountCents;
+}
+
+class DailyReportMovementStat {
+  const DailyReportMovementStat({
+    required this.id,
+    required this.productId,
+    required this.productName,
+    required this.sku,
+    required this.warehouseId,
+    required this.warehouseName,
+    required this.movementType,
+    required this.qty,
+    required this.reasonCode,
+    required this.reasonLabel,
+    required this.movementSource,
+    required this.refType,
+    required this.refId,
+    required this.note,
+    required this.createdBy,
+    required this.username,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String productId;
+  final String productName;
+  final String sku;
+  final String warehouseId;
+  final String warehouseName;
+  final String movementType;
+  final double qty;
+  final String reasonCode;
+  final String reasonLabel;
+  final String movementSource;
+  final String? refType;
+  final String? refId;
+  final String? note;
+  final String createdBy;
+  final String username;
+  final DateTime createdAt;
+}
+
+class DailyReportIpvLineStat {
+  const DailyReportIpvLineStat({
+    required this.reportId,
+    required this.sessionId,
+    required this.terminalName,
+    required this.openedAt,
+    required this.closedAt,
+    required this.productId,
+    required this.productName,
+    required this.sku,
+    required this.startQty,
+    required this.entriesQty,
+    required this.outputsQty,
+    required this.salesQty,
+    required this.finalQty,
+    required this.salePriceCents,
+    required this.totalAmountCents,
+  });
+
+  final String reportId;
+  final String sessionId;
+  final String terminalName;
+  final DateTime openedAt;
+  final DateTime? closedAt;
+  final String productId;
+  final String productName;
+  final String sku;
+  final double startQty;
+  final double entriesQty;
+  final double outputsQty;
+  final double salesQty;
+  final double finalQty;
+  final int salePriceCents;
+  final int totalAmountCents;
+}
+
+class DailyReportSnapshot {
+  const DailyReportSnapshot({
+    required this.reportDate,
+    required this.salesSummary,
+    required this.movementsSummary,
+    required this.ipvSummary,
+    required this.salesTotalCount,
+    required this.movementsTotalCount,
+    required this.ipvLinesTotalCount,
+    required this.sales,
+    required this.movements,
+    required this.ipvReports,
+    required this.ipvLines,
+  });
+
+  final DateTime reportDate;
+  final DailyReportSalesSummary salesSummary;
+  final DailyReportMovementsSummary movementsSummary;
+  final DailyReportIpvSummary ipvSummary;
+  final int salesTotalCount;
+  final int movementsTotalCount;
+  final int ipvLinesTotalCount;
+  final List<SalesAnalyticsSaleStat> sales;
+  final List<DailyReportMovementStat> movements;
+  final List<IpvReportSummaryStat> ipvReports;
+  final List<DailyReportIpvLineStat> ipvLines;
 }
 
 class SalesAnalyticsSaleDetailStat {
@@ -530,6 +681,30 @@ class ManualIpvProductOption {
   final double suggestedStartQty;
 }
 
+class ManualIpvHistoryStat {
+  const ManualIpvHistoryStat({
+    required this.reportId,
+    required this.reportDate,
+    required this.updatedAt,
+    required this.lineCount,
+    required this.totalAmountCents,
+    required this.totalRealProfitCents,
+    required this.totalPaymentsCents,
+    required this.employeeNames,
+    required this.note,
+  });
+
+  final String reportId;
+  final DateTime reportDate;
+  final DateTime updatedAt;
+  final int lineCount;
+  final int totalAmountCents;
+  final int totalRealProfitCents;
+  final int totalPaymentsCents;
+  final List<String> employeeNames;
+  final String note;
+}
+
 class ReportesDashboard {
   const ReportesDashboard({
     required this.today,
@@ -610,6 +785,10 @@ class ReportesLocalDataSource {
       'Modo demo: la exportacion de IPV (CSV/PDF) esta disponible solo con licencia activa.';
   static const String _demoAnalyticsExportBlockedMessage =
       'Modo demo: la exportacion de analiticas esta disponible solo con licencia activa.';
+  static const String _demoDailyExportBlockedMessage =
+      'Modo demo: la exportacion del informe diario (CSV/PDF) esta disponible solo con licencia activa.';
+  static const String _demoManualIpvExportBlockedMessage =
+      'Modo demo: la exportacion del IPV manual (CSV/PDF) esta disponible solo con licencia activa.';
 
   Future<HomeOperationalInsight> loadHomeOperationalInsight({
     double lowStockThreshold = 5,
@@ -889,6 +1068,524 @@ class ReportesLocalDataSource {
       byCashier: byCashier,
       byWarehouse: byWarehouse,
       topCustomers: topCustomers,
+    );
+  }
+
+  Future<DailyReportSnapshot> loadDailyReport({
+    required DateTime reportDate,
+    int salesLimit = 20,
+    int salesOffset = 0,
+    int movementsLimit = 20,
+    int movementsOffset = 0,
+    int ipvLinesLimit = 20,
+    int ipvLinesOffset = 0,
+  }) async {
+    final DateTime from = _startOfDay(reportDate);
+    final DateTime toExclusive = from.add(const Duration(days: 1));
+    final int safeSalesLimit = salesLimit < 1 ? 1 : salesLimit;
+    final int safeSalesOffset = salesOffset < 0 ? 0 : salesOffset;
+    final int safeMovementsLimit = movementsLimit < 1 ? 1 : movementsLimit;
+    final int safeMovementsOffset = movementsOffset < 0 ? 0 : movementsOffset;
+    final int safeIpvLinesLimit = ipvLinesLimit < 1 ? 1 : ipvLinesLimit;
+    final int safeIpvLinesOffset = ipvLinesOffset < 0 ? 0 : ipvLinesOffset;
+
+    final QueryRow? salesHeader = await _db.customSelect(
+      '''
+      SELECT
+        CAST(COALESCE(COUNT(*), 0) AS INTEGER) AS sales_count,
+        CAST(COALESCE(SUM(s.subtotal_cents), 0) AS INTEGER) AS subtotal_cents,
+        CAST(COALESCE(SUM(s.tax_cents), 0) AS INTEGER) AS tax_cents,
+        CAST(COALESCE(SUM(s.total_cents), 0) AS INTEGER) AS total_cents
+      FROM sales s
+      WHERE s.status = 'posted'
+        AND s.created_at >= ?
+        AND s.created_at < ?
+      ''',
+      variables: <Variable<Object>>[
+        Variable<DateTime>(from),
+        Variable<DateTime>(toExclusive),
+      ],
+    ).getSingleOrNull();
+    final QueryRow? salesItemsAgg = await _db.customSelect(
+      '''
+      SELECT
+        COALESCE(SUM(si.qty), 0) AS sold_qty,
+        CAST(COALESCE(SUM(si.line_subtotal_cents), 0) AS INTEGER) AS subtotal_cents,
+        CAST(
+          COALESCE(
+            SUM(
+              COALESCE(
+                si.line_cost_cents,
+                CAST(ROUND(COALESCE(si.qty, 0) * COALESCE(si.unit_cost_cents, 0)) AS INTEGER)
+              )
+            ),
+            0
+          ) AS INTEGER
+        ) AS total_cost_cents
+      FROM sale_items si
+      INNER JOIN sales s ON s.id = si.sale_id
+      WHERE s.status = 'posted'
+        AND s.created_at >= ?
+        AND s.created_at < ?
+      ''',
+      variables: <Variable<Object>>[
+        Variable<DateTime>(from),
+        Variable<DateTime>(toExclusive),
+      ],
+    ).getSingleOrNull();
+    final int salesCount =
+        (salesHeader?.data['sales_count'] as num?)?.toInt() ?? 0;
+    final int subtotalCents =
+        (salesHeader?.data['subtotal_cents'] as num?)?.toInt() ?? 0;
+    final int taxCents = (salesHeader?.data['tax_cents'] as num?)?.toInt() ?? 0;
+    final int totalCents =
+        (salesHeader?.data['total_cents'] as num?)?.toInt() ?? 0;
+    final double soldQty =
+        (salesItemsAgg?.data['sold_qty'] as num?)?.toDouble() ?? 0;
+    final int soldSubtotalCents =
+        (salesItemsAgg?.data['subtotal_cents'] as num?)?.toInt() ?? 0;
+    final int totalCostCents =
+        (salesItemsAgg?.data['total_cost_cents'] as num?)?.toInt() ?? 0;
+
+    final DailyReportSalesSummary salesSummary = DailyReportSalesSummary(
+      salesCount: salesCount,
+      itemsSoldQty: soldQty,
+      subtotalCents: subtotalCents,
+      taxCents: taxCents,
+      totalCents: totalCents,
+      profitCents: soldSubtotalCents - totalCostCents,
+    );
+
+    final int salesTotalCount = await _countScalar(
+      '''
+      SELECT COUNT(*) AS value
+      FROM sales s
+      WHERE s.status = 'posted'
+        AND s.created_at >= ?
+        AND s.created_at < ?
+      ''',
+      variables: <Variable<Object>>[
+        Variable<DateTime>(from),
+        Variable<DateTime>(toExclusive),
+      ],
+    );
+    final List<QueryRow> salesRows = await _db.customSelect(
+      '''
+      SELECT
+        s.id AS sale_id,
+        s.folio AS folio,
+        s.created_at AS created_at,
+        s.total_cents AS total_cents,
+        s.terminal_id AS terminal_id,
+        COALESCE(w.name, 'Sin almacén') AS warehouse_name,
+        COALESCE(
+          NULLIF(TRIM(MIN(e.name)), ''),
+          COALESCE(u.username, 'Sin usuario')
+        ) AS cashier_username,
+        c.full_name AS customer_name,
+        t.name AS terminal_name,
+        CAST(
+          COALESCE(
+            (
+              SELECT COUNT(*)
+              FROM sale_items si
+              WHERE si.sale_id = s.id
+            ),
+            0
+          ) AS INTEGER
+        ) AS items_count
+      FROM sales s
+      LEFT JOIN warehouses w ON w.id = s.warehouse_id
+      LEFT JOIN users u ON u.id = s.cashier_id
+      LEFT JOIN customers c ON c.id = s.customer_id
+      LEFT JOIN pos_terminals t ON t.id = s.terminal_id
+      LEFT JOIN pos_session_employees se ON se.session_id = s.terminal_session_id
+      LEFT JOIN employees e ON e.id = se.employee_id
+      WHERE s.status = 'posted'
+        AND s.created_at >= ?
+        AND s.created_at < ?
+      GROUP BY
+        s.id, s.folio, s.created_at, s.total_cents, s.terminal_id,
+        s.cashier_id, w.name, u.username, c.full_name, t.name
+      ORDER BY s.created_at DESC, s.id DESC
+      LIMIT ?
+      OFFSET ?
+      ''',
+      variables: <Variable<Object>>[
+        Variable<DateTime>(from),
+        Variable<DateTime>(toExclusive),
+        Variable<int>(safeSalesLimit),
+        Variable<int>(safeSalesOffset),
+      ],
+    ).get();
+    final List<SalesAnalyticsSaleStat> sales = salesRows.map((QueryRow row) {
+      final String terminalId =
+          (row.readNullable<String>('terminal_id') ?? '').trim();
+      return SalesAnalyticsSaleStat(
+        saleId: _readTextCell(row, 'sale_id', fallback: ''),
+        folio: _readTextCell(row, 'folio', fallback: '-'),
+        createdAt: row.readNullable<DateTime>('created_at') ?? DateTime.now(),
+        warehouseName: _readTextCell(
+          row,
+          'warehouse_name',
+          fallback: 'Sin almacén',
+        ),
+        cashierUsername: _readTextCell(
+          row,
+          'cashier_username',
+          fallback: 'Sin usuario',
+        ),
+        customerName: _nullableTextCell(row, 'customer_name'),
+        terminalName: _nullableTextCell(row, 'terminal_name'),
+        totalCents: (row.data['total_cents'] as num?)?.toInt() ?? 0,
+        itemsCount: (row.data['items_count'] as num?)?.toInt() ?? 0,
+        channel: terminalId.isEmpty ? 'directa' : 'pos',
+      );
+    }).toList(growable: false);
+
+    final QueryRow? movementsSummaryRow = await _db.customSelect(
+      '''
+      SELECT
+        CAST(
+          COALESCE(
+            SUM(
+              CASE
+                WHEN sm.type = 'in' OR (sm.type = 'adjust' AND sm.qty >= 0)
+                  THEN 1
+                ELSE 0
+              END
+            ),
+            0
+          ) AS INTEGER
+        ) AS entries_count,
+        COALESCE(
+          SUM(
+            CASE
+              WHEN sm.type = 'in' OR (sm.type = 'adjust' AND sm.qty >= 0)
+                THEN ABS(COALESCE(sm.qty, 0))
+              ELSE 0
+            END
+          ),
+          0
+        ) AS entries_qty,
+        CAST(
+          COALESCE(
+            SUM(
+              CASE
+                WHEN sm.type = 'out' OR (sm.type = 'adjust' AND sm.qty < 0)
+                  THEN 1
+                ELSE 0
+              END
+            ),
+            0
+          ) AS INTEGER
+        ) AS outputs_count,
+        COALESCE(
+          SUM(
+            CASE
+              WHEN sm.type = 'out' OR (sm.type = 'adjust' AND sm.qty < 0)
+                THEN ABS(COALESCE(sm.qty, 0))
+              ELSE 0
+            END
+          ),
+          0
+        ) AS outputs_qty
+      FROM stock_movements sm
+      WHERE COALESCE(sm.is_voided, 0) = 0
+        AND sm.created_at >= ?
+        AND sm.created_at < ?
+      ''',
+      variables: <Variable<Object>>[
+        Variable<DateTime>(from),
+        Variable<DateTime>(toExclusive),
+      ],
+    ).getSingleOrNull();
+    final DailyReportMovementsSummary movementsSummary =
+        DailyReportMovementsSummary(
+      entriesCount:
+          (movementsSummaryRow?.data['entries_count'] as num?)?.toInt() ?? 0,
+      entriesQty:
+          (movementsSummaryRow?.data['entries_qty'] as num?)?.toDouble() ?? 0,
+      outputsCount:
+          (movementsSummaryRow?.data['outputs_count'] as num?)?.toInt() ?? 0,
+      outputsQty:
+          (movementsSummaryRow?.data['outputs_qty'] as num?)?.toDouble() ?? 0,
+    );
+
+    final int movementsTotalCount = await _countScalar(
+      '''
+      SELECT COUNT(*) AS value
+      FROM stock_movements sm
+      WHERE COALESCE(sm.is_voided, 0) = 0
+        AND sm.created_at >= ?
+        AND sm.created_at < ?
+      ''',
+      variables: <Variable<Object>>[
+        Variable<DateTime>(from),
+        Variable<DateTime>(toExclusive),
+      ],
+    );
+    final List<QueryRow> movementRows = await _db.customSelect(
+      '''
+      SELECT
+        sm.id AS id,
+        sm.product_id AS product_id,
+        p.name AS product_name,
+        p.sku AS sku,
+        sm.warehouse_id AS warehouse_id,
+        w.name AS warehouse_name,
+        sm.type AS type,
+        sm.qty AS qty,
+        sm.reason_code AS reason_code,
+        sm.movement_source AS movement_source,
+        sm.ref_type AS ref_type,
+        sm.ref_id AS ref_id,
+        sm.note AS note,
+        sm.created_by AS created_by,
+        u.username AS username,
+        sm.created_at AS created_at
+      FROM stock_movements sm
+      LEFT JOIN products p ON p.id = sm.product_id
+      LEFT JOIN warehouses w ON w.id = sm.warehouse_id
+      LEFT JOIN users u ON u.id = sm.created_by
+      WHERE COALESCE(sm.is_voided, 0) = 0
+        AND sm.created_at >= ?
+        AND sm.created_at < ?
+      ORDER BY sm.created_at DESC, sm.id DESC
+      LIMIT ?
+      OFFSET ?
+      ''',
+      variables: <Variable<Object>>[
+        Variable<DateTime>(from),
+        Variable<DateTime>(toExclusive),
+        Variable<int>(safeMovementsLimit),
+        Variable<int>(safeMovementsOffset),
+      ],
+    ).get();
+    final Map<String, String> reasonLabels = await _loadMovementReasonLabels();
+    final List<DailyReportMovementStat> movements =
+        movementRows.map((QueryRow row) {
+      final double rawQty = (row.data['qty'] as num?)?.toDouble() ?? 0;
+      final String normalizedType = _normalizeMovementType(
+        (row.readNullable<String>('type') ?? '').trim().toLowerCase(),
+        rawQty,
+      );
+      final String? refType = row.readNullable<String>('ref_type');
+      final String reasonCode = _resolveInventoryReasonCode(
+        explicitReasonCode: row.readNullable<String>('reason_code'),
+        refType: refType,
+      );
+      final String createdBy = _readTextCell(row, 'created_by', fallback: '');
+      final String username = _readTextCell(
+        row,
+        'username',
+        fallback: createdBy.isEmpty ? 'Sin usuario' : createdBy,
+      );
+      return DailyReportMovementStat(
+        id: _readTextCell(row, 'id', fallback: ''),
+        productId: _readTextCell(row, 'product_id', fallback: ''),
+        productName: _readTextCell(row, 'product_name', fallback: 'Producto'),
+        sku: _readTextCell(row, 'sku', fallback: '-'),
+        warehouseId: _readTextCell(row, 'warehouse_id', fallback: ''),
+        warehouseName: _readTextCell(row, 'warehouse_name', fallback: '-'),
+        movementType: normalizedType,
+        qty: rawQty.abs(),
+        reasonCode: reasonCode,
+        reasonLabel: reasonLabels[reasonCode] ??
+            _fallbackMovementReasonLabel(reasonCode),
+        movementSource: _resolveInventoryMovementSource(
+          explicitSource: row.readNullable<String>('movement_source'),
+          refType: refType,
+        ),
+        refType: refType,
+        refId: row.readNullable<String>('ref_id'),
+        note: row.readNullable<String>('note'),
+        createdBy: createdBy,
+        username: username,
+        createdAt: row.readNullable<DateTime>('created_at') ?? DateTime.now(),
+      );
+    }).toList(growable: false);
+
+    const String ipvDayWhere = '''
+      (
+        (r.opened_at >= ? AND r.opened_at < ?)
+        OR (r.closed_at >= ? AND r.closed_at < ?)
+      )
+    ''';
+    final List<Variable<Object>> ipvWhereVariables = <Variable<Object>>[
+      Variable<DateTime>(from),
+      Variable<DateTime>(toExclusive),
+      Variable<DateTime>(from),
+      Variable<DateTime>(toExclusive),
+    ];
+
+    final QueryRow? ipvSummaryRow = await _db.customSelect(
+      '''
+      SELECT
+        CAST(COALESCE(COUNT(DISTINCT r.id), 0) AS INTEGER) AS reports_count,
+        CAST(COALESCE(COUNT(l.product_id), 0) AS INTEGER) AS lines_count,
+        COALESCE(SUM(l.sales_qty), 0) AS sales_qty,
+        CAST(COALESCE(SUM(l.total_amount_cents), 0) AS INTEGER) AS total_amount_cents
+      FROM ipv_reports r
+      LEFT JOIN ipv_report_lines l
+        ON l.report_id = r.id
+      WHERE $ipvDayWhere
+      ''',
+      variables: ipvWhereVariables,
+    ).getSingleOrNull();
+    final DailyReportIpvSummary ipvSummary = DailyReportIpvSummary(
+      reportsCount:
+          (ipvSummaryRow?.data['reports_count'] as num?)?.toInt() ?? 0,
+      linesCount: (ipvSummaryRow?.data['lines_count'] as num?)?.toInt() ?? 0,
+      salesQty: (ipvSummaryRow?.data['sales_qty'] as num?)?.toDouble() ?? 0,
+      totalAmountCents:
+          (ipvSummaryRow?.data['total_amount_cents'] as num?)?.toInt() ?? 0,
+    );
+
+    final List<QueryRow> ipvReportRows = await _db.customSelect(
+      '''
+      SELECT
+        r.id AS report_id,
+        r.session_id AS session_id,
+        COALESCE(t.name, 'TPV') AS terminal_name,
+        COALESCE(NULLIF(TRIM(t.currency_symbol), ''), '\$') AS currency_symbol,
+        r.opened_at AS opened_at,
+        r.closed_at AS closed_at,
+        COALESCE(NULLIF(TRIM(r.status), ''), 'open') AS status,
+        COALESCE(NULLIF(TRIM(r.opening_source), ''), 'initial_stock') AS opening_source,
+        CAST(COALESCE(COUNT(l.product_id), 0) AS INTEGER) AS line_count,
+        CAST(COALESCE(SUM(l.total_amount_cents), 0) AS INTEGER) AS total_amount_cents
+      FROM ipv_reports r
+      LEFT JOIN pos_terminals t
+        ON t.id = r.terminal_id
+      LEFT JOIN ipv_report_lines l
+        ON l.report_id = r.id
+      WHERE $ipvDayWhere
+      GROUP BY
+        r.id,
+        r.session_id,
+        t.name,
+        t.currency_symbol,
+        r.opened_at,
+        r.closed_at,
+        r.status,
+        r.opening_source
+      ORDER BY COALESCE(r.closed_at, r.opened_at) DESC, r.id DESC
+      ''',
+      variables: ipvWhereVariables,
+    ).get();
+    final List<IpvReportSummaryStat> ipvReports =
+        ipvReportRows.map((QueryRow row) {
+      return IpvReportSummaryStat(
+        reportId: _readTextCell(row, 'report_id', fallback: ''),
+        sessionId: _readTextCell(row, 'session_id', fallback: ''),
+        terminalName: _readTextCell(row, 'terminal_name', fallback: 'TPV'),
+        currencySymbol: _readTextCell(row, 'currency_symbol', fallback: r'$'),
+        openedAt: row.readNullable<DateTime>('opened_at') ?? from,
+        closedAt: row.readNullable<DateTime>('closed_at'),
+        status: _readTextCell(row, 'status', fallback: 'open'),
+        openingSource: _readTextCell(
+          row,
+          'opening_source',
+          fallback: 'initial_stock',
+        ),
+        lineCount: (row.data['line_count'] as num?)?.toInt() ?? 0,
+        totalAmountCents:
+            (row.data['total_amount_cents'] as num?)?.toInt() ?? 0,
+      );
+    }).toList(growable: false);
+
+    final int ipvLinesTotalCount = await _countScalar(
+      '''
+      SELECT COUNT(*) AS value
+      FROM ipv_report_lines l
+      INNER JOIN ipv_reports r
+        ON r.id = l.report_id
+      WHERE $ipvDayWhere
+      ''',
+      variables: ipvWhereVariables,
+    );
+    final List<QueryRow> ipvLinesRows = await _db.customSelect(
+      '''
+      SELECT
+        r.id AS report_id,
+        r.session_id AS session_id,
+        COALESCE(t.name, 'TPV') AS terminal_name,
+        r.opened_at AS opened_at,
+        r.closed_at AS closed_at,
+        l.product_id AS product_id,
+        COALESCE(
+          NULLIF(TRIM(l.product_name_snapshot), ''),
+          NULLIF(TRIM(p.name), ''),
+          'Producto'
+        ) AS product_name,
+        COALESCE(
+          NULLIF(TRIM(l.product_sku_snapshot), ''),
+          NULLIF(TRIM(p.sku), ''),
+          '-'
+        ) AS sku,
+        COALESCE(l.start_qty, 0) AS start_qty,
+        COALESCE(l.entries_qty, 0) AS entries_qty,
+        COALESCE(l.outputs_qty, 0) AS outputs_qty,
+        COALESCE(l.sales_qty, 0) AS sales_qty,
+        COALESCE(l.final_qty, 0) AS final_qty,
+        COALESCE(l.sale_price_cents, 0) AS sale_price_cents,
+        COALESCE(l.total_amount_cents, 0) AS total_amount_cents
+      FROM ipv_report_lines l
+      INNER JOIN ipv_reports r
+        ON r.id = l.report_id
+      LEFT JOIN pos_terminals t
+        ON t.id = r.terminal_id
+      LEFT JOIN products p
+        ON p.id = l.product_id
+      WHERE $ipvDayWhere
+      ORDER BY
+        COALESCE(r.closed_at, r.opened_at) DESC,
+        LOWER(product_name) ASC,
+        l.product_id ASC
+      LIMIT ?
+      OFFSET ?
+      ''',
+      variables: <Variable<Object>>[
+        ...ipvWhereVariables,
+        Variable<int>(safeIpvLinesLimit),
+        Variable<int>(safeIpvLinesOffset),
+      ],
+    ).get();
+    final List<DailyReportIpvLineStat> ipvLines =
+        ipvLinesRows.map((QueryRow row) {
+      return DailyReportIpvLineStat(
+        reportId: _readTextCell(row, 'report_id', fallback: ''),
+        sessionId: _readTextCell(row, 'session_id', fallback: ''),
+        terminalName: _readTextCell(row, 'terminal_name', fallback: 'TPV'),
+        openedAt: row.readNullable<DateTime>('opened_at') ?? from,
+        closedAt: row.readNullable<DateTime>('closed_at'),
+        productId: _readTextCell(row, 'product_id', fallback: ''),
+        productName: _readTextCell(row, 'product_name', fallback: 'Producto'),
+        sku: _readTextCell(row, 'sku', fallback: '-'),
+        startQty: (row.data['start_qty'] as num?)?.toDouble() ?? 0,
+        entriesQty: (row.data['entries_qty'] as num?)?.toDouble() ?? 0,
+        outputsQty: (row.data['outputs_qty'] as num?)?.toDouble() ?? 0,
+        salesQty: (row.data['sales_qty'] as num?)?.toDouble() ?? 0,
+        finalQty: (row.data['final_qty'] as num?)?.toDouble() ?? 0,
+        salePriceCents: (row.data['sale_price_cents'] as num?)?.toInt() ?? 0,
+        totalAmountCents:
+            (row.data['total_amount_cents'] as num?)?.toInt() ?? 0,
+      );
+    }).toList(growable: false);
+
+    return DailyReportSnapshot(
+      reportDate: from,
+      salesSummary: salesSummary,
+      movementsSummary: movementsSummary,
+      ipvSummary: ipvSummary,
+      salesTotalCount: salesTotalCount,
+      movementsTotalCount: movementsTotalCount,
+      ipvLinesTotalCount: ipvLinesTotalCount,
+      sales: sales,
+      movements: movements,
+      ipvReports: ipvReports,
+      ipvLines: ipvLines,
     );
   }
 
@@ -2924,6 +3621,415 @@ class ReportesLocalDataSource {
     return file.path;
   }
 
+  Future<String> exportDailyReportCsv({
+    required DateTime reportDate,
+    required String currencySymbol,
+  }) async {
+    await _licenseService.requireFullAccess(
+      message: _demoDailyExportBlockedMessage,
+    );
+    final DailyReportSnapshot snapshot = await loadDailyReport(
+      reportDate: reportDate,
+      salesLimit: 200000,
+      salesOffset: 0,
+      movementsLimit: 200000,
+      movementsOffset: 0,
+      ipvLinesLimit: 200000,
+      ipvLinesOffset: 0,
+    );
+    final DateTime now = DateTime.now();
+    final Directory preferredBase = await _resolveDownloadsBaseDir();
+    Directory dir = Directory(
+      p.join(preferredBase.path, 'Reportes', 'Informe diario'),
+    );
+    try {
+      if (!dir.existsSync()) {
+        await dir.create(recursive: true);
+      }
+    } catch (_) {
+      final Directory docs = await getApplicationDocumentsDirectory();
+      dir = Directory(
+        p.join(docs.path, 'exports', 'Reportes', 'Informe diario'),
+      );
+      if (!dir.existsSync()) {
+        await dir.create(recursive: true);
+      }
+    }
+
+    final String dayTag = _dayKey(snapshot.reportDate).replaceAll('-', '');
+    final String hh = now.hour.toString().padLeft(2, '0');
+    final String mm = now.minute.toString().padLeft(2, '0');
+    final String ss = now.second.toString().padLeft(2, '0');
+    final String fileName = 'informe_diario_${dayTag}_$hh$mm$ss.csv';
+    final File file = File(p.join(dir.path, fileName));
+
+    final StringBuffer csv = StringBuffer()
+      ..writeln('Reporte,Informe diario')
+      ..writeln('Fecha,${_csvCell(_dayKey(snapshot.reportDate))}')
+      ..writeln('Generado,${_csvCell(_formatDateTimeHuman(now))}')
+      ..writeln('Moneda,${_csvCell(currencySymbol)}')
+      ..writeln('')
+      ..writeln('RESUMEN VENTAS')
+      ..writeln('Total ventas,${snapshot.salesSummary.salesCount}')
+      ..writeln(
+        'Productos vendidos,${snapshot.salesSummary.itemsSoldQty.toStringAsFixed(2)}',
+      )
+      ..writeln(
+        'Subtotal,${(snapshot.salesSummary.subtotalCents / 100).toStringAsFixed(2)}',
+      )
+      ..writeln(
+          'Impuestos,${(snapshot.salesSummary.taxCents / 100).toStringAsFixed(2)}')
+      ..writeln(
+          'Total,${(snapshot.salesSummary.totalCents / 100).toStringAsFixed(2)}')
+      ..writeln(
+        'Ganancia,${(snapshot.salesSummary.profitCents / 100).toStringAsFixed(2)}',
+      )
+      ..writeln('')
+      ..writeln('RESUMEN MOVIMIENTOS')
+      ..writeln('Entradas (mov),${snapshot.movementsSummary.entriesCount}')
+      ..writeln(
+        'Entradas (qty),${snapshot.movementsSummary.entriesQty.toStringAsFixed(2)}',
+      )
+      ..writeln('Salidas (mov),${snapshot.movementsSummary.outputsCount}')
+      ..writeln(
+        'Salidas (qty),${snapshot.movementsSummary.outputsQty.toStringAsFixed(2)}',
+      )
+      ..writeln('')
+      ..writeln('RESUMEN IPV')
+      ..writeln('Reportes IPV,${snapshot.ipvSummary.reportsCount}')
+      ..writeln('Lineas IPV,${snapshot.ipvSummary.linesCount}')
+      ..writeln(
+          'Ventas IPV (qty),${snapshot.ipvSummary.salesQty.toStringAsFixed(2)}')
+      ..writeln(
+        'Importe IPV,${(snapshot.ipvSummary.totalAmountCents / 100).toStringAsFixed(2)}',
+      )
+      ..writeln('')
+      ..writeln('VENTAS')
+      ..writeln(
+        'Folio,Fecha,Canal,Almacen,Dependiente,Cliente,TPV,Items,Total',
+      );
+
+    for (final SalesAnalyticsSaleStat row in snapshot.sales) {
+      csv.writeln(
+        '${_csvCell(row.folio)},${_csvCell(_formatDateTimeHuman(row.createdAt))},${_csvCell(row.channel)},${_csvCell(row.warehouseName)},${_csvCell(row.cashierUsername)},${_csvCell(row.customerName ?? '-')},${_csvCell(row.terminalName ?? '-')},${row.itemsCount},${(row.totalCents / 100).toStringAsFixed(2)}',
+      );
+    }
+
+    csv
+      ..writeln('')
+      ..writeln('MOVIMIENTOS')
+      ..writeln(
+        'ID,Fecha,Producto,SKU,Almacen,Tipo,Cantidad,Motivo,Origen,Ref tipo,Ref id,Usuario,Nota',
+      );
+    for (final DailyReportMovementStat row in snapshot.movements) {
+      csv.writeln(
+        '${_csvCell(row.id)},${_csvCell(_formatDateTimeHuman(row.createdAt))},${_csvCell(row.productName)},${_csvCell(row.sku)},${_csvCell(row.warehouseName)},${_csvCell(row.movementType)},${row.qty.toStringAsFixed(2)},${_csvCell(row.reasonLabel)},${_csvCell(row.movementSource)},${_csvCell(row.refType ?? '-')},${_csvCell(row.refId ?? '-')},${_csvCell(row.username)},${_csvCell((row.note ?? '').trim().isEmpty ? '-' : row.note!.trim())}',
+      );
+    }
+
+    csv
+      ..writeln('')
+      ..writeln('REPORTES IPV')
+      ..writeln(
+        'Reporte ID,Sesion,TPV,Estado,Apertura,Cierre,Lineas,Importe',
+      );
+    for (final IpvReportSummaryStat row in snapshot.ipvReports) {
+      csv.writeln(
+        '${_csvCell(row.reportId)},${_csvCell(row.sessionId)},${_csvCell(row.terminalName)},${_csvCell(row.status)},${_csvCell(_formatDateTimeHuman(row.openedAt))},${_csvCell(row.closedAt == null ? '-' : _formatDateTimeHuman(row.closedAt!))},${row.lineCount},${(row.totalAmountCents / 100).toStringAsFixed(2)}',
+      );
+    }
+
+    csv
+      ..writeln('')
+      ..writeln('LINEAS IPV')
+      ..writeln(
+        'Reporte ID,TPV,Producto,SKU,Inicio,Entradas,Salidas,Ventas,Final,Precio,Importe',
+      );
+    for (final DailyReportIpvLineStat row in snapshot.ipvLines) {
+      csv.writeln(
+        '${_csvCell(row.reportId)},${_csvCell(row.terminalName)},${_csvCell(row.productName)},${_csvCell(row.sku)},${row.startQty.toStringAsFixed(2)},${row.entriesQty.toStringAsFixed(2)},${row.outputsQty.toStringAsFixed(2)},${row.salesQty.toStringAsFixed(2)},${row.finalQty.toStringAsFixed(2)},${(row.salePriceCents / 100).toStringAsFixed(2)},${(row.totalAmountCents / 100).toStringAsFixed(2)}',
+      );
+    }
+
+    await file.writeAsString(csv.toString(), encoding: utf8, flush: true);
+    return file.path;
+  }
+
+  Future<String> exportDailyReportPdf({
+    required DateTime reportDate,
+    required String currencySymbol,
+  }) async {
+    await _licenseService.requireFullAccess(
+      message: _demoDailyExportBlockedMessage,
+    );
+    final DailyReportSnapshot snapshot = await loadDailyReport(
+      reportDate: reportDate,
+      salesLimit: 200000,
+      salesOffset: 0,
+      movementsLimit: 200000,
+      movementsOffset: 0,
+      ipvLinesLimit: 200000,
+      ipvLinesOffset: 0,
+    );
+    final DateTime now = DateTime.now();
+    final Directory preferredBase = await _resolveDownloadsBaseDir();
+    Directory dir = Directory(
+      p.join(preferredBase.path, 'Reportes', 'Informe diario'),
+    );
+    try {
+      if (!dir.existsSync()) {
+        await dir.create(recursive: true);
+      }
+    } catch (_) {
+      final Directory docs = await getApplicationDocumentsDirectory();
+      dir = Directory(
+        p.join(docs.path, 'exports', 'Reportes', 'Informe diario'),
+      );
+      if (!dir.existsSync()) {
+        await dir.create(recursive: true);
+      }
+    }
+
+    final String dayTag = _dayKey(snapshot.reportDate).replaceAll('-', '');
+    final String hh = now.hour.toString().padLeft(2, '0');
+    final String mm = now.minute.toString().padLeft(2, '0');
+    final String ss = now.second.toString().padLeft(2, '0');
+    final String fileName = 'informe_diario_${dayTag}_$hh$mm$ss.pdf';
+    final File file = File(p.join(dir.path, fileName));
+
+    final pw.Document doc = pw.Document();
+    final String generatedAt = _formatDateTimeHuman(now);
+    final String dayLabel = _dayKey(snapshot.reportDate);
+
+    final List<List<String>> salesRows = snapshot.sales
+        .map((SalesAnalyticsSaleStat row) => <String>[
+              row.folio,
+              _formatDateTimeHuman(row.createdAt),
+              row.channel,
+              row.warehouseName,
+              row.cashierUsername,
+              row.customerName ?? '-',
+              row.itemsCount.toString(),
+              (row.totalCents / 100).toStringAsFixed(2),
+            ])
+        .toList(growable: false);
+    final List<List<String>> movementRows = snapshot.movements
+        .map((DailyReportMovementStat row) => <String>[
+              _formatDateTimeHuman(row.createdAt),
+              row.productName,
+              row.sku,
+              row.warehouseName,
+              row.movementType,
+              row.qty.toStringAsFixed(2),
+              row.reasonLabel,
+              row.movementSource,
+              row.username,
+            ])
+        .toList(growable: false);
+    final List<List<String>> ipvSummaryRows = snapshot.ipvReports
+        .map((IpvReportSummaryStat row) => <String>[
+              row.reportId,
+              row.terminalName,
+              row.status,
+              _formatDateTimeHuman(row.openedAt),
+              row.closedAt == null ? '-' : _formatDateTimeHuman(row.closedAt!),
+              row.lineCount.toString(),
+              (row.totalAmountCents / 100).toStringAsFixed(2),
+            ])
+        .toList(growable: false);
+    final List<List<String>> ipvLineRows = snapshot.ipvLines
+        .map((DailyReportIpvLineStat row) => <String>[
+              row.reportId,
+              row.terminalName,
+              row.productName,
+              row.sku,
+              row.startQty.toStringAsFixed(2),
+              row.entriesQty.toStringAsFixed(2),
+              row.outputsQty.toStringAsFixed(2),
+              row.salesQty.toStringAsFixed(2),
+              row.finalQty.toStringAsFixed(2),
+              (row.salePriceCents / 100).toStringAsFixed(2),
+              (row.totalAmountCents / 100).toStringAsFixed(2),
+            ])
+        .toList(growable: false);
+
+    pw.Widget sectionTitle(String text) {
+      return pw.Padding(
+        padding: const pw.EdgeInsets.only(top: 10, bottom: 6),
+        child: pw.Text(
+          text,
+          style: pw.TextStyle(
+            fontSize: 12,
+            fontWeight: pw.FontWeight.bold,
+          ),
+        ),
+      );
+    }
+
+    pw.Widget simpleInfo(String label, String value) {
+      return pw.Padding(
+        padding: const pw.EdgeInsets.only(bottom: 2),
+        child: pw.Text(
+          '$label: $value',
+          style: const pw.TextStyle(fontSize: 10),
+        ),
+      );
+    }
+
+    pw.Widget table({
+      required List<String> headers,
+      required List<List<String>> data,
+    }) {
+      return pw.TableHelper.fromTextArray(
+        headers: headers,
+        data: data.isEmpty
+            ? <List<String>>[List<String>.filled(headers.length, '-')]
+            : data,
+        headerStyle: pw.TextStyle(
+          fontSize: 8,
+          fontWeight: pw.FontWeight.bold,
+          color: PdfColors.white,
+        ),
+        headerDecoration: const pw.BoxDecoration(
+          color: PdfColor(0.07, 0.32, 0.83),
+        ),
+        cellStyle: const pw.TextStyle(
+          fontSize: 7,
+        ),
+        cellPadding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+        border: null,
+        headerAlignment: pw.Alignment.centerLeft,
+        cellAlignment: pw.Alignment.centerLeft,
+      );
+    }
+
+    doc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.fromLTRB(20, 20, 20, 20),
+        build: (pw.Context context) {
+          return <pw.Widget>[
+            pw.Text(
+              'Informe diario',
+              style: pw.TextStyle(
+                fontSize: 18,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+            pw.SizedBox(height: 4),
+            simpleInfo('Fecha', dayLabel),
+            simpleInfo('Generado', generatedAt),
+            simpleInfo('Moneda', currencySymbol),
+            sectionTitle('Resumen de ventas'),
+            simpleInfo('Total ventas', '${snapshot.salesSummary.salesCount}'),
+            simpleInfo(
+              'Productos vendidos',
+              snapshot.salesSummary.itemsSoldQty.toStringAsFixed(2),
+            ),
+            simpleInfo(
+              'Subtotal',
+              (snapshot.salesSummary.subtotalCents / 100).toStringAsFixed(2),
+            ),
+            simpleInfo(
+              'Impuestos',
+              (snapshot.salesSummary.taxCents / 100).toStringAsFixed(2),
+            ),
+            simpleInfo(
+              'Total',
+              (snapshot.salesSummary.totalCents / 100).toStringAsFixed(2),
+            ),
+            simpleInfo(
+              'Ganancia',
+              (snapshot.salesSummary.profitCents / 100).toStringAsFixed(2),
+            ),
+            sectionTitle('Resumen de movimientos'),
+            simpleInfo(
+              'Entradas',
+              '${snapshot.movementsSummary.entriesCount} mov / ${snapshot.movementsSummary.entriesQty.toStringAsFixed(2)} uds',
+            ),
+            simpleInfo(
+              'Salidas',
+              '${snapshot.movementsSummary.outputsCount} mov / ${snapshot.movementsSummary.outputsQty.toStringAsFixed(2)} uds',
+            ),
+            sectionTitle('Resumen IPV'),
+            simpleInfo('Reportes IPV', '${snapshot.ipvSummary.reportsCount}'),
+            simpleInfo('Lineas IPV', '${snapshot.ipvSummary.linesCount}'),
+            simpleInfo(
+              'Ventas IPV (qty)',
+              snapshot.ipvSummary.salesQty.toStringAsFixed(2),
+            ),
+            simpleInfo(
+              'Importe IPV',
+              (snapshot.ipvSummary.totalAmountCents / 100).toStringAsFixed(2),
+            ),
+            sectionTitle('Ventas'),
+            table(
+              headers: const <String>[
+                'Folio',
+                'Fecha',
+                'Canal',
+                'Almacen',
+                'Dependiente',
+                'Cliente',
+                'Items',
+                'Total',
+              ],
+              data: salesRows,
+            ),
+            sectionTitle('Movimientos'),
+            table(
+              headers: const <String>[
+                'Fecha',
+                'Producto',
+                'SKU',
+                'Almacen',
+                'Tipo',
+                'Qty',
+                'Motivo',
+                'Origen',
+                'Usuario',
+              ],
+              data: movementRows,
+            ),
+            sectionTitle('Reportes IPV'),
+            table(
+              headers: const <String>[
+                'Reporte',
+                'TPV',
+                'Estado',
+                'Apertura',
+                'Cierre',
+                'Lineas',
+                'Importe',
+              ],
+              data: ipvSummaryRows,
+            ),
+            sectionTitle('Lineas IPV'),
+            table(
+              headers: const <String>[
+                'Reporte',
+                'TPV',
+                'Producto',
+                'SKU',
+                'Ini',
+                'Ent',
+                'Sal',
+                'Ven',
+                'Fin',
+                'Precio',
+                'Importe',
+              ],
+              data: ipvLineRows,
+            ),
+          ];
+        },
+      ),
+    );
+
+    await file.writeAsBytes(await doc.save(), flush: true);
+    return file.path;
+  }
+
   Future<String> exportIpvReportCsv(String reportId) async {
     await _licenseService.requireFullAccess(
       message: _demoIpvExportBlockedMessage,
@@ -4042,6 +5148,106 @@ class ReportesLocalDataSource {
     });
   }
 
+  Future<List<ManualIpvHistoryStat>> listManualIpvHistory({
+    int limit = 180,
+    int offset = 0,
+    DateTime? fromDate,
+    DateTime? toDate,
+  }) async {
+    final int safeLimit = limit < 1 ? 1 : limit;
+    final int safeOffset = offset < 0 ? 0 : offset;
+    final DateTime? normalizedFrom =
+        fromDate == null ? null : _startOfDay(fromDate);
+    final DateTime? normalizedToExclusive = toDate == null
+        ? null
+        : _startOfDay(toDate).add(const Duration(days: 1));
+
+    final StringBuffer sql = StringBuffer(
+      '''
+      SELECT
+        r.id AS report_id,
+        r.report_date AS report_date,
+        COALESCE(r.updated_at, r.created_at) AS updated_at,
+        r.employee_names_json AS employee_names_json,
+        r.payment_totals_json AS payment_totals_json,
+        r.note AS note,
+        CAST(COALESCE(COUNT(l.id), 0) AS INTEGER) AS line_count,
+        CAST(COALESCE(SUM(l.total_amount_cents), 0) AS INTEGER) AS total_amount_cents,
+        CAST(
+          COALESCE(
+            SUM(
+              ROUND(
+                COALESCE(l.sales_qty, 0) * (
+                  COALESCE(l.sale_price_cents, 0) - COALESCE(l.unit_cost_cents, 0)
+                )
+              )
+            ),
+            0
+          ) AS INTEGER
+        ) AS total_real_profit_cents
+      FROM manual_ipv_reports r
+      LEFT JOIN manual_ipv_report_lines l
+        ON l.report_id = r.id
+      WHERE 1 = 1
+      ''',
+    );
+    final List<Variable<Object>> variables = <Variable<Object>>[];
+    if (normalizedFrom != null) {
+      sql.write(' AND r.report_date >= ?');
+      variables.add(Variable<DateTime>(normalizedFrom));
+    }
+    if (normalizedToExclusive != null) {
+      sql.write(' AND r.report_date < ?');
+      variables.add(Variable<DateTime>(normalizedToExclusive));
+    }
+    sql.write(
+      '''
+      GROUP BY
+        r.id, r.report_date, r.updated_at, r.created_at,
+        r.employee_names_json, r.payment_totals_json, r.note
+      ORDER BY r.report_date DESC, updated_at DESC
+      LIMIT ?
+      OFFSET ?
+      ''',
+    );
+    variables
+      ..add(Variable<int>(safeLimit))
+      ..add(Variable<int>(safeOffset));
+
+    final List<QueryRow> rows = await _db
+        .customSelect(
+          sql.toString(),
+          variables: variables,
+        )
+        .get();
+    return rows.map((QueryRow row) {
+      final String paymentJson =
+          (row.readNullable<String>('payment_totals_json') ?? '').trim();
+      final Map<String, int> paymentTotals =
+          _decodeManualIpvPaymentTotals(paymentJson);
+      final int totalPaymentsCents = paymentTotals.values.fold<int>(
+        0,
+        (int sum, int value) => sum + value,
+      );
+      final List<String> employeeNames = _decodeManualIpvStringList(
+        (row.readNullable<String>('employee_names_json') ?? '').trim(),
+      );
+      return ManualIpvHistoryStat(
+        reportId: _readTextCell(row, 'report_id', fallback: ''),
+        reportDate: row.readNullable<DateTime>('report_date') ?? DateTime.now(),
+        updatedAt: row.readNullable<DateTime>('updated_at') ?? DateTime.now(),
+        lineCount: (row.data['line_count'] as num?)?.toInt() ?? 0,
+        totalAmountCents:
+            (row.data['total_amount_cents'] as num?)?.toInt() ?? 0,
+        totalRealProfitCents:
+            (row.data['total_real_profit_cents'] as num?)?.toInt() ?? 0,
+        totalPaymentsCents: totalPaymentsCents,
+        employeeNames: employeeNames,
+        note: (row.readNullable<String>('note') ?? '').trim(),
+      );
+    }).toList(growable: false);
+  }
+
   Future<void> saveManualIpvReport({
     required String reportId,
     required DateTime reportDate,
@@ -4243,9 +5449,268 @@ class ReportesLocalDataSource {
     });
   }
 
+  Future<String> exportManualIpvReportCsv({
+    required String reportId,
+    String? currencySymbol,
+  }) async {
+    await _licenseService.requireFullAccess(
+      message: _demoManualIpvExportBlockedMessage,
+    );
+    final _ManualIpvExportBundle bundle =
+        await _loadManualIpvExportBundle(reportId);
+    final String useCurrency = (currencySymbol ?? '').trim().isEmpty
+        ? bundle.currencySymbol
+        : currencySymbol!.trim();
+
+    final Directory exportDir = await _resolveManualIpvExportDir();
+    final String fileName = _buildManualIpvExportFileName(
+      reportDate: bundle.reportDate,
+      extension: 'csv',
+    );
+    final File file = File(p.join(exportDir.path, fileName));
+    final String reportDateLabel = _dayKey(bundle.reportDate);
+    final int totalAmount = bundle.lines.fold<int>(
+      0,
+      (int sum, ManualIpvEditableLineStat row) => sum + row.totalAmountCents,
+    );
+    final int totalRealProfit = bundle.lines.fold<int>(
+      0,
+      (int sum, ManualIpvEditableLineStat row) => sum + row.realProfitCents,
+    );
+    final int totalPayments = bundle.paymentTotals.values.fold<int>(
+      0,
+      (int sum, int value) => sum + value,
+    );
+
+    final StringBuffer csv = StringBuffer()
+      ..writeln('Reporte,IPV Manual')
+      ..writeln('Reporte ID,${_csvCell(bundle.reportId)}')
+      ..writeln('Fecha,${_csvCell(reportDateLabel)}')
+      ..writeln('Moneda,${_csvCell(useCurrency)}')
+      ..writeln(
+          'Actualizado,${_csvCell(_formatDateTimeHuman(bundle.updatedAt))}')
+      ..writeln(
+        'Empleados,${_csvCell(bundle.employeeNames.isEmpty ? '-' : bundle.employeeNames.join(', '))}',
+      )
+      ..writeln('Nota,${_csvCell(bundle.note.isEmpty ? '-' : bundle.note)}')
+      ..writeln('')
+      ..writeln('Metodo de pago,Monto');
+    if (bundle.paymentTotals.isEmpty) {
+      csv.writeln('-,0.00');
+    } else {
+      for (final MapEntry<String, int> entry in bundle.paymentTotals.entries) {
+        csv.writeln(
+          '${_csvCell(_paymentMethodLabel(entry.key))},${(entry.value / 100).toStringAsFixed(2)}',
+        );
+      }
+    }
+    csv
+      ..writeln('')
+      ..writeln(
+        'Producto,Codigo,Inicio,Entradas,Salidas,Ventas,Final,Precio,Importe,Ganancia x Prod.,Ganancia Real',
+      );
+    for (final ManualIpvEditableLineStat row in bundle.lines) {
+      csv.writeln(
+        '${_csvCell(row.productName)},${_csvCell(row.sku)},${_formatQtyCsv(row.startQty)},${_formatQtyCsv(row.entriesQty)},${_formatQtyCsv(row.outputsQty)},${_formatQtyCsv(row.salesQty)},${_formatQtyCsv(row.finalQty)},${(row.salePriceCents / 100).toStringAsFixed(2)},${(row.totalAmountCents / 100).toStringAsFixed(2)},${(row.profitMarginCents / 100).toStringAsFixed(2)},${(row.realProfitCents / 100).toStringAsFixed(2)}',
+      );
+    }
+    csv
+      ..writeln('')
+      ..writeln('Resumen,Valor')
+      ..writeln('Líneas,${bundle.lines.length}')
+      ..writeln('Importe total,${(totalAmount / 100).toStringAsFixed(2)}')
+      ..writeln('Ganancia real,${(totalRealProfit / 100).toStringAsFixed(2)}')
+      ..writeln('Pagos reportados,${(totalPayments / 100).toStringAsFixed(2)}');
+
+    await file.writeAsString(csv.toString(), encoding: utf8, flush: true);
+    return file.path;
+  }
+
+  Future<String> exportManualIpvReportPdf({
+    required String reportId,
+    String? currencySymbol,
+  }) async {
+    await _licenseService.requireFullAccess(
+      message: _demoManualIpvExportBlockedMessage,
+    );
+    final _ManualIpvExportBundle bundle =
+        await _loadManualIpvExportBundle(reportId);
+    final String useCurrency = (currencySymbol ?? '').trim().isEmpty
+        ? bundle.currencySymbol
+        : currencySymbol!.trim();
+    final Directory exportDir = await _resolveManualIpvExportDir();
+    final String fileName = _buildManualIpvExportFileName(
+      reportDate: bundle.reportDate,
+      extension: 'pdf',
+    );
+    final File file = File(p.join(exportDir.path, fileName));
+    final String reportDateLabel = _dayKey(bundle.reportDate);
+    final int totalAmount = bundle.lines.fold<int>(
+      0,
+      (int sum, ManualIpvEditableLineStat row) => sum + row.totalAmountCents,
+    );
+    final int totalRealProfit = bundle.lines.fold<int>(
+      0,
+      (int sum, ManualIpvEditableLineStat row) => sum + row.realProfitCents,
+    );
+    final int totalPayments = bundle.paymentTotals.values.fold<int>(
+      0,
+      (int sum, int value) => sum + value,
+    );
+
+    final pw.Document doc = pw.Document();
+    doc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.fromLTRB(20, 20, 20, 20),
+        build: (pw.Context context) {
+          return <pw.Widget>[
+            pw.Text(
+              'IPV Manual',
+              style: pw.TextStyle(
+                fontSize: 18,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+            pw.SizedBox(height: 4),
+            pw.Text('Reporte ID: ${bundle.reportId}'),
+            pw.Text('Fecha: $reportDateLabel'),
+            pw.Text('Moneda: $useCurrency'),
+            pw.Text('Actualizado: ${_formatDateTimeHuman(bundle.updatedAt)}'),
+            pw.Text(
+              'Empleados: ${bundle.employeeNames.isEmpty ? '-' : bundle.employeeNames.join(', ')}',
+            ),
+            pw.Text('Nota: ${bundle.note.isEmpty ? '-' : bundle.note}'),
+            pw.SizedBox(height: 10),
+            pw.Text(
+              'Pagos por método',
+              style: pw.TextStyle(
+                fontSize: 12,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+            pw.SizedBox(height: 4),
+            pw.TableHelper.fromTextArray(
+              headers: const <String>['Método', 'Monto'],
+              data: bundle.paymentTotals.isEmpty
+                  ? const <List<String>>[
+                      <String>['-', '0.00'],
+                    ]
+                  : bundle.paymentTotals.entries
+                      .map((MapEntry<String, int> entry) => <String>[
+                            _paymentMethodLabel(entry.key),
+                            (entry.value / 100).toStringAsFixed(2),
+                          ])
+                      .toList(growable: false),
+              headerStyle: pw.TextStyle(
+                fontSize: 8,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.white,
+              ),
+              headerDecoration: const pw.BoxDecoration(
+                color: PdfColor(0.07, 0.32, 0.83),
+              ),
+              cellStyle: const pw.TextStyle(fontSize: 8),
+              border: null,
+              cellPadding:
+                  const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+            ),
+            pw.SizedBox(height: 10),
+            pw.Text(
+              'Líneas',
+              style: pw.TextStyle(
+                fontSize: 12,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+            pw.SizedBox(height: 4),
+            pw.TableHelper.fromTextArray(
+              headers: const <String>[
+                'Producto',
+                'Código',
+                'Ini',
+                'Ent',
+                'Sal',
+                'Ven',
+                'Fin',
+                'Precio',
+                'Importe',
+                'GxP',
+                'G.Real',
+              ],
+              data: bundle.lines.isEmpty
+                  ? const <List<String>>[
+                      <String>[
+                        '-',
+                        '-',
+                        '0.00',
+                        '0.00',
+                        '0.00',
+                        '0.00',
+                        '0.00',
+                        '0.00',
+                        '0.00',
+                        '0.00',
+                        '0.00',
+                      ],
+                    ]
+                  : bundle.lines.map((ManualIpvEditableLineStat row) {
+                      return <String>[
+                        row.productName,
+                        row.sku,
+                        _formatQtyCsv(row.startQty),
+                        _formatQtyCsv(row.entriesQty),
+                        _formatQtyCsv(row.outputsQty),
+                        _formatQtyCsv(row.salesQty),
+                        _formatQtyCsv(row.finalQty),
+                        (row.salePriceCents / 100).toStringAsFixed(2),
+                        (row.totalAmountCents / 100).toStringAsFixed(2),
+                        (row.profitMarginCents / 100).toStringAsFixed(2),
+                        (row.realProfitCents / 100).toStringAsFixed(2),
+                      ];
+                    }).toList(growable: false),
+              headerStyle: pw.TextStyle(
+                fontSize: 7,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.white,
+              ),
+              headerDecoration: const pw.BoxDecoration(
+                color: PdfColor(0.07, 0.32, 0.83),
+              ),
+              cellStyle: const pw.TextStyle(fontSize: 7),
+              border: null,
+              cellPadding:
+                  const pw.EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+            ),
+            pw.SizedBox(height: 10),
+            pw.Text('Resumen',
+                style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+            pw.Text('Líneas: ${bundle.lines.length}'),
+            pw.Text('Importe total: ${(totalAmount / 100).toStringAsFixed(2)}'),
+            pw.Text(
+              'Ganancia real: ${(totalRealProfit / 100).toStringAsFixed(2)}',
+            ),
+            pw.Text(
+              'Pagos reportados: ${(totalPayments / 100).toStringAsFixed(2)}',
+            ),
+          ];
+        },
+      ),
+    );
+
+    await file.writeAsBytes(await doc.save(), flush: true);
+    return file.path;
+  }
+
   Future<void> deleteManualIpvReport({
     required String reportId,
+    required String requestedByUserId,
   }) async {
+    await _licenseService.requireWriteAccess();
+    await _requireManualIpvAdminPermission(
+      userId: requestedByUserId,
+      actionLabel: 'eliminar IPV manual',
+    );
     final String cleanReportId = reportId.trim();
     if (cleanReportId.isEmpty) {
       throw Exception('ID de IPV manual inválido.');
@@ -4269,7 +5734,13 @@ class ReportesLocalDataSource {
 
   Future<void> recalculateManualIpvStarts({
     required DateTime fromDate,
+    required String requestedByUserId,
   }) async {
+    await _licenseService.requireWriteAccess();
+    await _requireManualIpvAdminPermission(
+      userId: requestedByUserId,
+      actionLabel: 'recalcular inicios de IPV manual',
+    );
     final DateTime normalizedFromDate = _startOfDay(fromDate);
     await _db.transaction(() async {
       final List<ManualIpvReport> targetReports =
@@ -4772,6 +6243,168 @@ class ReportesLocalDataSource {
         .toList(growable: false);
   }
 
+  Future<_ManualIpvExportBundle> _loadManualIpvExportBundle(
+    String reportId,
+  ) async {
+    final String cleanReportId = reportId.trim();
+    if (cleanReportId.isEmpty) {
+      throw Exception('ID de IPV manual inválido.');
+    }
+    final ManualIpvReport? report = await (_db.select(_db.manualIpvReports)
+          ..where((ManualIpvReports tbl) => tbl.id.equals(cleanReportId))
+          ..limit(1))
+        .getSingleOrNull();
+    if (report == null) {
+      throw Exception('No se encontró el IPV manual solicitado.');
+    }
+    final List<ManualIpvEditableLineStat> lines =
+        await _loadManualIpvLines(cleanReportId);
+    final Map<String, int> paymentTotals = _normalizeManualIpvPaymentTotals(
+      await listManualIpvPaymentMethods(),
+      _decodeManualIpvPaymentTotals(report.paymentTotalsJson),
+    );
+    final List<String> employeeNames =
+        _decodeManualIpvStringList(report.employeeNamesJson);
+    final String currency = report.currencySymbol.trim().isEmpty
+        ? await _manualIpvCurrencySymbolFromSettings()
+        : report.currencySymbol.trim();
+
+    return _ManualIpvExportBundle(
+      reportId: report.id,
+      reportDate: report.reportDate,
+      updatedAt: report.updatedAt ?? report.createdAt,
+      currencySymbol: currency,
+      employeeNames: employeeNames,
+      note: (report.note ?? '').trim(),
+      paymentTotals: paymentTotals,
+      lines: lines,
+    );
+  }
+
+  Future<Directory> _resolveManualIpvExportDir() async {
+    final Directory preferredBase = await _resolveDownloadsBaseDir();
+    Directory dir = Directory(
+      p.join(preferredBase.path, 'Reportes', 'IPV Manual'),
+    );
+    try {
+      if (!dir.existsSync()) {
+        await dir.create(recursive: true);
+      }
+      return dir;
+    } catch (_) {
+      final Directory docs = await getApplicationDocumentsDirectory();
+      dir = Directory(
+        p.join(docs.path, 'exports', 'Reportes', 'IPV Manual'),
+      );
+      if (!dir.existsSync()) {
+        await dir.create(recursive: true);
+      }
+      return dir;
+    }
+  }
+
+  String _buildManualIpvExportFileName({
+    required DateTime reportDate,
+    required String extension,
+  }) {
+    final DateTime now = DateTime.now();
+    final String y = reportDate.year.toString().padLeft(4, '0');
+    final String m = reportDate.month.toString().padLeft(2, '0');
+    final String d = reportDate.day.toString().padLeft(2, '0');
+    final String hh = now.hour.toString().padLeft(2, '0');
+    final String mm = now.minute.toString().padLeft(2, '0');
+    final String ss = now.second.toString().padLeft(2, '0');
+    return 'manual_ipv_$y$m${d}_$hh$mm$ss.$extension';
+  }
+
+  Future<void> _requireManualIpvAdminPermission({
+    required String? userId,
+    required String actionLabel,
+  }) async {
+    final String safeUserId = (userId ?? '').trim();
+    if (safeUserId.isEmpty) {
+      throw Exception('Se requiere usuario autenticado para $actionLabel.');
+    }
+    final bool allowed = await _userHasPermission(
+      userId: safeUserId,
+      permissionKey: AppPermissionKeys.usersManage,
+    );
+    if (!allowed) {
+      throw Exception(
+        'No tienes permisos para $actionLabel. Solo administrador.',
+      );
+    }
+  }
+
+  Future<bool> _userHasPermission({
+    required String userId,
+    required String permissionKey,
+  }) async {
+    final String safeUserId = userId.trim();
+    final String safePermissionKey = permissionKey.trim();
+    if (safeUserId.isEmpty || safePermissionKey.isEmpty) {
+      return false;
+    }
+    if (await _userHasAdminRole(safeUserId)) {
+      return true;
+    }
+    final QueryRow? row = await _db.customSelect(
+      '''
+      SELECT 1 AS ok
+      FROM user_roles ur
+      INNER JOIN role_permissions rp
+        ON rp.role_id = ur.role_id
+      WHERE ur.user_id = ?
+        AND rp.permission_key = ?
+      LIMIT 1
+      ''',
+      variables: <Variable<Object>>[
+        Variable<String>(safeUserId),
+        Variable<String>(safePermissionKey),
+      ],
+    ).getSingleOrNull();
+    if (row != null) {
+      return true;
+    }
+    final User? user = await (_db.select(_db.users)
+          ..where((Users tbl) => tbl.id.equals(safeUserId)))
+        .getSingleOrNull();
+    if (user != null &&
+        user.role.trim().toLowerCase() == 'cajero' &&
+        AppPermissionsCatalog.defaultCashierPermissions
+            .contains(safePermissionKey)) {
+      return true;
+    }
+    return false;
+  }
+
+  Future<bool> _userHasAdminRole(String userId) async {
+    final String safeUserId = userId.trim();
+    if (safeUserId.isEmpty) {
+      return false;
+    }
+    final User? user = await (_db.select(_db.users)
+          ..where((Users tbl) => tbl.id.equals(safeUserId)))
+        .getSingleOrNull();
+    if (user != null && user.role.trim().toLowerCase() == 'admin') {
+      return true;
+    }
+    final QueryRow? role = await _db.customSelect(
+      '''
+      SELECT 1 AS ok
+      FROM user_roles ur
+      WHERE ur.user_id = ?
+        AND ur.role_id = ?
+      LIMIT 1
+      ''',
+      variables: <Variable<Object>>[
+        Variable<String>(safeUserId),
+        const Variable<String>(AppRoleIds.admin),
+      ],
+    ).getSingleOrNull();
+    return role != null;
+  }
+
   String _paymentMethodLabel(String method) {
     final String code = method.trim().toLowerCase();
     if (code.isEmpty) {
@@ -4898,6 +6531,137 @@ class ReportesLocalDataSource {
       return clean;
     }
     return 'usr:$clean';
+  }
+
+  Future<Map<String, String>> _loadMovementReasonLabels() async {
+    const String settingKey = 'inventory_movement_reasons_v1';
+    final Map<String, String> labels = <String, String>{
+      'sale': 'Venta',
+      'consignment_sale': 'Venta en consignacion',
+      'purchase': 'Compra',
+      'transfer': 'Transferencia',
+      'adjust': 'Ajuste',
+      'breakage': 'Rotura',
+      'shrinkage': 'Merma',
+    };
+    try {
+      final AppSetting? setting = await (_db.select(_db.appSettings)
+            ..where((AppSettings tbl) => tbl.key.equals(settingKey)))
+          .getSingleOrNull();
+      if (setting == null) {
+        return labels;
+      }
+      final Object? decoded = jsonDecode(setting.value);
+      if (decoded is! List) {
+        return labels;
+      }
+      for (final Object? item in decoded) {
+        if (item is! Map) {
+          continue;
+        }
+        final Map<dynamic, dynamic> raw = item;
+        final String code = (raw['code'] as String? ?? '').trim().toLowerCase();
+        final String label = (raw['label'] as String? ?? '').trim();
+        if (code.isEmpty || label.isEmpty) {
+          continue;
+        }
+        labels[code] = label;
+      }
+      return labels;
+    } catch (_) {
+      return labels;
+    }
+  }
+
+  String _resolveInventoryReasonCode({
+    required String? explicitReasonCode,
+    required String? refType,
+  }) {
+    final String explicit = (explicitReasonCode ?? '').trim().toLowerCase();
+    if (explicit.isNotEmpty) {
+      return explicit;
+    }
+
+    final String normalizedRefType = (refType ?? '').trim().toLowerCase();
+    if (normalizedRefType == 'sale' ||
+        normalizedRefType == 'sale_pos' ||
+        normalizedRefType == 'sale_direct') {
+      return 'sale';
+    }
+    if (normalizedRefType == 'consignment_sale' ||
+        normalizedRefType == 'consignment_sale_pos' ||
+        normalizedRefType == 'consignment_sale_direct') {
+      return 'consignment_sale';
+    }
+    if (normalizedRefType == 'transfer_out' ||
+        normalizedRefType == 'transfer_in') {
+      return 'transfer';
+    }
+    return 'adjust';
+  }
+
+  String _resolveInventoryMovementSource({
+    required String? explicitSource,
+    required String? refType,
+  }) {
+    final String explicit = (explicitSource ?? '').trim().toLowerCase();
+    if (explicit.isNotEmpty) {
+      return explicit;
+    }
+
+    final String normalizedRefType = (refType ?? '').trim().toLowerCase();
+    if (normalizedRefType == 'sale_pos' || normalizedRefType == 'sale') {
+      return 'pos';
+    }
+    if (normalizedRefType == 'sale_direct') {
+      return 'direct_sale';
+    }
+    if (normalizedRefType == 'consignment_sale_pos' ||
+        normalizedRefType == 'consignment_sale') {
+      return 'pos_consignment';
+    }
+    if (normalizedRefType == 'consignment_sale_direct') {
+      return 'direct_consignment';
+    }
+    if (normalizedRefType == 'transfer_out' ||
+        normalizedRefType == 'transfer_in') {
+      return 'transfer';
+    }
+    return 'manual';
+  }
+
+  String _normalizeMovementType(String type, double qty) {
+    if (type == 'in') {
+      return 'in';
+    }
+    if (type == 'out') {
+      return 'out';
+    }
+    if (type == 'adjust') {
+      return qty >= 0 ? 'in' : 'out';
+    }
+    return qty >= 0 ? 'in' : 'out';
+  }
+
+  String _fallbackMovementReasonLabel(String reasonCode) {
+    switch (reasonCode) {
+      case 'sale':
+        return 'Venta';
+      case 'consignment_sale':
+        return 'Venta en consignacion';
+      case 'purchase':
+        return 'Compra';
+      case 'breakage':
+        return 'Rotura';
+      case 'shrinkage':
+        return 'Merma';
+      case 'adjust':
+        return 'Ajuste';
+      case 'transfer':
+        return 'Transferencia';
+      default:
+        return reasonCode.isEmpty ? 'Sin motivo' : reasonCode;
+    }
   }
 
   String _analyticsGranularityLabel(SalesAnalyticsGranularity granularity) {
@@ -5198,4 +6962,26 @@ class _ManualIpvPreviousReport {
 
   final String id;
   final DateTime reportDate;
+}
+
+class _ManualIpvExportBundle {
+  const _ManualIpvExportBundle({
+    required this.reportId,
+    required this.reportDate,
+    required this.updatedAt,
+    required this.currencySymbol,
+    required this.employeeNames,
+    required this.note,
+    required this.paymentTotals,
+    required this.lines,
+  });
+
+  final String reportId;
+  final DateTime reportDate;
+  final DateTime updatedAt;
+  final String currencySymbol;
+  final List<String> employeeNames;
+  final String note;
+  final Map<String, int> paymentTotals;
+  final List<ManualIpvEditableLineStat> lines;
 }

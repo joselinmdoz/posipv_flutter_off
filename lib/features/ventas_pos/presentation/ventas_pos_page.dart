@@ -684,12 +684,20 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       return;
     }
     final UserSession? session = ref.read(currentSessionProvider);
+    final bool canSellConsignment =
+        session?.hasPermission(AppPermissionKeys.salesConsignment) ?? false;
 
     final List<String> methods = _terminalConfig.paymentMethods.isEmpty
         ? <String>['cash', 'card']
         : List<String>.from(_terminalConfig.paymentMethods);
-    if (!methods.contains('consignment')) {
+    methods.removeWhere((String method) {
+      return method.trim().toLowerCase() == 'consignment';
+    });
+    if (canSellConsignment && !methods.contains('consignment')) {
       methods.add('consignment');
+    }
+    if (methods.isEmpty) {
+      methods.add('cash');
     }
     List<ClienteListItem> customers = const <ClienteListItem>[];
     Set<String> onlinePaymentMethodCodes = <String>{
@@ -818,6 +826,11 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     final List<_CartLine> lines = linesOverride ?? _cartLines;
     if (lines.isEmpty) {
       _show('Agrega al menos un producto con cantidad mayor a 0.');
+      return;
+    }
+    if (isConsignmentSale &&
+        !(session.hasPermission(AppPermissionKeys.salesConsignment))) {
+      _show('No tienes permisos para registrar ventas en consignación.');
       return;
     }
     if (isConsignmentSale && _selectedCustomer == null) {

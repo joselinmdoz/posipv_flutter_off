@@ -108,8 +108,8 @@ class _ConsignacionesPageState extends ConsumerState<ConsignacionesPage> {
     final bool hasLicenseToSell =
         ref.read(currentLicenseStatusProvider).canSell;
     final bool canRegister = hasLicenseToSell &&
-        (session?.hasPermission(AppPermissionKeys.salesPos) == true ||
-            session?.hasPermission(AppPermissionKeys.salesDirect) == true);
+        (session?.hasPermission(AppPermissionKeys.consignmentsReconcile) ==
+            true);
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => ConsignmentSaleDetailPage(

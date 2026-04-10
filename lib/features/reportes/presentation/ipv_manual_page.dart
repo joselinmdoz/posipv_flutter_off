@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../auth/presentation/auth_providers.dart';
@@ -20,6 +21,8 @@ class IpvManualPage extends ConsumerStatefulWidget {
 class _IpvManualPageState extends ConsumerState<IpvManualPage> {
   bool _loading = true;
   bool _saving = false;
+  bool _historyLoading = false;
+  bool _exporting = false;
   bool _dirty = false;
   int _formSeed = 0;
 
@@ -652,8 +655,16 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
     setState(() => _saving = true);
     try {
       final DateTime deletedDate = _reportDate;
-      await _ds.deleteManualIpvReport(reportId: _reportId);
-      await _ds.recalculateManualIpvStarts(fromDate: deletedDate);
+      final String userId =
+          (ref.read(currentSessionProvider)?.userId ?? '').trim();
+      await _ds.deleteManualIpvReport(
+        reportId: _reportId,
+        requestedByUserId: userId,
+      );
+      await _ds.recalculateManualIpvStarts(
+        fromDate: deletedDate,
+        requestedByUserId: userId,
+      );
       if (!mounted) {
         return;
       }
@@ -712,7 +723,12 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
     }
     setState(() => _saving = true);
     try {
-      await _ds.recalculateManualIpvStarts(fromDate: _reportDate);
+      final String userId =
+          (ref.read(currentSessionProvider)?.userId ?? '').trim();
+      await _ds.recalculateManualIpvStarts(
+        fromDate: _reportDate,
+        requestedByUserId: userId,
+      );
       if (!mounted) {
         return;
       }
@@ -730,6 +746,384 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
       if (mounted) {
         setState(() => _saving = false);
       }
+    }
+  }
+
+  Future<void> _handleCurrentExportAction(_ManualIpvExportAction action) async {
+    if (_reportId.trim().isEmpty) {
+      _show('No hay IPV manual cargado para exportar.');
+      return;
+    }
+    switch (action) {
+      case _ManualIpvExportAction.exportCsv:
+        await _exportManualReportById(
+          reportId: _reportId,
+          format: 'csv',
+          shareFile: false,
+        );
+        break;
+      case _ManualIpvExportAction.exportPdf:
+        await _exportManualReportById(
+          reportId: _reportId,
+          format: 'pdf',
+          shareFile: false,
+        );
+        break;
+      case _ManualIpvExportAction.shareCsv:
+        await _exportManualReportById(
+          reportId: _reportId,
+          format: 'csv',
+          shareFile: true,
+        );
+        break;
+      case _ManualIpvExportAction.sharePdf:
+        await _exportManualReportById(
+          reportId: _reportId,
+          format: 'pdf',
+          shareFile: true,
+        );
+        break;
+    }
+  }
+
+  Future<void> _exportManualReportById({
+    required String reportId,
+    required String format,
+    required bool shareFile,
+  }) async {
+    if (_exporting) {
+      return;
+    }
+    setState(() => _exporting = true);
+    try {
+      final String path = format == 'pdf'
+          ? await _ds.exportManualIpvReportPdf(
+              reportId: reportId,
+              currencySymbol: _currencySymbol,
+            )
+          : await _ds.exportManualIpvReportCsv(
+              reportId: reportId,
+              currencySymbol: _currencySymbol,
+            );
+      if (!mounted) {
+        return;
+      }
+      if (shareFile) {
+        await Share.shareXFiles(
+          <XFile>[XFile(path)],
+          text: 'IPV manual ${_formatShortDate(_reportDate)}',
+          subject: 'IPV manual',
+        );
+        if (!mounted) {
+          return;
+        }
+      }
+      _show(
+        shareFile
+            ? 'IPV manual listo para compartir:\n$path'
+            : 'IPV manual exportado en:\n$path',
+      );
+    } catch (e) {
+      _show('No se pudo exportar IPV manual: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _exporting = false);
+      }
+    }
+  }
+
+  Future<void> _openHistory() async {
+    if (_historyLoading) {
+      return;
+    }
+    setState(() => _historyLoading = true);
+    try {
+      final List<ManualIpvHistoryStat> rows =
+          await _ds.listManualIpvHistory(limit: 500);
+      if (!mounted) {
+        return;
+      }
+      setState(() => _historyLoading = false);
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        builder: (BuildContext context) {
+          final bool isAdmin =
+              ref.read(currentSessionProvider)?.isAdmin ?? false;
+          return SafeArea(
+            child: FractionallySizedBox(
+              heightFactor: 0.92,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    const Text(
+                      'Historial IPV manual',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${rows.length} reportes',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    if (rows.isEmpty)
+                      const Expanded(
+                        child: Center(
+                          child: Text('No hay reportes manuales creados.'),
+                        ),
+                      )
+                    else
+                      Expanded(
+                        child: ListView.separated(
+                          itemCount: rows.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 8),
+                          itemBuilder: (BuildContext context, int index) {
+                            final ManualIpvHistoryStat row = rows[index];
+                            return _buildHistoryRow(
+                              row: row,
+                              isAdmin: isAdmin,
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _historyLoading = false);
+      _show('No se pudo cargar historial: $e');
+    }
+  }
+
+  Widget _buildHistoryRow({
+    required ManualIpvHistoryStat row,
+    required bool isAdmin,
+  }) {
+    final String employees = row.employeeNames.isEmpty
+        ? 'Sin empleados'
+        : row.employeeNames.join(', ');
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ListTile(
+        dense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        title: Text(
+          '${_formatShortDate(row.reportDate)} • ${row.lineCount} líneas',
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              'Importe ${_formatMoney(row.totalAmountCents)} • Ganancia ${_formatMoney(row.totalRealProfitCents)}',
+              style: const TextStyle(fontSize: 12),
+            ),
+            Text(
+              'Pagos ${_formatMoney(row.totalPaymentsCents)} • $employees',
+              style: const TextStyle(fontSize: 12),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+        trailing: PopupMenuButton<_ManualIpvHistoryAction>(
+          onSelected: (_ManualIpvHistoryAction action) =>
+              _handleHistoryAction(action: action, row: row, isAdmin: isAdmin),
+          itemBuilder: (BuildContext context) {
+            return <PopupMenuEntry<_ManualIpvHistoryAction>>[
+              const PopupMenuItem<_ManualIpvHistoryAction>(
+                value: _ManualIpvHistoryAction.open,
+                child: Text('Abrir'),
+              ),
+              const PopupMenuItem<_ManualIpvHistoryAction>(
+                value: _ManualIpvHistoryAction.exportCsv,
+                child: Text('Exportar CSV'),
+              ),
+              const PopupMenuItem<_ManualIpvHistoryAction>(
+                value: _ManualIpvHistoryAction.exportPdf,
+                child: Text('Exportar PDF'),
+              ),
+              const PopupMenuItem<_ManualIpvHistoryAction>(
+                value: _ManualIpvHistoryAction.shareCsv,
+                child: Text('Compartir CSV'),
+              ),
+              const PopupMenuItem<_ManualIpvHistoryAction>(
+                value: _ManualIpvHistoryAction.sharePdf,
+                child: Text('Compartir PDF'),
+              ),
+              if (isAdmin) const PopupMenuDivider(),
+              if (isAdmin)
+                const PopupMenuItem<_ManualIpvHistoryAction>(
+                  value: _ManualIpvHistoryAction.recalculateFrom,
+                  child: Text('Recalcular desde aquí'),
+                ),
+              if (isAdmin)
+                const PopupMenuItem<_ManualIpvHistoryAction>(
+                  value: _ManualIpvHistoryAction.delete,
+                  child: Text('Eliminar'),
+                ),
+            ];
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleHistoryAction({
+    required _ManualIpvHistoryAction action,
+    required ManualIpvHistoryStat row,
+    required bool isAdmin,
+  }) async {
+    switch (action) {
+      case _ManualIpvHistoryAction.open:
+        if (_dirty && !await _confirmDiscardIfDirty()) {
+          return;
+        }
+        if (!mounted) {
+          return;
+        }
+        Navigator.of(context).pop();
+        await _loadReportForDate(row.reportDate, resetDirty: true);
+        break;
+      case _ManualIpvHistoryAction.exportCsv:
+        await _exportManualReportById(
+          reportId: row.reportId,
+          format: 'csv',
+          shareFile: false,
+        );
+        break;
+      case _ManualIpvHistoryAction.exportPdf:
+        await _exportManualReportById(
+          reportId: row.reportId,
+          format: 'pdf',
+          shareFile: false,
+        );
+        break;
+      case _ManualIpvHistoryAction.shareCsv:
+        await _exportManualReportById(
+          reportId: row.reportId,
+          format: 'csv',
+          shareFile: true,
+        );
+        break;
+      case _ManualIpvHistoryAction.sharePdf:
+        await _exportManualReportById(
+          reportId: row.reportId,
+          format: 'pdf',
+          shareFile: true,
+        );
+        break;
+      case _ManualIpvHistoryAction.recalculateFrom:
+        if (!isAdmin) {
+          _show('Solo administrador puede recalcular.');
+          return;
+        }
+        final bool? confirm = await showDialog<bool>(
+          context: context,
+          builder: (BuildContext context) => AlertDialog(
+            title: const Text('Recalcular inicios'),
+            content: Text(
+              'Se recalcularán los inicios desde ${_formatShortDate(row.reportDate)} en adelante. ¿Continuar?',
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Recalcular'),
+              ),
+            ],
+          ),
+        );
+        if (confirm != true) {
+          return;
+        }
+        if (mounted) {
+          Navigator.of(context).pop();
+        }
+        final String userId =
+            (ref.read(currentSessionProvider)?.userId ?? '').trim();
+        await _ds.recalculateManualIpvStarts(
+          fromDate: row.reportDate,
+          requestedByUserId: userId,
+        );
+        if (!mounted) {
+          return;
+        }
+        _show(
+            'Inicios recalculados desde ${_formatShortDate(row.reportDate)}.');
+        break;
+      case _ManualIpvHistoryAction.delete:
+        if (!isAdmin) {
+          _show('Solo administrador puede eliminar.');
+          return;
+        }
+        final bool? confirm = await showDialog<bool>(
+          context: context,
+          builder: (BuildContext context) => AlertDialog(
+            title: const Text('Eliminar IPV manual'),
+            content: Text(
+              'Se eliminará el IPV del ${_formatShortDate(row.reportDate)} y se recalcularán inicios posteriores. ¿Continuar?',
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFB91C1C),
+                ),
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Eliminar'),
+              ),
+            ],
+          ),
+        );
+        if (confirm != true) {
+          return;
+        }
+        if (mounted) {
+          Navigator.of(context).pop();
+        }
+        final String userId =
+            (ref.read(currentSessionProvider)?.userId ?? '').trim();
+        await _ds.deleteManualIpvReport(
+          reportId: row.reportId,
+          requestedByUserId: userId,
+        );
+        await _ds.recalculateManualIpvStarts(
+          fromDate: row.reportDate,
+          requestedByUserId: userId,
+        );
+        if (!mounted) {
+          return;
+        }
+        _show('IPV manual eliminado y cadena recalculada.');
+        break;
     }
   }
 
@@ -841,6 +1235,13 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
     return '$_currencySymbol${(cents / 100).toStringAsFixed(2)}';
   }
 
+  String _formatShortDate(DateTime value) {
+    final String d = value.day.toString().padLeft(2, '0');
+    final String m = value.month.toString().padLeft(2, '0');
+    final String y = value.year.toString();
+    return '$d/$m/$y';
+  }
+
   String _paymentMethodLabel(String method) {
     final String code = method.trim().toLowerCase();
     if (code.isEmpty) {
@@ -875,12 +1276,12 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
                   child: RefreshIndicator(
                     onRefresh: _loadInitial,
                     child: ListView(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
                       children: <Widget>[
                         _buildTopCard(isAdmin),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 8),
                         _buildPaymentsCard(),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 8),
                         _buildLinesCard(isAdmin),
                       ],
                     ),
@@ -905,10 +1306,10 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -922,6 +1323,22 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
                 ),
               ),
               const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: _historyLoading ? null : _openHistory,
+                icon: _historyLoading
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.history_rounded, size: 18),
+                label: const Text('Historial'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: <Widget>[
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: _pickEmployees,
@@ -929,18 +1346,57 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
                   label: const Text('Empleados'),
                 ),
               ),
+              const SizedBox(width: 8),
+              if (_exporting)
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              else
+                PopupMenuButton<_ManualIpvExportAction>(
+                  tooltip: 'Exportar / compartir',
+                  onSelected: _handleCurrentExportAction,
+                  itemBuilder: (BuildContext context) =>
+                      const <PopupMenuEntry<_ManualIpvExportAction>>[
+                    PopupMenuItem<_ManualIpvExportAction>(
+                      value: _ManualIpvExportAction.exportCsv,
+                      child: Text('Exportar CSV'),
+                    ),
+                    PopupMenuItem<_ManualIpvExportAction>(
+                      value: _ManualIpvExportAction.exportPdf,
+                      child: Text('Exportar PDF'),
+                    ),
+                    PopupMenuDivider(),
+                    PopupMenuItem<_ManualIpvExportAction>(
+                      value: _ManualIpvExportAction.shareCsv,
+                      child: Text('Compartir CSV'),
+                    ),
+                    PopupMenuItem<_ManualIpvExportAction>(
+                      value: _ManualIpvExportAction.sharePdf,
+                      child: Text('Compartir PDF'),
+                    ),
+                  ],
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    child: Icon(Icons.ios_share_rounded),
+                  ),
+                ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           Text(
             employeesLabel,
             style: const TextStyle(
-              fontSize: 13,
+              fontSize: 12,
               color: Color(0xFF475569),
               fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           TextField(
             controller: _noteCtrl,
             decoration: const InputDecoration(
@@ -951,10 +1407,10 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
               setState(() => _dirty = true);
             },
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Wrap(
-            spacing: 8,
-            runSpacing: 8,
+            spacing: 6,
+            runSpacing: 6,
             children: <Widget>[
               FilledButton.icon(
                 onPressed: _showAddProductMenu,
@@ -1006,10 +1462,10 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -1017,17 +1473,17 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
             'Pagos manuales por método',
             style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           Wrap(
-            spacing: 10,
-            runSpacing: 10,
+            spacing: 8,
+            runSpacing: 8,
             children: _paymentMethods.map((String method) {
               final TextEditingController ctrl = _paymentCtrls.putIfAbsent(
                 method,
                 TextEditingController.new,
               );
               return SizedBox(
-                width: 170,
+                width: 152,
                 child: TextField(
                   controller: ctrl,
                   keyboardType:
@@ -1080,7 +1536,7 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: SingleChildScrollView(
@@ -1090,10 +1546,10 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
           child: Column(
             children: <Widget>[
               Container(
-                height: 44,
+                height: 38,
                 decoration: const BoxDecoration(
                   color: Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
                 ),
                 child: Row(
                   children: columns
@@ -1122,7 +1578,7 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
               const Divider(height: 1),
               if (_lines.isEmpty)
                 const Padding(
-                  padding: EdgeInsets.all(20),
+                  padding: EdgeInsets.all(12),
                   child: Text('No hay productos en el IPV manual.'),
                 )
               else
@@ -1131,11 +1587,11 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
                       _buildLineRow(line, isAdmin),
                 ),
               Container(
-                height: 46,
+                height: 40,
                 decoration: const BoxDecoration(
                   color: Color(0xFFF8FAFC),
                   borderRadius:
-                      BorderRadius.vertical(bottom: Radius.circular(16)),
+                      BorderRadius.vertical(bottom: Radius.circular(14)),
                 ),
                 child: Row(
                   children: <Widget>[
@@ -1208,7 +1664,7 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
     final Color rowBg = line.isCustom ? const Color(0xFFFFFBEB) : Colors.white;
 
     return Container(
-      height: 58,
+      height: 50,
       decoration: BoxDecoration(
         color: rowBg,
         border: const Border(
@@ -1365,7 +1821,7 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
     return SizedBox(
       width: width,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
         child: TextFormField(
           key: ValueKey('${_formSeed}_${line.lineId}_${field.name}'),
           initialValue: value,
@@ -1375,7 +1831,7 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
           decoration: InputDecoration(
             isDense: true,
             contentPadding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
             border: const OutlineInputBorder(),
             prefixText: isMoney ? _currencySymbol : null,
             fillColor: readOnly ? const Color(0xFFF1F5F9) : null,
@@ -1395,6 +1851,23 @@ class _TableColumnMeta {
 
   final String label;
   final double width;
+}
+
+enum _ManualIpvExportAction {
+  exportCsv,
+  exportPdf,
+  shareCsv,
+  sharePdf,
+}
+
+enum _ManualIpvHistoryAction {
+  open,
+  exportCsv,
+  exportPdf,
+  shareCsv,
+  sharePdf,
+  recalculateFrom,
+  delete,
 }
 
 enum _LineField {

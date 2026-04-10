@@ -73,7 +73,7 @@ class AppScaffold extends ConsumerWidget {
       'Consignaciones',
       '/consignaciones',
       Icons.inventory_2_outlined,
-      AppPermissionKeys.customersView,
+      AppPermissionKeys.consignmentsView,
     ),
     _NavItem(
       'Clientes',

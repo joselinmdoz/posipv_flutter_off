@@ -56,6 +56,17 @@ class SaleService {
 
     final bool isConsignmentSale = input.isConsignmentSale ||
         input.payments.any((PaymentInput p) => _isConsignmentMethod(p.method));
+    if (isConsignmentSale) {
+      final bool canSellConsignment = await _userHasPermission(
+        userId: input.cashierId,
+        permissionKey: AppPermissionKeys.salesConsignment,
+      );
+      if (!canSellConsignment) {
+        return const AppFailure<CreateSaleResult>(
+          'No tienes permisos para registrar ventas en consignación.',
+        );
+      }
+    }
     if (input.payments.isEmpty && !isConsignmentSale) {
       return const AppFailure<CreateSaleResult>(
         'La venta debe tener al menos un pago.',
@@ -425,6 +436,17 @@ class SaleService {
 
     final bool isConsignmentSale = input.isConsignmentSale ||
         input.payments.any((PaymentInput p) => _isConsignmentMethod(p.method));
+    if (isConsignmentSale) {
+      final bool canSellConsignment = await _userHasPermission(
+        userId: safeUserId,
+        permissionKey: AppPermissionKeys.salesConsignment,
+      );
+      if (!canSellConsignment) {
+        throw const _SaleException(
+          'No tienes permisos para registrar ventas en consignación.',
+        );
+      }
+    }
     if (!isConsignmentSale && input.payments.isEmpty) {
       throw const _SaleException(
         'La venta debe tener al menos un pago.',
@@ -1352,6 +1374,48 @@ class SaleService {
     return role != null;
   }
 
+  Future<bool> _userHasPermission({
+    required String userId,
+    required String permissionKey,
+  }) async {
+    final String safeUserId = userId.trim();
+    final String safePermissionKey = permissionKey.trim();
+    if (safeUserId.isEmpty || safePermissionKey.isEmpty) {
+      return false;
+    }
+    final User? user = await (_db.select(_db.users)
+          ..where((Users tbl) => tbl.id.equals(safeUserId)))
+        .getSingleOrNull();
+    if (user != null && user.role.trim().toLowerCase() == 'admin') {
+      return true;
+    }
+    final QueryRow? row = await _db.customSelect(
+      '''
+      SELECT 1 AS ok
+      FROM user_roles ur
+      INNER JOIN role_permissions rp
+        ON rp.role_id = ur.role_id
+      WHERE ur.user_id = ?
+        AND rp.permission_key = ?
+      LIMIT 1
+      ''',
+      variables: <Variable<Object>>[
+        Variable<String>(safeUserId),
+        Variable<String>(safePermissionKey),
+      ],
+    ).getSingleOrNull();
+    if (row != null) {
+      return true;
+    }
+    if (user != null &&
+        user.role.trim().toLowerCase() == 'cajero' &&
+        AppPermissionsCatalog.defaultCashierPermissions
+            .contains(safePermissionKey)) {
+      return true;
+    }
+    return false;
+  }
+
   Future<void> _upsertStock({
     required String productId,
     required String warehouseId,
@@ -1471,23 +1535,43 @@ class SaleService {
     final List<_FifoAllocation> out = <_FifoAllocation>[];
     double remaining = qty;
 
-    final List<QueryRow> lotRows = await _db.customSelect(
-      '''
-      SELECT
-        l.id AS lot_id,
-        COALESCE(l.qty_remaining, 0) AS qty_remaining,
-        COALESCE(l.unit_cost_cents, 0) AS unit_cost_cents
-      FROM stock_lots l
-      WHERE l.product_id = ?
-        AND l.warehouse_id = ?
-        AND COALESCE(l.qty_remaining, 0) > 0
-      ORDER BY l.received_at ASC, l.created_at ASC, l.id ASC
-      ''',
-      variables: <Variable<Object>>[
-        Variable<String>(productId),
-        Variable<String>(warehouseId),
-      ],
-    ).get();
+    final double untrackedQty = await _loadUntrackedStockQty(
+      productId: productId,
+      warehouseId: warehouseId,
+      epsilon: epsilon,
+    );
+    if (untrackedQty > epsilon) {
+      final double take = untrackedQty < remaining ? untrackedQty : remaining;
+      out.add(
+        _FifoAllocation(
+          lotId: null,
+          qty: take,
+          unitCostCents: fallbackUnitCostCents,
+          lineCostCents: (take * fallbackUnitCostCents).round(),
+        ),
+      );
+      remaining -= take;
+    }
+
+    final List<QueryRow> lotRows = remaining <= epsilon
+        ? const <QueryRow>[]
+        : await _db.customSelect(
+            '''
+            SELECT
+              l.id AS lot_id,
+              COALESCE(l.qty_remaining, 0) AS qty_remaining,
+              COALESCE(l.unit_cost_cents, 0) AS unit_cost_cents
+            FROM stock_lots l
+            WHERE l.product_id = ?
+              AND l.warehouse_id = ?
+              AND COALESCE(l.qty_remaining, 0) > 0
+            ORDER BY l.received_at ASC, l.created_at ASC, l.id ASC
+            ''',
+            variables: <Variable<Object>>[
+              Variable<String>(productId),
+              Variable<String>(warehouseId),
+            ],
+          ).get();
 
     for (final QueryRow row in lotRows) {
       if (remaining <= epsilon) {
@@ -1537,6 +1621,44 @@ class SaleService {
       );
     }
     return out;
+  }
+
+  Future<double> _loadUntrackedStockQty({
+    required String productId,
+    required String warehouseId,
+    required double epsilon,
+  }) async {
+    final QueryRow row = await _db.customSelect(
+      '''
+      SELECT
+        COALESCE(
+          (SELECT sb.qty
+           FROM stock_balances sb
+           WHERE sb.product_id = ?
+             AND sb.warehouse_id = ?
+           LIMIT 1),
+          0
+        ) AS stock_qty,
+        COALESCE(
+          (SELECT SUM(COALESCE(l.qty_remaining, 0))
+           FROM stock_lots l
+           WHERE l.product_id = ?
+             AND l.warehouse_id = ?
+             AND COALESCE(l.qty_remaining, 0) > 0),
+          0
+        ) AS lot_qty
+      ''',
+      variables: <Variable<Object>>[
+        Variable<String>(productId),
+        Variable<String>(warehouseId),
+        Variable<String>(productId),
+        Variable<String>(warehouseId),
+      ],
+    ).getSingle();
+    final double stockQty = (row.data['stock_qty'] as num?)?.toDouble() ?? 0;
+    final double lotQty = (row.data['lot_qty'] as num?)?.toDouble() ?? 0;
+    final double untrackedQty = stockQty - lotQty;
+    return untrackedQty > epsilon ? untrackedQty : 0;
   }
 
   Future<void> _releaseSaleAllocations({

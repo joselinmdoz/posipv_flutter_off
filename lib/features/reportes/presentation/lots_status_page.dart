@@ -137,7 +137,7 @@ class _LotsStatusPageState extends ConsumerState<LotsStatusPage> {
 
     return AppScaffold(
       title: 'Estado de lotes',
-      currentRoute: '/reportes',
+      currentRoute: '/reportes-lotes',
       onRefresh: () => _load(showLoader: false),
       useDefaultActions: false,
       showDrawer: false,

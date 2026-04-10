@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_service.dart';
+import '../../../core/security/app_permissions.dart';
 import '../../configuracion/data/configuracion_local_datasource.dart';
 
 class ConsignmentDebtOverview {
@@ -488,6 +489,13 @@ class ConsignacionesLocalDataSource {
     if (cleanUserId.isEmpty) {
       throw Exception('Usuario inválido para registrar pago.');
     }
+    final bool canReconcile = await _userHasPermission(
+      userId: cleanUserId,
+      permissionKey: AppPermissionKeys.consignmentsReconcile,
+    );
+    if (!canReconcile) {
+      throw Exception('No tienes permisos para conciliar consignaciones.');
+    }
     if (cleanMethod.isEmpty) {
       throw Exception('Debes seleccionar un método de pago.');
     }
@@ -613,6 +621,48 @@ class ConsignacionesLocalDataSource {
       return fallback;
     }
     return value;
+  }
+
+  Future<bool> _userHasPermission({
+    required String userId,
+    required String permissionKey,
+  }) async {
+    final String safeUserId = userId.trim();
+    final String safePermissionKey = permissionKey.trim();
+    if (safeUserId.isEmpty || safePermissionKey.isEmpty) {
+      return false;
+    }
+    final User? user = await (_db.select(_db.users)
+          ..where((Users tbl) => tbl.id.equals(safeUserId)))
+        .getSingleOrNull();
+    if (user != null && user.role.trim().toLowerCase() == 'admin') {
+      return true;
+    }
+    final QueryRow? row = await _db.customSelect(
+      '''
+      SELECT 1 AS ok
+      FROM user_roles ur
+      INNER JOIN role_permissions rp
+        ON rp.role_id = ur.role_id
+      WHERE ur.user_id = ?
+        AND rp.permission_key = ?
+      LIMIT 1
+      ''',
+      variables: <Variable<Object>>[
+        Variable<String>(safeUserId),
+        Variable<String>(safePermissionKey),
+      ],
+    ).getSingleOrNull();
+    if (row != null) {
+      return true;
+    }
+    if (user != null &&
+        user.role.trim().toLowerCase() == 'cajero' &&
+        AppPermissionsCatalog.defaultCashierPermissions
+            .contains(safePermissionKey)) {
+      return true;
+    }
+    return false;
   }
 }
 

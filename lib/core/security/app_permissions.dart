@@ -17,6 +17,7 @@ class AppPermissionKeys {
 
   static const String salesPos = 'sales.pos';
   static const String salesDirect = 'sales.direct';
+  static const String salesConsignment = 'sales.consignment';
 
   static const String inventoryView = 'inventory.view';
   static const String inventoryMovements = 'inventory.movements';
@@ -28,6 +29,8 @@ class AppPermissionKeys {
 
   static const String customersView = 'customers.view';
   static const String customersManage = 'customers.manage';
+  static const String consignmentsView = 'consignments.view';
+  static const String consignmentsReconcile = 'consignments.reconcile';
 
   static const String warehousesView = 'warehouses.view';
   static const String warehousesManage = 'warehouses.manage';
@@ -107,6 +110,12 @@ class AppPermissionsCatalog {
       description: 'Realizar ventas directas por almacen.',
     ),
     AppPermissionDefinition(
+      key: AppPermissionKeys.salesConsignment,
+      module: 'Ventas',
+      label: 'Vender en consignación',
+      description: 'Registrar ventas en consignación (sin pago inicial).',
+    ),
+    AppPermissionDefinition(
       key: AppPermissionKeys.inventoryView,
       module: 'Inventario',
       label: 'Ver inventario',
@@ -153,6 +162,18 @@ class AppPermissionsCatalog {
       module: 'Clientes',
       label: 'Gestionar clientes',
       description: 'Crear, editar e inactivar clientes.',
+    ),
+    AppPermissionDefinition(
+      key: AppPermissionKeys.consignmentsView,
+      module: 'Consignaciones',
+      label: 'Ver consignaciones',
+      description: 'Acceder al listado de deudas por consignación.',
+    ),
+    AppPermissionDefinition(
+      key: AppPermissionKeys.consignmentsReconcile,
+      module: 'Consignaciones',
+      label: 'Conciliar consignaciones',
+      description: 'Registrar abonos y conciliar deudas de consignación.',
     ),
     AppPermissionDefinition(
       key: AppPermissionKeys.warehousesView,
@@ -230,8 +251,11 @@ class AppPermissionsCatalog {
     AppPermissionKeys.tpvView,
     AppPermissionKeys.tpvManageSessions,
     AppPermissionKeys.salesPos,
+    AppPermissionKeys.salesConsignment,
     AppPermissionKeys.customersView,
     AppPermissionKeys.customersManage,
+    AppPermissionKeys.consignmentsView,
+    AppPermissionKeys.consignmentsReconcile,
     AppPermissionKeys.reportsIpv,
   };
 
@@ -244,7 +268,7 @@ class AppPermissionsCatalog {
     '/tpv-empleados': AppPermissionKeys.tpvManageEmployees,
     '/ventas-pos': AppPermissionKeys.salesPos,
     '/ventas-directas': AppPermissionKeys.salesDirect,
-    '/consignaciones': AppPermissionKeys.customersView,
+    '/consignaciones': AppPermissionKeys.consignmentsView,
     '/clientes': AppPermissionKeys.customersView,
     '/inventario': AppPermissionKeys.inventoryView,
     '/inventario-movimientos': AppPermissionKeys.inventoryMovements,
@@ -252,7 +276,7 @@ class AppPermissionsCatalog {
     '/productos': AppPermissionKeys.productsView,
     '/almacenes': AppPermissionKeys.warehousesView,
     '/reportes': AppPermissionKeys.reportsGeneral,
-    '/reportes-lotes': AppPermissionKeys.reportsGeneral,
+    '/reportes-lotes': AppPermissionKeys.purchasesView,
     '/ipv-reportes': AppPermissionKeys.reportsIpv,
     '/ipv-manual': AppPermissionKeys.reportsIpv,
     '/configuracion': AppPermissionKeys.settingsView,

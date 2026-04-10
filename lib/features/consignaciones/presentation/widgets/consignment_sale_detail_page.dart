@@ -517,7 +517,7 @@ class _ConsignmentSaleDetailPageState
                                     ],
                                   )
                                 : const Text(
-                                    'No tienes permisos de venta para registrar pagos de conciliación.',
+                                    'No tienes permisos para conciliar consignaciones.',
                                   ),
                           ),
                         ],

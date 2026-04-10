@@ -1235,23 +1235,43 @@ class ManualSyncLocalDataSource {
     double remaining = qty;
     final List<_ManualSyncFifoAllocation> out = <_ManualSyncFifoAllocation>[];
 
-    final List<QueryRow> lotRows = await _db.customSelect(
-      '''
-      SELECT
-        l.id AS lot_id,
-        COALESCE(l.qty_remaining, 0) AS qty_remaining,
-        COALESCE(l.unit_cost_cents, 0) AS unit_cost_cents
-      FROM stock_lots l
-      WHERE l.product_id = ?
-        AND l.warehouse_id = ?
-        AND COALESCE(l.qty_remaining, 0) > 0
-      ORDER BY l.received_at ASC, l.created_at ASC, l.id ASC
-      ''',
-      variables: <Variable<Object>>[
-        Variable<String>(productId),
-        Variable<String>(warehouseId),
-      ],
-    ).get();
+    final double untrackedQty = await _loadUntrackedStockQty(
+      productId: productId,
+      warehouseId: warehouseId,
+      epsilon: epsilon,
+    );
+    if (untrackedQty > epsilon) {
+      final double take = untrackedQty < remaining ? untrackedQty : remaining;
+      out.add(
+        _ManualSyncFifoAllocation(
+          lotId: null,
+          qty: take,
+          unitCostCents: fallbackUnitCostCents,
+          lineCostCents: (take * fallbackUnitCostCents).round(),
+        ),
+      );
+      remaining -= take;
+    }
+
+    final List<QueryRow> lotRows = remaining <= epsilon
+        ? const <QueryRow>[]
+        : await _db.customSelect(
+            '''
+            SELECT
+              l.id AS lot_id,
+              COALESCE(l.qty_remaining, 0) AS qty_remaining,
+              COALESCE(l.unit_cost_cents, 0) AS unit_cost_cents
+            FROM stock_lots l
+            WHERE l.product_id = ?
+              AND l.warehouse_id = ?
+              AND COALESCE(l.qty_remaining, 0) > 0
+            ORDER BY l.received_at ASC, l.created_at ASC, l.id ASC
+            ''',
+            variables: <Variable<Object>>[
+              Variable<String>(productId),
+              Variable<String>(warehouseId),
+            ],
+          ).get();
 
     for (final QueryRow row in lotRows) {
       if (remaining <= epsilon) {
@@ -1301,6 +1321,44 @@ class ManualSyncLocalDataSource {
       );
     }
     return out;
+  }
+
+  Future<double> _loadUntrackedStockQty({
+    required String productId,
+    required String warehouseId,
+    required double epsilon,
+  }) async {
+    final QueryRow row = await _db.customSelect(
+      '''
+      SELECT
+        COALESCE(
+          (SELECT sb.qty
+           FROM stock_balances sb
+           WHERE sb.product_id = ?
+             AND sb.warehouse_id = ?
+           LIMIT 1),
+          0
+        ) AS stock_qty,
+        COALESCE(
+          (SELECT SUM(COALESCE(l.qty_remaining, 0))
+           FROM stock_lots l
+           WHERE l.product_id = ?
+             AND l.warehouse_id = ?
+             AND COALESCE(l.qty_remaining, 0) > 0),
+          0
+        ) AS lot_qty
+      ''',
+      variables: <Variable<Object>>[
+        Variable<String>(productId),
+        Variable<String>(warehouseId),
+        Variable<String>(productId),
+        Variable<String>(warehouseId),
+      ],
+    ).getSingle();
+    final double stockQty = (row.data['stock_qty'] as num?)?.toDouble() ?? 0;
+    final double lotQty = (row.data['lot_qty'] as num?)?.toDouble() ?? 0;
+    final double untrackedQty = stockQty - lotQty;
+    return untrackedQty > epsilon ? untrackedQty : 0;
   }
 
   Future<void> _insertSaleItemAllocations({

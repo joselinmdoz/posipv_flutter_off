@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_providers.dart';
+import '../../../core/security/app_permissions.dart';
 import '../../../core/utils/app_result.dart';
 import '../../../core/utils/perf_trace.dart';
 import '../../../shared/widgets/app_scaffold.dart';
@@ -140,6 +141,15 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
           .map((AppPaymentMethodSetting row) => row.code.trim().toLowerCase())
           .where((String code) => code.isNotEmpty)
           .toList(growable: false);
+      final bool canSellConsignment =
+          session.hasPermission(AppPermissionKeys.salesConsignment);
+      final List<String> filteredPaymentMethods =
+          paymentMethods.where((String code) {
+        if (code != 'consignment') {
+          return true;
+        }
+        return canSellConsignment;
+      }).toList(growable: false);
       final Set<String> onlineMethods = paymentSettings
           .where((AppPaymentMethodSetting row) => row.isOnline)
           .map((AppPaymentMethodSetting row) => row.code.trim().toLowerCase())
@@ -174,9 +184,9 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
           availableIds: warehouseData.availableIds,
         );
         _currencyConfig = config.currencyConfig.normalized();
-        _paymentMethods = paymentMethods.isEmpty
+        _paymentMethods = filteredPaymentMethods.isEmpty
             ? <String>['cash', 'transfer']
-            : paymentMethods;
+            : filteredPaymentMethods;
         _onlinePaymentMethodCodes =
             onlineMethods.isEmpty ? <String>{'transfer'} : onlineMethods;
         _paymentMethodLabelsByCode = paymentLabels;
@@ -668,6 +678,11 @@ class _VentasDirectasPageState extends ConsumerState<VentasDirectasPage> {
     final List<_DirectCartLine> lines = linesOverride ?? _cartLines;
     if (lines.isEmpty) {
       _show('Agrega al menos un producto con cantidad mayor a 0.');
+      return;
+    }
+    if (isConsignmentSale &&
+        !session.hasPermission(AppPermissionKeys.salesConsignment)) {
+      _show('No tienes permisos para registrar ventas en consignación.');
       return;
     }
     if (isConsignmentSale && _selectedCustomer == null) {

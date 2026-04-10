@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../core/licensing/license_providers.dart';
 import '../../../shared/widgets/app_scaffold.dart';
@@ -16,10 +17,13 @@ import 'widgets/analytics_sales_summary_cards.dart';
 import 'widgets/analytics_top_customer_tile.dart';
 import 'widgets/analytics_top_product_tile.dart';
 import 'widgets/analytics_sales_list_page.dart';
+import 'widgets/analytics_sale_detail_page.dart';
+import 'widgets/ipv_reporte_detail_page.dart';
 
 enum _ReportViewType {
   salesAnalytics,
   paymentsDetail,
+  dailyReport,
 }
 
 class ReportesPage extends ConsumerStatefulWidget {
@@ -35,8 +39,10 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
   static const String _directSalesSourceToken = '__direct_sales_source__';
   static const String _tpvSalesSourcePrefix = 'tpv:';
   static const List<int> _paymentPageSizes = <int>[25, 50, 100];
+  static const List<int> _dailyPageSizes = <int>[10, 20, 40];
 
   SalesAnalyticsSnapshot? _analytics;
+  DailyReportSnapshot? _dailyReport;
   List<SalesPaymentReportRow> _paymentReportRows = <SalesPaymentReportRow>[];
   List<String> _paymentMethodKeys = <String>[];
   String? _selectedPaymentMethodKey;
@@ -44,6 +50,14 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
   int _paymentPageSize = _paymentPageSizes.first;
   int _paymentTotalCount = 0;
   bool _loadingPaymentPage = false;
+  bool _loadingDailyPage = false;
+  DateTime _dailyReportDate = DateTime.now();
+  int _dailySalesCurrentPage = 1;
+  int _dailySalesPageSize = _dailyPageSizes.first;
+  int _dailyMovementsCurrentPage = 1;
+  int _dailyMovementsPageSize = _dailyPageSizes.first;
+  int _dailyIpvLinesCurrentPage = 1;
+  int _dailyIpvLinesPageSize = _dailyPageSizes.first;
   List<_AnalyticsSalesSourceOption> _salesSourceOptions =
       _defaultSalesSourceOptions();
   String _selectedSalesSourceKey = _allSalesSourceToken;
@@ -51,6 +65,7 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
   String _currencySymbol = AppConfig.defaultCurrencySymbol;
   bool _loading = true;
   bool _exportingAnalytics = false;
+  bool _exportingDailyReport = false;
   late DateTimeRange _range;
   SalesAnalyticsGranularity _granularity = SalesAnalyticsGranularity.month;
   _ReportViewType _selectedReport = _ReportViewType.salesAnalytics;
@@ -69,10 +84,14 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
   }
 
   Future<void> _loadCurrentReport({bool showLoader = true}) {
-    if (_selectedReport == _ReportViewType.salesAnalytics) {
-      return _loadAnalytics(showLoader: showLoader);
+    switch (_selectedReport) {
+      case _ReportViewType.salesAnalytics:
+        return _loadAnalytics(showLoader: showLoader);
+      case _ReportViewType.paymentsDetail:
+        return _loadPaymentsReport(showLoader: showLoader);
+      case _ReportViewType.dailyReport:
+        return _loadDailyReport(showLoader: showLoader);
     }
-    return _loadPaymentsReport(showLoader: showLoader);
   }
 
   Future<void> _loadAnalytics({bool showLoader = true}) async {
@@ -320,6 +339,75 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
     }
   }
 
+  Future<void> _loadDailyReport({bool showLoader = true}) async {
+    final license = ref.read(currentLicenseStatusProvider);
+    if (!license.canAccessGeneralReports) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _loading = false;
+        _loadingDailyPage = false;
+        _dailyReport = null;
+      });
+      return;
+    }
+
+    if (showLoader && mounted) {
+      setState(() => _loading = true);
+    } else if (mounted) {
+      setState(() => _loadingDailyPage = true);
+    }
+
+    final ReportesLocalDataSource reportesDs =
+        ref.read(reportesLocalDataSourceProvider);
+    final ConfiguracionLocalDataSource configDs =
+        ref.read(configuracionLocalDataSourceProvider);
+    String currencySymbol = _currencySymbol;
+    DailyReportSnapshot? snapshot;
+    String? warningMessage;
+
+    try {
+      currencySymbol = (await configDs.loadConfig()).currencySymbol;
+    } catch (e) {
+      warningMessage = 'Configuracion: $e';
+    }
+    try {
+      snapshot = await reportesDs.loadDailyReport(
+        reportDate: _dailyReportDate,
+        salesLimit: _dailySalesPageSize,
+        salesOffset: (_dailySalesCurrentPage - 1) * _dailySalesPageSize,
+        movementsLimit: _dailyMovementsPageSize,
+        movementsOffset:
+            (_dailyMovementsCurrentPage - 1) * _dailyMovementsPageSize,
+        ipvLinesLimit: _dailyIpvLinesPageSize,
+        ipvLinesOffset:
+            (_dailyIpvLinesCurrentPage - 1) * _dailyIpvLinesPageSize,
+      );
+    } catch (e) {
+      warningMessage = warningMessage == null
+          ? 'Informe diario: $e'
+          : '$warningMessage\nInforme diario: $e';
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _currencySymbol = currencySymbol;
+      _dailyReport = snapshot;
+      _loading = false;
+      _loadingDailyPage = false;
+    });
+
+    if (warningMessage != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Cargado con advertencias:\n$warningMessage')),
+      );
+    }
+  }
+
   DateTimeRange _rangeForGranularity(
     SalesAnalyticsGranularity granularity,
     DateTime now,
@@ -385,6 +473,122 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
     await _loadAnalytics(showLoader: true);
   }
 
+  DateTime _startOfDay(DateTime value) {
+    return DateTime(value.year, value.month, value.day);
+  }
+
+  int _pageCount(int total, int size) {
+    if (total <= 0) {
+      return 1;
+    }
+    return (total + size - 1) ~/ size;
+  }
+
+  Future<void> _pickDailyReportDate() async {
+    final DateTime now = DateTime.now();
+    final DateTime initial = _startOfDay(_dailyReportDate);
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      firstDate: DateTime(2020, 1, 1),
+      lastDate: DateTime(now.year + 2, 12, 31),
+      initialDate: initial,
+      helpText: 'Seleccionar día',
+      cancelText: 'Cancelar',
+      confirmText: 'Aceptar',
+    );
+    if (picked == null) {
+      return;
+    }
+    setState(() {
+      _dailyReportDate = _startOfDay(picked);
+      _dailySalesCurrentPage = 1;
+      _dailyMovementsCurrentPage = 1;
+      _dailyIpvLinesCurrentPage = 1;
+    });
+    await _loadDailyReport(showLoader: true);
+  }
+
+  Future<void> _goToDailySalesPage(int page) async {
+    if (_loadingDailyPage) {
+      return;
+    }
+    final int maxPages = _pageCount(
+      _dailyReport?.salesTotalCount ?? 0,
+      _dailySalesPageSize,
+    );
+    final int safePage = page < 1 ? 1 : (page > maxPages ? maxPages : page);
+    if (safePage == _dailySalesCurrentPage) {
+      return;
+    }
+    setState(() => _dailySalesCurrentPage = safePage);
+    await _loadDailyReport(showLoader: false);
+  }
+
+  Future<void> _changeDailySalesPageSize(int? value) async {
+    if (value == null || value == _dailySalesPageSize) {
+      return;
+    }
+    setState(() {
+      _dailySalesPageSize = value;
+      _dailySalesCurrentPage = 1;
+    });
+    await _loadDailyReport(showLoader: true);
+  }
+
+  Future<void> _goToDailyMovementsPage(int page) async {
+    if (_loadingDailyPage) {
+      return;
+    }
+    final int maxPages = _pageCount(
+      _dailyReport?.movementsTotalCount ?? 0,
+      _dailyMovementsPageSize,
+    );
+    final int safePage = page < 1 ? 1 : (page > maxPages ? maxPages : page);
+    if (safePage == _dailyMovementsCurrentPage) {
+      return;
+    }
+    setState(() => _dailyMovementsCurrentPage = safePage);
+    await _loadDailyReport(showLoader: false);
+  }
+
+  Future<void> _changeDailyMovementsPageSize(int? value) async {
+    if (value == null || value == _dailyMovementsPageSize) {
+      return;
+    }
+    setState(() {
+      _dailyMovementsPageSize = value;
+      _dailyMovementsCurrentPage = 1;
+    });
+    await _loadDailyReport(showLoader: true);
+  }
+
+  Future<void> _goToDailyIpvLinesPage(int page) async {
+    if (_loadingDailyPage) {
+      return;
+    }
+    final int maxPages = _pageCount(
+      _dailyReport?.ipvLinesTotalCount ?? 0,
+      _dailyIpvLinesPageSize,
+    );
+    final int safePage = page < 1 ? 1 : (page > maxPages ? maxPages : page);
+    if (safePage == _dailyIpvLinesCurrentPage) {
+      return;
+    }
+    setState(() => _dailyIpvLinesCurrentPage = safePage);
+    await _loadDailyReport(showLoader: false);
+  }
+
+  Future<void> _changeDailyIpvLinesPageSize(int? value) async {
+    if (value == null || value == _dailyIpvLinesPageSize) {
+      return;
+    }
+    setState(() {
+      _dailyIpvLinesPageSize = value;
+      _dailyIpvLinesCurrentPage = 1;
+    });
+    await _loadDailyReport(showLoader: true);
+  }
+
   void _onBackPressed() {
     if (Navigator.of(context).canPop()) {
       context.pop();
@@ -435,6 +639,88 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
     } finally {
       if (mounted) {
         setState(() => _exportingAnalytics = false);
+      }
+    }
+  }
+
+  Future<void> _handleDailyReportExportAction(
+    _DailyReportExportAction action,
+  ) async {
+    if (_dailyReport == null || _exportingDailyReport) {
+      return;
+    }
+    switch (action) {
+      case _DailyReportExportAction.exportCsv:
+        await _exportDailyReport(format: 'csv', shareFile: false);
+      case _DailyReportExportAction.exportPdf:
+        await _exportDailyReport(format: 'pdf', shareFile: false);
+      case _DailyReportExportAction.shareCsv:
+        await _exportDailyReport(format: 'csv', shareFile: true);
+      case _DailyReportExportAction.sharePdf:
+        await _exportDailyReport(format: 'pdf', shareFile: true);
+    }
+  }
+
+  Future<void> _exportDailyReport({
+    required String format,
+    required bool shareFile,
+  }) async {
+    if (_dailyReport == null || _exportingDailyReport) {
+      return;
+    }
+    setState(() => _exportingDailyReport = true);
+    try {
+      final ReportesLocalDataSource ds =
+          ref.read(reportesLocalDataSourceProvider);
+      final String path = format == 'pdf'
+          ? await ds.exportDailyReportPdf(
+              reportDate: _dailyReportDate,
+              currencySymbol: _currencySymbol,
+            )
+          : await ds.exportDailyReportCsv(
+              reportDate: _dailyReportDate,
+              currencySymbol: _currencySymbol,
+            );
+      if (!mounted) {
+        return;
+      }
+      if (shareFile) {
+        await Share.shareXFiles(
+          <XFile>[XFile(path)],
+          text:
+              'Informe diario ${_formatDate(_dailyReportDate)} (${format.toUpperCase()})',
+          subject: 'Informe diario',
+        );
+        if (!mounted) {
+          return;
+        }
+      }
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              shareFile
+                  ? 'Informe diario listo para compartir:\n$path'
+                  : 'Informe diario exportado en:\n$path',
+            ),
+            duration: const Duration(seconds: 5),
+          ),
+        );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(
+            content: Text('No se pudo exportar el informe diario: $e'),
+          ),
+        );
+    } finally {
+      if (mounted) {
+        setState(() => _exportingDailyReport = false);
       }
     }
   }
@@ -515,6 +801,60 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
     return '${qty.toStringAsFixed(2)} unidades vendidas';
   }
 
+  String _formatQty(double qty) {
+    if ((qty - qty.roundToDouble()).abs() < 0.000001) {
+      return qty.toStringAsFixed(0);
+    }
+    return qty.toStringAsFixed(2);
+  }
+
+  String _movementTypeLabel(String type) {
+    return type.trim().toLowerCase() == 'in' ? 'Entrada' : 'Salida';
+  }
+
+  String _movementSourceLabel(String source) {
+    switch (source.trim().toLowerCase()) {
+      case 'pos':
+        return 'POS';
+      case 'direct_sale':
+        return 'Venta directa';
+      case 'pos_consignment':
+        return 'POS consignación';
+      case 'direct_consignment':
+        return 'Directa consignación';
+      case 'transfer':
+        return 'Transferencia';
+      default:
+        return 'Manual';
+    }
+  }
+
+  String _ipvStatusLabel(String status) {
+    return status.trim().toLowerCase() == 'closed' ? 'Cerrado' : 'Abierto';
+  }
+
+  Future<void> _openDailySaleDetail(String saleId) async {
+    final bool? result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => AnalyticsSaleDetailPage(
+          saleId: saleId,
+          currencySymbol: _currencySymbol,
+        ),
+      ),
+    );
+    if (result == true) {
+      await _loadDailyReport(showLoader: true);
+    }
+  }
+
+  Future<void> _openIpvDetail(IpvReportSummaryStat summary) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => IpvReporteDetailPage(summary: summary),
+      ),
+    );
+  }
+
   String _customerTypeLabel(String raw) {
     switch (raw.trim().toLowerCase()) {
       case 'frecuente':
@@ -542,6 +882,8 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
         return 'Analítica de ventas';
       case _ReportViewType.paymentsDetail:
         return 'Detalle de pagos';
+      case _ReportViewType.dailyReport:
+        return 'Informe diario';
     }
   }
 
@@ -552,6 +894,11 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
     setState(() {
       _selectedReport = next;
       _paymentCurrentPage = 1;
+      if (next == _ReportViewType.dailyReport) {
+        _dailySalesCurrentPage = 1;
+        _dailyMovementsCurrentPage = 1;
+        _dailyIpvLinesCurrentPage = 1;
+      }
     });
     await _loadCurrentReport(showLoader: true);
   }
@@ -1049,6 +1396,678 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
     return sections;
   }
 
+  List<Widget> _buildDailyReportSections(BuildContext context) {
+    final DailyReportSnapshot? report = _dailyReport;
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    if (report == null) {
+      return const <Widget>[
+        Card(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('No hay datos del informe diario para la fecha.'),
+          ),
+        ),
+      ];
+    }
+
+    final List<DropdownMenuItem<int>> pageSizeItems = _dailyPageSizes
+        .map(
+          (int size) => DropdownMenuItem<int>(
+            value: size,
+            child: Text('$size filas'),
+          ),
+        )
+        .toList(growable: false);
+    final int salesTotalPages =
+        _pageCount(report.salesTotalCount, _dailySalesPageSize);
+    final int salesPage = _dailySalesCurrentPage < 1
+        ? 1
+        : (_dailySalesCurrentPage > salesTotalPages
+            ? salesTotalPages
+            : _dailySalesCurrentPage);
+    final int salesStart = report.salesTotalCount == 0
+        ? 0
+        : ((salesPage - 1) * _dailySalesPageSize) + 1;
+    final int salesEnd =
+        report.salesTotalCount == 0 ? 0 : salesStart + report.sales.length - 1;
+
+    final int movementsTotalPages =
+        _pageCount(report.movementsTotalCount, _dailyMovementsPageSize);
+    final int movementsPage = _dailyMovementsCurrentPage < 1
+        ? 1
+        : (_dailyMovementsCurrentPage > movementsTotalPages
+            ? movementsTotalPages
+            : _dailyMovementsCurrentPage);
+    final int movementsStart = report.movementsTotalCount == 0
+        ? 0
+        : ((movementsPage - 1) * _dailyMovementsPageSize) + 1;
+    final int movementsEnd = report.movementsTotalCount == 0
+        ? 0
+        : movementsStart + report.movements.length - 1;
+
+    final int ipvLinesTotalPages =
+        _pageCount(report.ipvLinesTotalCount, _dailyIpvLinesPageSize);
+    final int ipvLinesPage = _dailyIpvLinesCurrentPage < 1
+        ? 1
+        : (_dailyIpvLinesCurrentPage > ipvLinesTotalPages
+            ? ipvLinesTotalPages
+            : _dailyIpvLinesCurrentPage);
+    final int ipvLinesStart = report.ipvLinesTotalCount == 0
+        ? 0
+        : ((ipvLinesPage - 1) * _dailyIpvLinesPageSize) + 1;
+    final int ipvLinesEnd = report.ipvLinesTotalCount == 0
+        ? 0
+        : ipvLinesStart + report.ipvLines.length - 1;
+
+    Widget sectionCard({
+      required String title,
+      required String subtitle,
+      required List<Widget> children,
+    }) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF0F172A) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isDark ? const Color(0xFF263244) : const Color(0xFFD8E0EC),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color:
+                    isDark ? const Color(0xFFE2E8F0) : const Color(0xFf0F172A),
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 12,
+                color:
+                    isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+              ),
+            ),
+            const SizedBox(height: 10),
+            ...children,
+          ],
+        ),
+      );
+    }
+
+    Widget pager({
+      required String rowsLabel,
+      required int currentPage,
+      required int totalPages,
+      required int pageSize,
+      required ValueChanged<int?> onPageSizeChanged,
+      required VoidCallback? onPrev,
+      required VoidCallback? onNext,
+    }) {
+      return Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: <Widget>[
+          Text(
+            rowsLabel,
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+            ),
+          ),
+          SizedBox(
+            width: 132,
+            child: DropdownButtonFormField<int>(
+              key: ValueKey<int>(pageSize),
+              initialValue: pageSize,
+              isDense: true,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              ),
+              items: pageSizeItems,
+              onChanged: _loadingDailyPage ? null : onPageSizeChanged,
+            ),
+          ),
+          FilledButton.tonalIcon(
+            onPressed: _loadingDailyPage ? null : onPrev,
+            icon: const Icon(Icons.chevron_left_rounded),
+            label: const Text('Anterior'),
+          ),
+          FilledButton.tonalIcon(
+            onPressed: _loadingDailyPage ? null : onNext,
+            icon: const Icon(Icons.chevron_right_rounded),
+            label: const Text('Siguiente'),
+          ),
+          Text(
+            'Página $currentPage de $totalPages',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155),
+            ),
+          ),
+        ],
+      );
+    }
+
+    final Map<String, IpvReportSummaryStat> ipvById =
+        <String, IpvReportSummaryStat>{
+      for (final IpvReportSummaryStat summary in report.ipvReports)
+        summary.reportId: summary,
+    };
+
+    return <Widget>[
+      Row(
+        children: <Widget>[
+          Expanded(
+            child: _AnalyticsDateRangeCard(
+              value: _formatDate(report.reportDate),
+              onTap: _pickDailyReportDate,
+              compact: false,
+            ),
+          ),
+        ],
+      ),
+      if (_loadingDailyPage) ...<Widget>[
+        const SizedBox(height: 8),
+        const LinearProgressIndicator(minHeight: 2),
+      ],
+      const SizedBox(height: 12),
+      LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints c) {
+          const double spacing = 10;
+          final int columns = _kpiColumnsForWidth(c.maxWidth);
+          final List<Widget> cards = <Widget>[
+            _DailySummaryCard(
+              icon: Icons.shopping_bag_outlined,
+              title: 'Total de ventas',
+              value: report.salesSummary.salesCount.toString(),
+              subtitle: 'Ventas completadas',
+            ),
+            _DailySummaryCard(
+              icon: Icons.payments_outlined,
+              title: 'Importe ventas',
+              value: _money(report.salesSummary.totalCents),
+              subtitle: 'Total facturado',
+            ),
+            _DailySummaryCard(
+              icon: Icons.trending_up_rounded,
+              title: 'Ganancia',
+              value: _money(report.salesSummary.profitCents),
+              subtitle: 'Utilidad real del día',
+            ),
+            _DailySummaryCard(
+              icon: Icons.inventory_2_outlined,
+              title: 'Productos vendidos',
+              value: _formatQty(report.salesSummary.itemsSoldQty),
+              subtitle: 'Unidades vendidas',
+            ),
+            _DailySummaryCard(
+              icon: Icons.south_west_rounded,
+              title: 'Entradas',
+              value: _formatQty(report.movementsSummary.entriesQty),
+              subtitle: '${report.movementsSummary.entriesCount} movimientos',
+            ),
+            _DailySummaryCard(
+              icon: Icons.north_east_rounded,
+              title: 'Salidas',
+              value: _formatQty(report.movementsSummary.outputsQty),
+              subtitle: '${report.movementsSummary.outputsCount} movimientos',
+            ),
+            _DailySummaryCard(
+              icon: Icons.point_of_sale_rounded,
+              title: 'Reportes IPV',
+              value: report.ipvSummary.reportsCount.toString(),
+              subtitle: '${report.ipvSummary.linesCount} líneas',
+            ),
+            _DailySummaryCard(
+              icon: Icons.receipt_long_outlined,
+              title: 'Importe IPV',
+              value: _money(report.ipvSummary.totalAmountCents),
+              subtitle:
+                  '${_formatQty(report.ipvSummary.salesQty)} uds vendidas',
+            ),
+          ];
+          return GridView.builder(
+            itemCount: cards.length,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: columns,
+              mainAxisSpacing: spacing,
+              crossAxisSpacing: spacing,
+              childAspectRatio: c.maxWidth < 420 ? 1.15 : 1.35,
+            ),
+            itemBuilder: (_, int index) => cards[index],
+          );
+        },
+      ),
+      const SizedBox(height: 12),
+      sectionCard(
+        title: 'Ventas del día',
+        subtitle: 'Detalle completo de ventas registradas',
+        children: <Widget>[
+          pager(
+            rowsLabel:
+                'Mostrando $salesStart-$salesEnd de ${report.salesTotalCount} ventas',
+            currentPage: salesPage,
+            totalPages: salesTotalPages,
+            pageSize: _dailySalesPageSize,
+            onPageSizeChanged: _changeDailySalesPageSize,
+            onPrev:
+                salesPage > 1 ? () => _goToDailySalesPage(salesPage - 1) : null,
+            onNext: salesPage < salesTotalPages
+                ? () => _goToDailySalesPage(salesPage + 1)
+                : null,
+          ),
+          const SizedBox(height: 10),
+          if (report.sales.isEmpty)
+            const Text('No hay ventas en la fecha seleccionada.')
+          else
+            ...report.sales.map((SalesAnalyticsSaleStat sale) {
+              final String channelLabel =
+                  sale.channel.toLowerCase() == 'pos' ? 'POS' : 'DIRECTA';
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isDark
+                          ? const Color(0xFF334155)
+                          : const Color(0xFFE2E8F0),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: Text(
+                              '${sale.folio} • $channelLabel',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                          Text(
+                            _money(sale.totalCents),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Fecha: ${_formatDateTime(sale.createdAt)}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF64748B),
+                        ),
+                      ),
+                      Text(
+                        'Dependiente: ${sale.cashierUsername} • Almacén: ${sale.warehouseName}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF64748B),
+                        ),
+                      ),
+                      Text(
+                        'Ítems: ${sale.itemsCount} • Cliente: ${sale.customerName ?? 'Sin cliente'}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF64748B),
+                        ),
+                      ),
+                      if ((sale.terminalName ?? '').trim().isNotEmpty)
+                        Text(
+                          'TPV: ${sale.terminalName}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark
+                                ? const Color(0xFF94A3B8)
+                                : const Color(0xFF64748B),
+                          ),
+                        ),
+                      const SizedBox(height: 6),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _openDailySaleDetail(sale.saleId),
+                          icon: const Icon(Icons.visibility_outlined, size: 16),
+                          label: const Text('Ver detalle'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+        ],
+      ),
+      const SizedBox(height: 12),
+      sectionCard(
+        title: 'Entradas y salidas',
+        subtitle: 'Movimientos de inventario del día',
+        children: <Widget>[
+          pager(
+            rowsLabel:
+                'Mostrando $movementsStart-$movementsEnd de ${report.movementsTotalCount} movimientos',
+            currentPage: movementsPage,
+            totalPages: movementsTotalPages,
+            pageSize: _dailyMovementsPageSize,
+            onPageSizeChanged: _changeDailyMovementsPageSize,
+            onPrev: movementsPage > 1
+                ? () => _goToDailyMovementsPage(movementsPage - 1)
+                : null,
+            onNext: movementsPage < movementsTotalPages
+                ? () => _goToDailyMovementsPage(movementsPage + 1)
+                : null,
+          ),
+          const SizedBox(height: 10),
+          if (report.movements.isEmpty)
+            const Text('No hay movimientos en la fecha seleccionada.')
+          else
+            ...report.movements.map((DailyReportMovementStat movement) {
+              final bool isIn = movement.movementType == 'in';
+              final Color qtyColor =
+                  isIn ? const Color(0xFF047857) : const Color(0xFFB91C1C);
+              final String sign = isIn ? '+' : '-';
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isDark
+                          ? const Color(0xFF334155)
+                          : const Color(0xFFE2E8F0),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: Text(
+                              '${movement.productName} • ${movement.sku}',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                          Text(
+                            '$sign${_formatQty(movement.qty)}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: qtyColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${_movementTypeLabel(movement.movementType)} • ${movement.reasonLabel}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark
+                              ? const Color(0xFFCBD5E1)
+                              : const Color(0xFF334155),
+                        ),
+                      ),
+                      Text(
+                        'Almacén: ${movement.warehouseName} • Origen: ${_movementSourceLabel(movement.movementSource)}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF64748B),
+                        ),
+                      ),
+                      Text(
+                        'Usuario: ${movement.username} • Fecha: ${_formatDateTime(movement.createdAt)}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF64748B),
+                        ),
+                      ),
+                      if ((movement.refType ?? '').trim().isNotEmpty ||
+                          (movement.refId ?? '').trim().isNotEmpty)
+                        Text(
+                          'Referencia: ${movement.refType ?? '-'} / ${movement.refId ?? '-'}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark
+                                ? const Color(0xFF94A3B8)
+                                : const Color(0xFF64748B),
+                          ),
+                        ),
+                      if ((movement.note ?? '').trim().isNotEmpty)
+                        Text(
+                          'Nota: ${movement.note}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark
+                                ? const Color(0xFF94A3B8)
+                                : const Color(0xFF64748B),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+        ],
+      ),
+      const SizedBox(height: 12),
+      sectionCard(
+        title: 'IPV del día',
+        subtitle: 'Reportes IPV vinculados a la fecha',
+        children: <Widget>[
+          if (report.ipvReports.isEmpty)
+            const Text('No hay reportes IPV en la fecha seleccionada.')
+          else
+            ...report.ipvReports.map((IpvReportSummaryStat summary) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isDark
+                          ? const Color(0xFF334155)
+                          : const Color(0xFFE2E8F0),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: Text(
+                              '${summary.terminalName} • ${_ipvStatusLabel(summary.status)}',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                          Text(
+                            _money(summary.totalAmountCents),
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Apertura: ${_formatDateTime(summary.openedAt)}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF64748B),
+                        ),
+                      ),
+                      if (summary.closedAt != null)
+                        Text(
+                          'Cierre: ${_formatDateTime(summary.closedAt!)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark
+                                ? const Color(0xFF94A3B8)
+                                : const Color(0xFF64748B),
+                          ),
+                        ),
+                      Text(
+                        'Líneas: ${summary.lineCount} • Sesión: ${summary.sessionId}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF64748B),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _openIpvDetail(summary),
+                          icon:
+                              const Icon(Icons.table_chart_outlined, size: 16),
+                          label: const Text('Ver IPV'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+        ],
+      ),
+      const SizedBox(height: 12),
+      sectionCard(
+        title: 'Líneas IPV del día',
+        subtitle: 'Desglose de productos en IPV',
+        children: <Widget>[
+          pager(
+            rowsLabel:
+                'Mostrando $ipvLinesStart-$ipvLinesEnd de ${report.ipvLinesTotalCount} líneas',
+            currentPage: ipvLinesPage,
+            totalPages: ipvLinesTotalPages,
+            pageSize: _dailyIpvLinesPageSize,
+            onPageSizeChanged: _changeDailyIpvLinesPageSize,
+            onPrev: ipvLinesPage > 1
+                ? () => _goToDailyIpvLinesPage(ipvLinesPage - 1)
+                : null,
+            onNext: ipvLinesPage < ipvLinesTotalPages
+                ? () => _goToDailyIpvLinesPage(ipvLinesPage + 1)
+                : null,
+          ),
+          const SizedBox(height: 10),
+          if (report.ipvLines.isEmpty)
+            const Text('No hay líneas IPV en la fecha seleccionada.')
+          else
+            ...report.ipvLines.map((DailyReportIpvLineStat line) {
+              final IpvReportSummaryStat? parent = ipvById[line.reportId];
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isDark
+                          ? const Color(0xFF334155)
+                          : const Color(0xFFE2E8F0),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: Text(
+                              '${line.productName} • ${line.sku}',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                          Text(
+                            _money(line.totalAmountCents),
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'TPV: ${line.terminalName} • Reporte: ${line.reportId}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF64748B),
+                        ),
+                      ),
+                      Text(
+                        'Inicio ${_formatQty(line.startQty)} • Entradas ${_formatQty(line.entriesQty)} • Salidas ${_formatQty(line.outputsQty)}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF64748B),
+                        ),
+                      ),
+                      Text(
+                        'Ventas ${_formatQty(line.salesQty)} • Final ${_formatQty(line.finalQty)} • Precio ${_money(line.salePriceCents)}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF64748B),
+                        ),
+                      ),
+                      if (parent != null)
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton.icon(
+                            onPressed: () => _openIpvDetail(parent),
+                            icon:
+                                const Icon(Icons.open_in_new_rounded, size: 16),
+                            label: const Text('Abrir IPV'),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+        ],
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final license = ref.watch(currentLicenseStatusProvider);
@@ -1125,7 +2144,9 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
     return AppScaffold(
       title: _selectedReport == _ReportViewType.salesAnalytics
           ? 'Análisis'
-          : 'Reportes',
+          : (_selectedReport == _ReportViewType.dailyReport
+              ? 'Informe diario'
+              : 'Reportes'),
       currentRoute: '/reportes',
       onRefresh: _loadCurrentReport,
       useDefaultActions: false,
@@ -1135,32 +2156,63 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
         onPressed: _onBackPressed,
         icon: const Icon(Icons.arrow_back_rounded),
       ),
-      appBarActions: _selectedReport == _ReportViewType.salesAnalytics
-          ? <Widget>[
-              IconButton(
-                tooltip: 'Estado de lotes',
-                onPressed: _openLotsStatusPage,
-                icon: const Icon(Icons.inventory_2_outlined),
-              ),
-              IconButton(
-                tooltip: 'Descargar',
-                onPressed: _exportingAnalytics ? null : _exportAnalytics,
-                icon: _exportingAnalytics
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.download_rounded),
-              ),
-            ]
-          : <Widget>[
-              IconButton(
-                tooltip: 'Estado de lotes',
-                onPressed: _openLotsStatusPage,
-                icon: const Icon(Icons.inventory_2_outlined),
-              ),
-            ],
+      appBarActions: <Widget>[
+        IconButton(
+          tooltip: 'Estado de lotes',
+          onPressed: _openLotsStatusPage,
+          icon: const Icon(Icons.inventory_2_outlined),
+        ),
+        if (_selectedReport == _ReportViewType.salesAnalytics)
+          IconButton(
+            tooltip: 'Descargar',
+            onPressed: _exportingAnalytics ? null : _exportAnalytics,
+            icon: _exportingAnalytics
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.download_rounded),
+          ),
+        if (_selectedReport == _ReportViewType.dailyReport)
+          _exportingDailyReport
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              : PopupMenuButton<_DailyReportExportAction>(
+                  tooltip: 'Exportar / compartir',
+                  onSelected: _handleDailyReportExportAction,
+                  itemBuilder: (BuildContext context) =>
+                      const <PopupMenuEntry<_DailyReportExportAction>>[
+                    PopupMenuItem<_DailyReportExportAction>(
+                      value: _DailyReportExportAction.exportCsv,
+                      child: Text('Exportar CSV'),
+                    ),
+                    PopupMenuItem<_DailyReportExportAction>(
+                      value: _DailyReportExportAction.exportPdf,
+                      child: Text('Exportar PDF'),
+                    ),
+                    PopupMenuDivider(),
+                    PopupMenuItem<_DailyReportExportAction>(
+                      value: _DailyReportExportAction.shareCsv,
+                      child: Text('Compartir CSV'),
+                    ),
+                    PopupMenuItem<_DailyReportExportAction>(
+                      value: _DailyReportExportAction.sharePdf,
+                      child: Text('Compartir PDF'),
+                    ),
+                  ],
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 10),
+                    child: Icon(Icons.ios_share_rounded),
+                  ),
+                ),
+      ],
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
@@ -1484,7 +2536,8 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
                             ),
                           ),
                       ],
-                    ] else ...<Widget>[
+                    ] else if (_selectedReport ==
+                        _ReportViewType.paymentsDetail) ...<Widget>[
                       _AnalyticsDateRangeCard(
                         value: _formatDateRange(_range),
                         onTap: _pickDateRange,
@@ -1492,6 +2545,8 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
                       ),
                       const SizedBox(height: 12),
                       ..._buildPaymentsReportSections(context),
+                    ] else ...<Widget>[
+                      ..._buildDailyReportSections(context),
                     ],
                   ],
                 ),
@@ -1499,6 +2554,13 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
             ),
     );
   }
+}
+
+enum _DailyReportExportAction {
+  exportCsv,
+  exportPdf,
+  shareCsv,
+  sharePdf,
 }
 
 class _AnalyticsSalesSourceOption {
@@ -1573,6 +2635,10 @@ class _ReportSelectorCard extends StatelessWidget {
               DropdownMenuItem<_ReportViewType>(
                 value: _ReportViewType.paymentsDetail,
                 child: Text('Detalle de pagos'),
+              ),
+              DropdownMenuItem<_ReportViewType>(
+                value: _ReportViewType.dailyReport,
+                child: Text('Informe diario'),
               ),
             ],
             onChanged: onChanged,
@@ -1670,6 +2736,79 @@ class _AnalyticsDateRangeCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _DailySummaryCard extends StatelessWidget {
+  const _DailySummaryCard({
+    required this.icon,
+    required this.title,
+    required this.value,
+    required this.subtitle,
+  });
+
+  final IconData icon;
+  final String title;
+  final String value;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0F172A) : Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isDark ? const Color(0xFF263244) : const Color(0xFFD8E0EC),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8F0FF),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(
+              icon,
+              size: 17,
+              color: const Color(0xFF1152D4),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: isDark ? Colors.white : const Color(0xFF0F172A),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            style: TextStyle(
+              fontSize: 11,
+              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+            ),
+          ),
+        ],
       ),
     );
   }
