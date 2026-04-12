@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 enum _CalculatorMode { standard, denominations }
 
@@ -41,6 +42,7 @@ class _PaymentAmountCalculatorDialogState
     extends State<PaymentAmountCalculatorDialog> {
   late final List<int> _denominations;
   late final Map<int, int> _countsByDenomination;
+  late final Map<int, TextEditingController> _countControllers;
   _CalculatorMode _mode = _CalculatorMode.standard;
   late String _expression;
 
@@ -55,7 +57,19 @@ class _PaymentAmountCalculatorDialogState
     _countsByDenomination = <int, int>{
       for (final int denomination in _denominations) denomination: 0,
     };
+    _countControllers = <int, TextEditingController>{
+      for (final int denomination in _denominations)
+        denomination: TextEditingController(text: '0'),
+    };
     _expression = (widget.initialAmountCents / 100).toStringAsFixed(2);
+  }
+
+  @override
+  void dispose() {
+    for (final TextEditingController controller in _countControllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
   }
 
   bool _isOperator(String token) {
@@ -232,6 +246,23 @@ class _PaymentAmountCalculatorDialogState
     final int current = _countsByDenomination[denomination] ?? 0;
     final int next = (current + delta).clamp(0, 99999);
     setState(() => _countsByDenomination[denomination] = next);
+    final TextEditingController? controller = _countControllers[denomination];
+    if (controller != null) {
+      final String text = next.toString();
+      controller.value = TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
+      );
+    }
+  }
+
+  void _setCountFromInput(int denomination, String raw) {
+    final String clean = raw.replaceAll(RegExp(r'[^0-9]'), '');
+    final int next = (int.tryParse(clean) ?? 0).clamp(0, 99999);
+    final int current = _countsByDenomination[denomination] ?? 0;
+    if (next != current) {
+      setState(() => _countsByDenomination[denomination] = next);
+    }
   }
 
   void _acceptValue() {
@@ -439,11 +470,51 @@ class _PaymentAmountCalculatorDialogState
                       onPressed: () => _changeCount(denomination, -1),
                       icon: const Icon(Icons.remove_circle_outline_rounded),
                     ),
-                    Text(
-                      '$qty',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
+                    SizedBox(
+                      width: 64,
+                      child: TextField(
+                        controller: _countControllers[denomination],
+                        keyboardType: TextInputType.number,
+                        textAlign: TextAlign.center,
+                        inputFormatters: <TextInputFormatter>[
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(5),
+                        ],
+                        decoration: InputDecoration(
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        onTap: () {
+                          final TextEditingController? controller =
+                              _countControllers[denomination];
+                          if (controller == null) {
+                            return;
+                          }
+                          controller.selection = TextSelection(
+                            baseOffset: 0,
+                            extentOffset: controller.text.length,
+                          );
+                        },
+                        onChanged: (String value) =>
+                            _setCountFromInput(denomination, value),
+                        onEditingComplete: () {
+                          final TextEditingController? controller =
+                              _countControllers[denomination];
+                          if (controller == null ||
+                              controller.text.isNotEmpty) {
+                            FocusScope.of(context).unfocus();
+                            return;
+                          }
+                          controller.text = '0';
+                          _setCountFromInput(denomination, '0');
+                          FocusScope.of(context).unfocus();
+                        },
                       ),
                     ),
                     IconButton(
@@ -464,6 +535,12 @@ class _PaymentAmountCalculatorDialogState
               setState(() {
                 for (final int denomination in _denominations) {
                   _countsByDenomination[denomination] = 0;
+                  final TextEditingController? controller =
+                      _countControllers[denomination];
+                  controller?.value = const TextEditingValue(
+                    text: '0',
+                    selection: TextSelection.collapsed(offset: 1),
+                  );
                 }
               });
             },

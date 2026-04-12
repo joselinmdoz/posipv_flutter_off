@@ -38,6 +38,7 @@ class _AnalyticsSalesListPageState
     extends ConsumerState<AnalyticsSalesListPage> {
   List<SalesAnalyticsSaleStat> _sales = <SalesAnalyticsSaleStat>[];
   bool _loading = true;
+  bool _hasChanges = false;
 
   @override
   void initState() {
@@ -110,6 +111,7 @@ class _AnalyticsSalesListPageState
       ),
     );
     if (result == true) {
+      _hasChanges = true;
       await _load();
     }
   }
@@ -144,7 +146,7 @@ class _AnalyticsSalesListPageState
         tooltip: 'Volver',
         onPressed: () {
           if (Navigator.of(context).canPop()) {
-            context.pop();
+            Navigator.of(context).pop(_hasChanges);
             return;
           }
           context.go('/reportes');

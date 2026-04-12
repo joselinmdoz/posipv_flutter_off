@@ -1028,7 +1028,24 @@ class _DirectSalesPaymentDialogState extends State<DirectSalesPaymentDialog> {
                     minHeight: 24,
                     minWidth: 24,
                   ),
+                  filled: true,
+                  fillColor: isDark
+                      ? const Color(0xFF0F172A)
+                      : const Color(0xFFF8FAFC),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                      color: isDark ? Colors.white10 : const Color(0xFFE2E8F0),
+                    ),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                      color: isDark ? Colors.white10 : const Color(0xFFE2E8F0),
+                    ),
+                  ),
                 ),
+                style: const TextStyle(fontWeight: FontWeight.w700),
               );
               final Widget addButton = FilledButton.icon(
                 onPressed: _addPaymentLine,

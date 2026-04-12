@@ -33,7 +33,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     if (buildName.isNotEmpty) {
       return 'Versión $buildName';
     }
-    return 'Versión 0.3.2+7';
+    return 'Versión 0.3.3+8';
   }
 
   @override

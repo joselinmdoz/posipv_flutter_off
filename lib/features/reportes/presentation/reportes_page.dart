@@ -1071,8 +1071,8 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
       // If a terminal is selected, the channel is always POS.
       effectiveTerminalId = effectiveTerminalId!.trim();
     }
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+    final bool? changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
         builder: (_) => AnalyticsSalesListPage(
           fromDate: _range.start,
           toDate: _range.end,
@@ -1085,6 +1085,9 @@ class _ReportesPageState extends ConsumerState<ReportesPage> {
         ),
       ),
     );
+    if (changed == true) {
+      await _loadAnalytics(showLoader: false);
+    }
   }
 
   List<Widget> _buildPaymentsReportSections(BuildContext context) {

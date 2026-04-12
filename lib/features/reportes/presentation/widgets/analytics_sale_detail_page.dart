@@ -33,6 +33,7 @@ class _AnalyticsSaleDetailPageState
   bool _loading = false;
   SalesAnalyticsSaleDetailStat? detail;
   bool _savingEdit = false;
+  bool _hasChanges = false;
   Map<String, String> _paymentMethodLabelsByCode = <String, String>{};
 
   @override
@@ -123,8 +124,9 @@ class _AnalyticsSaleDetailPageState
           .read(ventasPosLocalDataSourceProvider)
           .archiveSale(saleId: widget.saleId, userId: userId);
       if (mounted) {
+        _hasChanges = true;
         _show('Venta archivada correctamente.');
-        context.pop();
+        Navigator.of(context).pop(true);
       }
     } catch (e) {
       if (mounted) {
@@ -198,6 +200,7 @@ class _AnalyticsSaleDetailPageState
               isConsignmentSale: payload.isConsignmentSale,
             ),
           );
+      _hasChanges = true;
       await _load();
       if (mounted) {
         _show('Venta actualizada correctamente.');
@@ -257,7 +260,7 @@ class _AnalyticsSaleDetailPageState
         tooltip: 'Volver',
         onPressed: () {
           if (Navigator.of(context).canPop()) {
-            context.pop();
+            Navigator.of(context).pop(_hasChanges);
             return;
           }
           context.go('/reportes');

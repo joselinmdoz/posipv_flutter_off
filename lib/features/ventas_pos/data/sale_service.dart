@@ -991,7 +991,12 @@ class SaleService {
           )
           AND COALESCE(is_voided, 0) = 0
         ''',
-        <Object?>[now, safeUserId, safeNote, safeSaleId],
+        <Object?>[
+          now.millisecondsSinceEpoch,
+          safeUserId,
+          safeNote,
+          safeSaleId,
+        ],
       );
 
       await (_db.update(_db.sales)
