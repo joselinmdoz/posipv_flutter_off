@@ -7,8 +7,12 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Debug
+import android.print.PrintAttributes
+import android.print.PrintManager
 import android.provider.Settings
 import android.util.Base64
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -71,6 +75,19 @@ RQIDAQAB
                     val text = call.argument<String>("text").orEmpty()
                     val subject = call.argument<String>("subject")
                     result.success(shareText(text, subject))
+                }
+
+                "printTicketHtml" -> {
+                    val html = call.argument<String>("html").orEmpty()
+                    val jobName = call.argument<String>("jobName")
+                        ?.trim()
+                        ?.takeIf { it.isNotEmpty() }
+                        ?: "Ticket POSIPV"
+                    printTicketHtml(
+                        html = html,
+                        jobName = jobName,
+                        result = result
+                    )
                 }
 
                 "pickBackupFile" -> {
@@ -440,10 +457,85 @@ RQIDAQAB
                     putExtra(Intent.EXTRA_SUBJECT, subject)
                 }
             }
-            startActivity(Intent.createChooser(shareIntent, "Compartir codigo"))
+            startActivity(Intent.createChooser(shareIntent, "Compartir"))
             true
         } catch (_: Exception) {
             false
+        }
+    }
+
+    private fun printTicketHtml(
+        html: String,
+        jobName: String,
+        result: MethodChannel.Result
+    ) {
+        if (html.isBlank()) {
+            result.error(
+                "print_invalid_input",
+                "No hay contenido para imprimir.",
+                null
+            )
+            return
+        }
+        runOnUiThread {
+            try {
+                val printManager = getSystemService(PRINT_SERVICE) as? PrintManager
+                if (printManager == null) {
+                    result.error(
+                        "print_unavailable",
+                        "El servicio de impresion no esta disponible.",
+                        null
+                    )
+                    return@runOnUiThread
+                }
+                val webView = WebView(this)
+                var completed = false
+                webView.settings.javaScriptEnabled = false
+                webView.webViewClient = object : WebViewClient() {
+                    override fun onPageFinished(view: WebView?, url: String?) {
+                        super.onPageFinished(view, url)
+                        if (completed) {
+                            return
+                        }
+                        completed = true
+                        try {
+                            val printAdapter = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                                webView.createPrintDocumentAdapter(jobName)
+                            } else {
+                                @Suppress("DEPRECATION")
+                                webView.createPrintDocumentAdapter()
+                            }
+                            printManager.print(
+                                jobName,
+                                printAdapter,
+                                PrintAttributes.Builder().build()
+                            )
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error(
+                                "print_failed",
+                                e.message ?: "No se pudo iniciar la impresion.",
+                                null
+                            )
+                        } finally {
+                            webView.postDelayed({ webView.destroy() }, 800)
+                        }
+                    }
+                }
+                webView.loadDataWithBaseURL(
+                    null,
+                    html,
+                    "text/HTML",
+                    "UTF-8",
+                    null
+                )
+            } catch (e: Exception) {
+                result.error(
+                    "print_failed",
+                    e.message ?: "No se pudo preparar la impresion.",
+                    null
+                )
+            }
         }
     }
 }

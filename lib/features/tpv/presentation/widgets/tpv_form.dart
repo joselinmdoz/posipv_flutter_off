@@ -237,6 +237,7 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
 
     setState(() => _saving = true);
     try {
+      final String? actorUserId = ref.read(currentSessionProvider)?.userId;
       final config = TpvTerminalConfig(
         currencyCode: currencyCode,
         currencySymbol: currencySymbol,
@@ -254,6 +255,7 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
               warehouseId: selectedWarehouseValue,
               config: config,
               imagePath: _imagePath,
+              actorUserId: actorUserId,
               allowedEmployeeIds: _selectedEmployeeIds.toList(),
             );
       } else {
@@ -267,6 +269,7 @@ class _TpvFormPageState extends ConsumerState<TpvFormPage> {
               warehouseId: warehouseId,
               config: config,
               imagePath: _imagePath,
+              actorUserId: actorUserId,
               allowedEmployeeIds: _selectedEmployeeIds.toList(),
             );
       }

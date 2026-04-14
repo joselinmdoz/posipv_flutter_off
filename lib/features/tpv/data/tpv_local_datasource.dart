@@ -180,6 +180,26 @@ class TpvLocalDataSource {
     'consignment',
   ];
 
+  Future<void> _logAudit({
+    String? userId,
+    required String action,
+    required String entity,
+    required String entityId,
+    Map<String, Object?> payload = const <String, Object?>{},
+  }) {
+    final String? safeUserId = _normalizeOptional(userId);
+    return _db.into(_db.auditLogs).insert(
+          AuditLogsCompanion.insert(
+            id: _uuid.v4(),
+            userId: Value(safeUserId),
+            action: action,
+            entity: entity,
+            entityId: entityId,
+            payloadJson: jsonEncode(payload),
+          ),
+        );
+  }
+
   Future<List<PosTerminal>> listActiveTerminalOptions() {
     return (_db.select(_db.posTerminals)
           ..where((PosTerminals tbl) =>
@@ -311,6 +331,7 @@ class TpvLocalDataSource {
     String? warehouseId,
     TpvTerminalConfig? config,
     String? imagePath,
+    String? actorUserId,
     List<String> allowedEmployeeIds = const <String>[],
   }) async {
     await _licenseService.requireWriteAccess();
@@ -328,6 +349,7 @@ class TpvLocalDataSource {
       throw Exception('El nombre del TPV es obligatorio.');
     }
     final TpvTerminalConfig safeConfig = _sanitizeConfig(config);
+    final String? safeActorUserId = _normalizeOptional(actorUserId);
 
     final String resolvedCode = await _resolveTerminalCode(
       name: cleanName,
@@ -378,6 +400,23 @@ class TpvLocalDataSource {
         terminalId: terminalId,
         employeeIds: allowedEmployeeIds,
       );
+      final List<String> assignedEmployeeIds =
+          (await listAllowedEmployeeIdsForTerminal(terminalId)).toList()
+            ..sort();
+      await _logAudit(
+        userId: safeActorUserId,
+        action: 'TPV_TERMINAL_CREATED',
+        entity: 'tpv_terminal',
+        entityId: terminalId,
+        payload: <String, Object?>{
+          'code': resolvedCode,
+          'name': cleanName,
+          'warehouseId': resolvedWarehouseId,
+          'currencyCode': safeConfig.currencyCode,
+          'paymentMethods': safeConfig.paymentMethods,
+          'allowedEmployeeIds': assignedEmployeeIds,
+        },
+      );
 
       return terminalId;
     });
@@ -399,6 +438,7 @@ class TpvLocalDataSource {
     String? warehouseId,
     TpvTerminalConfig? config,
     String? imagePath,
+    String? actorUserId,
     List<String> allowedEmployeeIds = const <String>[],
   }) async {
     await _licenseService.requireWriteAccess();
@@ -428,6 +468,7 @@ class TpvLocalDataSource {
       );
     }
     final TpvTerminalConfig safeConfig = _sanitizeConfig(config);
+    final String? safeActorUserId = _normalizeOptional(actorUserId);
 
     await _db.transaction(() async {
       final Warehouse? currentWarehouse = await (_db.select(_db.warehouses)
@@ -469,6 +510,33 @@ class TpvLocalDataSource {
       await _replaceTerminalEmployeeAccess(
         terminalId: terminalId,
         employeeIds: allowedEmployeeIds,
+      );
+      final List<String> assignedEmployeeIds =
+          (await listAllowedEmployeeIdsForTerminal(terminalId)).toList()
+            ..sort();
+      await _logAudit(
+        userId: safeActorUserId,
+        action: 'TPV_TERMINAL_UPDATED',
+        entity: 'tpv_terminal',
+        entityId: terminalId,
+        payload: <String, Object?>{
+          'before': <String, Object?>{
+            'code': terminal.code,
+            'name': terminal.name,
+            'warehouseId': terminal.warehouseId,
+            'currencyCode': terminal.currencyCode,
+            'isActive': terminal.isActive,
+          },
+          'after': <String, Object?>{
+            'code': resolvedCode,
+            'name': cleanName,
+            'warehouseId': requestedWarehouseId,
+            'currencyCode': safeConfig.currencyCode,
+            'paymentMethods': safeConfig.paymentMethods,
+            'allowedEmployeeIds': assignedEmployeeIds,
+            'isActive': true,
+          },
+        },
       );
     });
   }
@@ -531,8 +599,12 @@ class TpvLocalDataSource {
     return options;
   }
 
-  Future<void> deactivateTerminal(String terminalId) async {
+  Future<void> deactivateTerminal(
+    String terminalId, {
+    String? actorUserId,
+  }) async {
     await _licenseService.requireWriteAccess();
+    final String? safeActorUserId = _normalizeOptional(actorUserId);
     final PosTerminal? terminal = await (_db.select(_db.posTerminals)
           ..where((PosTerminals tbl) => tbl.id.equals(terminalId)))
         .getSingleOrNull();
@@ -541,12 +613,13 @@ class TpvLocalDataSource {
     }
 
     await _db.transaction(() async {
+      final DateTime deactivatedAt = DateTime.now();
       await (_db.update(_db.posTerminals)
             ..where((PosTerminals tbl) => tbl.id.equals(terminalId)))
           .write(
         PosTerminalsCompanion(
           isActive: const Value(false),
-          updatedAt: Value(DateTime.now()),
+          updatedAt: Value(deactivatedAt),
         ),
       );
 
@@ -568,17 +641,44 @@ class TpvLocalDataSource {
             ..where((PosSessions tbl) =>
                 tbl.terminalId.equals(terminalId) & tbl.status.equals('open')))
           .get();
+      final List<String> autoClosedSessionIds = <String>[];
       for (final PosSession session in openSessions) {
         await (_db.update(_db.posSessions)
               ..where((PosSessions tbl) => tbl.id.equals(session.id)))
             .write(
           PosSessionsCompanion(
             status: const Value('closed'),
-            closedAt: Value(DateTime.now()),
+            closedAt: Value(deactivatedAt),
             note: const Value('Cierre automatico por baja de TPV'),
           ),
         );
+        autoClosedSessionIds.add(session.id);
+        await _logAudit(
+          userId: safeActorUserId,
+          action: 'TPV_SESSION_AUTO_CLOSED',
+          entity: 'pos_session',
+          entityId: session.id,
+          payload: <String, Object?>{
+            'terminalId': terminalId,
+            'terminalName': terminal.name,
+            'reason': 'terminal_deactivated',
+            'closedAt': deactivatedAt.toIso8601String(),
+          },
+        );
       }
+      await _logAudit(
+        userId: safeActorUserId,
+        action: 'TPV_TERMINAL_DEACTIVATED',
+        entity: 'tpv_terminal',
+        entityId: terminalId,
+        payload: <String, Object?>{
+          'code': terminal.code,
+          'name': terminal.name,
+          'warehouseId': terminal.warehouseId,
+          'deactivatedAt': deactivatedAt.toIso8601String(),
+          'autoClosedSessionIds': autoClosedSessionIds,
+        },
+      );
     });
   }
 
@@ -1242,6 +1342,10 @@ class TpvLocalDataSource {
     String? note,
   }) async {
     await _licenseService.requireSalesAccess();
+    final String safeUserId = userId.trim();
+    if (safeUserId.isEmpty) {
+      throw Exception('Usuario inválido.');
+    }
     final PosTerminal? terminal = await (_db.select(_db.posTerminals)
           ..where((PosTerminals tbl) => tbl.id.equals(terminalId)))
         .getSingleOrNull();
@@ -1295,7 +1399,7 @@ class TpvLocalDataSource {
             PosSessionsCompanion.insert(
               id: sessionId,
               terminalId: terminalId,
-              userId: userId,
+              userId: safeUserId,
               openedAt: Value(openedAt),
               openingFloatCents: Value(openingFloatCents),
               note: Value(_normalizeOptional(note)),
@@ -1320,7 +1424,7 @@ class TpvLocalDataSource {
               warehouseId: terminal.warehouseId,
               sessionId: sessionId,
               openedAt: Value(openedAt),
-              openedBy: userId,
+              openedBy: safeUserId,
               openingSource: Value(openingSnapshot.source),
               note: Value(_normalizeOptional(note)),
             ),
@@ -1352,6 +1456,23 @@ class TpvLocalDataSource {
               ),
             );
       }
+      final List<String> responsibleEmployeeIdList = responsibleIds.toList()
+        ..sort();
+      await _logAudit(
+        userId: safeUserId,
+        action: 'TPV_SESSION_OPENED',
+        entity: 'pos_session',
+        entityId: sessionId,
+        payload: <String, Object?>{
+          'terminalId': terminal.id,
+          'terminalName': terminal.name,
+          'warehouseId': terminal.warehouseId,
+          'openedAt': openedAt.toIso8601String(),
+          'openingFloatCents': openingFloatCents,
+          'responsibleEmployeeIds': responsibleEmployeeIdList,
+          'ipvReportId': reportId,
+        },
+      );
     });
     return sessionId;
   }
@@ -1543,8 +1664,12 @@ class TpvLocalDataSource {
     Map<int, int>? cashCountByDenomination,
   }) async {
     await _licenseService.requireSalesAccess();
+    final String safeSessionId = sessionId.trim();
+    if (safeSessionId.isEmpty) {
+      throw Exception('La sesion no existe.');
+    }
     final PosSession? session = await (_db.select(_db.posSessions)
-          ..where((PosSessions tbl) => tbl.id.equals(sessionId)))
+          ..where((PosSessions tbl) => tbl.id.equals(safeSessionId)))
         .getSingleOrNull();
     if (session == null) {
       throw Exception('La sesion no existe.');
@@ -1560,6 +1685,8 @@ class TpvLocalDataSource {
         : _computeClosingCashFromBreakdown(sanitizedBreakdown);
     final int? finalClosingCashCents =
         closingCashCents ?? inferredClosingCashCents;
+    final String? safeActorUserId = _normalizeOptional(closedByUserId) ??
+        _normalizeOptional(session.userId);
     final DateTime closedAt = DateTime.now();
     final PosTerminal? terminal = await (_db.select(_db.posTerminals)
           ..where((PosTerminals tbl) => tbl.id.equals(session.terminalId)))
@@ -1570,7 +1697,7 @@ class TpvLocalDataSource {
 
     await _db.transaction(() async {
       await (_db.update(_db.posSessions)
-            ..where((PosSessions tbl) => tbl.id.equals(sessionId)))
+            ..where((PosSessions tbl) => tbl.id.equals(safeSessionId)))
           .write(
         PosSessionsCompanion(
           status: const Value('closed'),
@@ -1582,13 +1709,13 @@ class TpvLocalDataSource {
 
       await (_db.delete(_db.posSessionCashBreakdowns)
             ..where((PosSessionCashBreakdowns tbl) =>
-                tbl.sessionId.equals(sessionId)))
+                tbl.sessionId.equals(safeSessionId)))
           .go();
 
       for (final MapEntry<int, int> entry in sanitizedBreakdown.entries) {
         await _db.into(_db.posSessionCashBreakdowns).insert(
               PosSessionCashBreakdownsCompanion.insert(
-                sessionId: sessionId,
+                sessionId: safeSessionId,
                 denominationCents: entry.key,
                 unitCount: Value(entry.value),
                 subtotalCents: Value(entry.key * entry.value),
@@ -1601,7 +1728,22 @@ class TpvLocalDataSource {
         terminal: terminal,
         closedAt: closedAt,
         closeNote: note,
-        closedByUserId: _normalizeOptional(closedByUserId) ?? session.userId,
+        closedByUserId: safeActorUserId ?? session.userId,
+      );
+      await _logAudit(
+        userId: safeActorUserId,
+        action: 'TPV_SESSION_CLOSED',
+        entity: 'pos_session',
+        entityId: safeSessionId,
+        payload: <String, Object?>{
+          'terminalId': terminal.id,
+          'terminalName': terminal.name,
+          'closedAt': closedAt.toIso8601String(),
+          'openingFloatCents': session.openingFloatCents,
+          'closingCashCents': finalClosingCashCents,
+          'cashBreakdown': sanitizedBreakdown,
+          'note': _normalizeOptional(note),
+        },
       );
     });
   }

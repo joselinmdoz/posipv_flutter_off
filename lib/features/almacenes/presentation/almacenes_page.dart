@@ -517,7 +517,10 @@ class _WarehouseFormPageState extends ConsumerState<_WarehouseFormPage> {
 
     try {
       if (_selectedType == 'TPV') {
-        await ref.read(tpvLocalDataSourceProvider).createTerminal(name: name);
+        await ref.read(tpvLocalDataSourceProvider).createTerminal(
+              name: name,
+              actorUserId: ref.read(currentSessionProvider)?.userId,
+            );
       } else {
         final ds = ref.read(almacenesLocalDataSourceProvider);
         await ds.createWarehouse(

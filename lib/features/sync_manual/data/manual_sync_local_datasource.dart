@@ -18,6 +18,8 @@ class ManualSyncExportResult {
     required this.saleCount,
     required this.paymentCount,
     required this.movementCount,
+    required this.ipvReportCount,
+    required this.ipvLineCount,
     required this.totalCents,
     required this.checksum,
   });
@@ -27,6 +29,8 @@ class ManualSyncExportResult {
   final int saleCount;
   final int paymentCount;
   final int movementCount;
+  final int ipvReportCount;
+  final int ipvLineCount;
   final int totalCents;
   final String checksum;
 }
@@ -40,6 +44,8 @@ class ManualSyncPackagePreview {
     required this.sourceTerminal,
     required this.saleCount,
     required this.movementCount,
+    required this.ipvReportCount,
+    required this.ipvLineCount,
     required this.totalCents,
     required this.exportedAt,
   });
@@ -51,6 +57,8 @@ class ManualSyncPackagePreview {
   final String sourceTerminal;
   final int saleCount;
   final int movementCount;
+  final int ipvReportCount;
+  final int ipvLineCount;
   final int totalCents;
   final DateTime? exportedAt;
 }
@@ -62,6 +70,8 @@ class ManualSyncImportResult {
     required this.saleCount,
     required this.paymentCount,
     required this.movementCount,
+    required this.ipvReportCount,
+    required this.ipvLineCount,
     required this.totalCents,
     required this.warnings,
   });
@@ -71,6 +81,8 @@ class ManualSyncImportResult {
   final int saleCount;
   final int paymentCount;
   final int movementCount;
+  final int ipvReportCount;
+  final int ipvLineCount;
   final int totalCents;
   final List<String> warnings;
 }
@@ -212,6 +224,21 @@ class ManualSyncLocalDataSource {
                     OrderingTerm.desc(tbl.denominationCents),
               ]))
             .get();
+    final IpvReport? ipvReport = await (_db.select(_db.ipvReports)
+          ..where((IpvReports tbl) => tbl.sessionId.equals(session.id)))
+        .getSingleOrNull();
+    final List<IpvReportLine> ipvReportLines = ipvReport == null
+        ? <IpvReportLine>[]
+        : await (_db.select(_db.ipvReportLines)
+              ..where((IpvReportLines tbl) => tbl.reportId.equals(ipvReport.id))
+              ..orderBy(<OrderingTerm Function(IpvReportLines)>[
+                (IpvReportLines tbl) =>
+                    OrderingTerm.asc(tbl.productNameSnapshot),
+                (IpvReportLines tbl) =>
+                    OrderingTerm.asc(tbl.productSkuSnapshot),
+                (IpvReportLines tbl) => OrderingTerm.asc(tbl.productId),
+              ]))
+            .get();
 
     final List<StockMovement> saleLinkedMovements = saleIds.isEmpty
         ? <StockMovement>[]
@@ -306,6 +333,8 @@ class ManualSyncLocalDataSource {
         'saleCount': sales.length,
         'paymentCount': payments.length,
         'movementCount': movements.length,
+        'ipvReportCount': ipvReport == null ? 0 : 1,
+        'ipvLineCount': ipvReportLines.length,
         'totalCents': totalCents,
       },
       'data': <String, Object?>{
@@ -321,6 +350,11 @@ class ManualSyncLocalDataSource {
         'saleItems': saleItems.map(_mapSaleItem).toList(growable: false),
         'payments': payments.map(_mapPayment).toList(growable: false),
         'stockMovements': movements.map(_mapMovement).toList(growable: false),
+        'ipvReports': ipvReport == null
+            ? const <Map<String, Object?>>[]
+            : <Map<String, Object?>>[_mapIpvReport(ipvReport)],
+        'ipvReportLines':
+            ipvReportLines.map(_mapIpvReportLine).toList(growable: false),
       },
     };
 
@@ -343,6 +377,8 @@ class ManualSyncLocalDataSource {
       saleCount: sales.length,
       paymentCount: payments.length,
       movementCount: movements.length,
+      ipvReportCount: ipvReport == null ? 0 : 1,
+      ipvLineCount: ipvReportLines.length,
       totalCents: totalCents,
       checksum: checksum,
     );
@@ -360,6 +396,8 @@ class ManualSyncLocalDataSource {
         sourceTerminal: '',
         saleCount: 0,
         movementCount: 0,
+        ipvReportCount: 0,
+        ipvLineCount: 0,
         totalCents: 0,
         exportedAt: null,
       );
@@ -374,6 +412,8 @@ class ManualSyncLocalDataSource {
         sourceTerminal: '',
         saleCount: 0,
         movementCount: 0,
+        ipvReportCount: 0,
+        ipvLineCount: 0,
         totalCents: 0,
         exportedAt: null,
       );
@@ -391,6 +431,8 @@ class ManualSyncLocalDataSource {
           sourceTerminal: '',
           saleCount: 0,
           movementCount: 0,
+          ipvReportCount: 0,
+          ipvLineCount: 0,
           totalCents: 0,
           exportedAt: null,
         );
@@ -406,6 +448,8 @@ class ManualSyncLocalDataSource {
           sourceTerminal: '',
           saleCount: 0,
           movementCount: 0,
+          ipvReportCount: 0,
+          ipvLineCount: 0,
           totalCents: 0,
           exportedAt: null,
         );
@@ -444,6 +488,8 @@ class ManualSyncLocalDataSource {
         sourceTerminal: (source['terminalName'] as String? ?? '').trim(),
         saleCount: (summary['saleCount'] as num?)?.toInt() ?? 0,
         movementCount: (summary['movementCount'] as num?)?.toInt() ?? 0,
+        ipvReportCount: (summary['ipvReportCount'] as num?)?.toInt() ?? 0,
+        ipvLineCount: (summary['ipvLineCount'] as num?)?.toInt() ?? 0,
         totalCents: (summary['totalCents'] as num?)?.toInt() ?? 0,
         exportedAt: exportedAt,
       );
@@ -456,6 +502,8 @@ class ManualSyncLocalDataSource {
         sourceTerminal: '',
         saleCount: 0,
         movementCount: 0,
+        ipvReportCount: 0,
+        ipvLineCount: 0,
         totalCents: 0,
         exportedAt: null,
       );
@@ -586,6 +634,10 @@ class ManualSyncLocalDataSource {
     final List<Map<String, dynamic>> paymentsRaw = _asMapList(data['payments']);
     final List<Map<String, dynamic>> movementsRaw =
         _asMapList(data['stockMovements']);
+    final List<Map<String, dynamic>> ipvReportsRaw =
+        _asMapList(data['ipvReports']);
+    final List<Map<String, dynamic>> ipvReportLinesRaw =
+        _asMapList(data['ipvReportLines']);
 
     final String packageSessionId =
         (decoded['sessionId'] as String? ?? '').trim();
@@ -597,6 +649,8 @@ class ManualSyncLocalDataSource {
     int importedSales = 0;
     int importedPayments = 0;
     int importedMovements = 0;
+    int importedIpvReports = 0;
+    int importedIpvLines = 0;
     final List<String> warnings = <String>[];
 
     final Map<String, String> userIdMap = <String, String>{};
@@ -607,6 +661,7 @@ class ManualSyncLocalDataSource {
     final Map<String, String> sessionIdMap = <String, String>{};
     final Map<String, String> saleIdMap = <String, String>{};
     final Map<String, String> saleWarehouseById = <String, String>{};
+    final Map<String, String> ipvReportIdMap = <String, String>{};
     final Set<String> newlyImportedSaleIds = <String>{};
 
     await _db.transaction(() async {
@@ -902,6 +957,146 @@ class ManualSyncLocalDataSource {
             );
       }
 
+      for (final Map<String, dynamic> row in ipvReportsRaw) {
+        final String remoteId = _readString(row['id']);
+        if (remoteId.isEmpty) {
+          continue;
+        }
+        final String resolvedTerminalId =
+            terminalIdMap[_readString(row['terminalId'])] ??
+                _readString(row['terminalId']);
+        final String resolvedWarehouseId =
+            warehouseIdMap[_readString(row['warehouseId'])] ??
+                _readString(row['warehouseId']);
+        final String resolvedSessionId =
+            sessionIdMap[_readString(row['sessionId'])] ??
+                _readString(row['sessionId']);
+        final String resolvedOpenedBy =
+            userIdMap[_readString(row['openedBy'])] ??
+                _readString(row['openedBy']);
+        final String? resolvedClosedBy = _resolveNullableMappedId(
+          rawId: _readStringOrNull(row['closedBy']),
+          idMap: userIdMap,
+        );
+        if (resolvedTerminalId.isEmpty ||
+            resolvedWarehouseId.isEmpty ||
+            resolvedSessionId.isEmpty ||
+            resolvedOpenedBy.isEmpty) {
+          continue;
+        }
+
+        final IpvReport? byId = await (_db.select(_db.ipvReports)
+              ..where((IpvReports tbl) => tbl.id.equals(remoteId)))
+            .getSingleOrNull();
+        if (byId != null) {
+          await (_db.update(_db.ipvReports)
+                ..where((IpvReports tbl) => tbl.id.equals(byId.id)))
+              .write(
+            IpvReportsCompanion(
+              terminalId: Value(resolvedTerminalId),
+              warehouseId: Value(resolvedWarehouseId),
+              sessionId: Value(resolvedSessionId),
+              status: Value(_readString(row['status'], fallback: 'open')),
+              openedAt: Value(
+                _readDateTime(row['openedAt'], fallback: DateTime.now()),
+              ),
+              closedAt: Value(_readDateTimeOrNull(row['closedAt'])),
+              openedBy: Value(resolvedOpenedBy),
+              closedBy: Value(resolvedClosedBy),
+              openingSource: Value(
+                _readString(row['openingSource'], fallback: 'initial_stock'),
+              ),
+              note: Value(_readStringOrNull(row['note'])),
+            ),
+          );
+          ipvReportIdMap[remoteId] = byId.id;
+          continue;
+        }
+
+        final IpvReport? bySession = await (_db.select(_db.ipvReports)
+              ..where(
+                  (IpvReports tbl) => tbl.sessionId.equals(resolvedSessionId)))
+            .getSingleOrNull();
+        if (bySession != null) {
+          await (_db.update(_db.ipvReports)
+                ..where((IpvReports tbl) => tbl.id.equals(bySession.id)))
+              .write(
+            IpvReportsCompanion(
+              terminalId: Value(resolvedTerminalId),
+              warehouseId: Value(resolvedWarehouseId),
+              status: Value(_readString(row['status'], fallback: 'open')),
+              openedAt: Value(
+                _readDateTime(row['openedAt'], fallback: DateTime.now()),
+              ),
+              closedAt: Value(_readDateTimeOrNull(row['closedAt'])),
+              openedBy: Value(resolvedOpenedBy),
+              closedBy: Value(resolvedClosedBy),
+              openingSource: Value(
+                _readString(row['openingSource'], fallback: 'initial_stock'),
+              ),
+              note: Value(_readStringOrNull(row['note'])),
+            ),
+          );
+          ipvReportIdMap[remoteId] = bySession.id;
+          warnings.add(
+            'IPV del turno "$resolvedSessionId" ya existía; se actualizó.',
+          );
+          continue;
+        }
+
+        await _db.into(_db.ipvReports).insert(
+              IpvReportsCompanion.insert(
+                id: remoteId,
+                terminalId: resolvedTerminalId,
+                warehouseId: resolvedWarehouseId,
+                sessionId: resolvedSessionId,
+                status: Value(_readString(row['status'], fallback: 'open')),
+                openedAt: Value(
+                  _readDateTime(row['openedAt'], fallback: DateTime.now()),
+                ),
+                closedAt: Value(_readDateTimeOrNull(row['closedAt'])),
+                openedBy: resolvedOpenedBy,
+                closedBy: Value(resolvedClosedBy),
+                openingSource: Value(
+                  _readString(row['openingSource'], fallback: 'initial_stock'),
+                ),
+                note: Value(_readStringOrNull(row['note'])),
+              ),
+            );
+        ipvReportIdMap[remoteId] = remoteId;
+        importedIpvReports += 1;
+      }
+
+      for (final Map<String, dynamic> row in ipvReportLinesRaw) {
+        final String remoteReportId = _readString(row['reportId']);
+        final String resolvedReportId =
+            ipvReportIdMap[remoteReportId] ?? remoteReportId;
+        final String resolvedProductId =
+            productIdMap[_readString(row['productId'])] ??
+                _readString(row['productId']);
+        if (resolvedReportId.isEmpty || resolvedProductId.isEmpty) {
+          continue;
+        }
+        await _db.into(_db.ipvReportLines).insertOnConflictUpdate(
+              IpvReportLinesCompanion.insert(
+                reportId: resolvedReportId,
+                productId: resolvedProductId,
+                productNameSnapshot:
+                    Value(_readStringOrNull(row['productNameSnapshot'])),
+                productSkuSnapshot:
+                    Value(_readStringOrNull(row['productSkuSnapshot'])),
+                startQty: Value(_readDouble(row['startQty'])),
+                entriesQty: Value(_readDouble(row['entriesQty'])),
+                outputsQty: Value(_readDouble(row['outputsQty'])),
+                salesQty: Value(_readDouble(row['salesQty'])),
+                finalQty: Value(_readDouble(row['finalQty'])),
+                salePriceCents: Value(_readInt(row['salePriceCents'])),
+                totalAmountCents: Value(_readInt(row['totalAmountCents'])),
+              ),
+            );
+        importedIpvLines += 1;
+      }
+
       for (final Map<String, dynamic> row in salesRaw) {
         final String remoteId = _readString(row['id']);
         final String folio = _readString(row['folio']);
@@ -1162,6 +1357,8 @@ class ManualSyncLocalDataSource {
       saleCount: importedSales,
       paymentCount: importedPayments,
       movementCount: importedMovements,
+      ipvReportCount: importedIpvReports,
+      ipvLineCount: importedIpvLines,
       totalCents: packageTotalCents,
       warnings: warnings,
     );
@@ -1798,6 +1995,38 @@ class ManualSyncLocalDataSource {
       'note': row.note,
       'createdBy': row.createdBy,
       'createdAt': row.createdAt.toIso8601String(),
+    };
+  }
+
+  Map<String, Object?> _mapIpvReport(IpvReport row) {
+    return <String, Object?>{
+      'id': row.id,
+      'terminalId': row.terminalId,
+      'warehouseId': row.warehouseId,
+      'sessionId': row.sessionId,
+      'status': row.status,
+      'openedAt': row.openedAt.toIso8601String(),
+      'closedAt': row.closedAt?.toIso8601String(),
+      'openedBy': row.openedBy,
+      'closedBy': row.closedBy,
+      'openingSource': row.openingSource,
+      'note': row.note,
+    };
+  }
+
+  Map<String, Object?> _mapIpvReportLine(IpvReportLine row) {
+    return <String, Object?>{
+      'reportId': row.reportId,
+      'productId': row.productId,
+      'productNameSnapshot': row.productNameSnapshot,
+      'productSkuSnapshot': row.productSkuSnapshot,
+      'startQty': row.startQty,
+      'entriesQty': row.entriesQty,
+      'outputsQty': row.outputsQty,
+      'salesQty': row.salesQty,
+      'finalQty': row.finalQty,
+      'salePriceCents': row.salePriceCents,
+      'totalAmountCents': row.totalAmountCents,
     };
   }
 }

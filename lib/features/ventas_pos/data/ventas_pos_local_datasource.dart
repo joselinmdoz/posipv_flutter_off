@@ -58,4 +58,32 @@ class VentasPosLocalDataSource {
       userId: userId,
     );
   }
+
+  Future<List<SaleStockIntegrityIssue>> listSalesStockIntegrityIssues({
+    required String userId,
+    int maxSales = 250,
+  }) {
+    return _saleService.listSalesStockIntegrityIssues(
+      userId: userId,
+      maxSales: maxSales,
+    );
+  }
+
+  Future<SaleStockIntegrityRepairResult> repairSalesStockIntegrity({
+    required String userId,
+    bool dryRun = false,
+    bool allowNegativeStock = true,
+    int sampleLimit = 12,
+    Iterable<String>? saleIds,
+    Iterable<SaleStockIntegrityRepairTarget>? targets,
+  }) {
+    return _saleService.repairSalesStockIntegrity(
+      userId: userId,
+      dryRun: dryRun,
+      allowNegativeStock: allowNegativeStock,
+      sampleLimit: sampleLimit,
+      saleIds: saleIds,
+      targets: targets,
+    );
+  }
 }

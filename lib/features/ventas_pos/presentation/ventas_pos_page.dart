@@ -978,9 +978,30 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     await showDialog<void>(
       context: context,
       builder: (BuildContext context) {
-        return PosSaleReceiptPage(receipt: receipt);
+        return PosSaleReceiptPage(
+          receipt: receipt,
+          onPrint: () => _printReceipt(receipt),
+          onShare: () => _shareReceipt(receipt),
+        );
       },
     );
+  }
+
+  Future<void> _printReceipt(SaleReceipt receipt) async {
+    try {
+      await ref.read(saleTicketPrintServiceProvider).printReceipt(receipt);
+      _show('Se envio el ticket a impresion.');
+    } catch (e) {
+      _show('No se pudo imprimir el ticket: $e');
+    }
+  }
+
+  Future<void> _shareReceipt(SaleReceipt receipt) async {
+    try {
+      await ref.read(saleTicketPrintServiceProvider).shareReceipt(receipt);
+    } catch (e) {
+      _show('No se pudo compartir el ticket: $e');
+    }
   }
 
   Future<void> _openQuickStockDialog() async {

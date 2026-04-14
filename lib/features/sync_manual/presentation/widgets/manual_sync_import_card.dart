@@ -216,6 +216,8 @@ class _PreviewPanel extends StatelessWidget {
           ),
           Text('Ventas: ${preview.saleCount}'),
           Text('Movimientos: ${preview.movementCount}'),
+          Text(
+              'IPV: ${preview.ipvReportCount} (${preview.ipvLineCount} líneas)'),
           Text('Total: ${_formatCents(preview.totalCents)}'),
           if (preview.exportedAt != null)
             Text('Exportado: ${_formatDateTime(preview.exportedAt!)}'),
@@ -250,6 +252,9 @@ class _ImportResultPanel extends StatelessWidget {
           Text('Ventas nuevas: ${result.saleCount}'),
           Text('Pagos nuevos: ${result.paymentCount}'),
           Text('Movimientos nuevos: ${result.movementCount}'),
+          Text(
+            'IPV importados: ${result.ipvReportCount} (${result.ipvLineCount} líneas)',
+          ),
           Text('Total paquete: ${_formatCents(result.totalCents)}'),
           if (result.warnings.isNotEmpty) ...<Widget>[
             const SizedBox(height: 8),

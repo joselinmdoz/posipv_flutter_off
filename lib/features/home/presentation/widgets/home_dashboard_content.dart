@@ -96,6 +96,7 @@ class HomeDashboardContent extends StatelessWidget {
           recentSales: dashboard.recentSales,
           recentSessionClosures: dashboard.recentSessionClosures,
           recentIpvReports: dashboard.recentIpvReports,
+          recentAuditActivities: dashboard.recentAuditActivities,
           currencySymbol: currencySymbol,
           moneyFormatter: moneyFormatter,
           onViewAllTap: onViewAllActivityTap,

@@ -137,6 +137,7 @@ class _HomeRecentActivityPageState
                       recentSales: dashboard.recentSales,
                       recentSessionClosures: dashboard.recentSessionClosures,
                       recentIpvReports: dashboard.recentIpvReports,
+                      recentAuditActivities: dashboard.recentAuditActivities,
                       currencySymbol: _currencySymbol,
                       moneyFormatter: _money,
                       maxItems: null,

@@ -5,6 +5,7 @@ class HomeRecentActivity extends StatelessWidget {
   final List<RecentSaleStat> recentSales;
   final List<RecentSessionClosureStat> recentSessionClosures;
   final List<IpvReportSummaryStat> recentIpvReports;
+  final List<RecentAuditActivityStat> recentAuditActivities;
   final String currencySymbol;
   final String Function(int) moneyFormatter;
   final VoidCallback? onViewAllTap;
@@ -16,6 +17,7 @@ class HomeRecentActivity extends StatelessWidget {
     required this.recentSales,
     required this.recentSessionClosures,
     required this.recentIpvReports,
+    required this.recentAuditActivities,
     required this.currencySymbol,
     required this.moneyFormatter,
     this.onViewAllTap,
@@ -77,8 +79,9 @@ class HomeRecentActivity extends StatelessWidget {
                 color: isDark ? const Color(0xFF1E293B) : Colors.white,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color:
-                      isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                  color: isDark
+                      ? const Color(0xFF334155)
+                      : const Color(0xFFF1F5F9),
                 ),
                 boxShadow: isDark
                     ? <BoxShadow>[]
@@ -172,6 +175,19 @@ class HomeRecentActivity extends StatelessWidget {
           isPositiveAmount: true,
         );
       }),
+      ...recentAuditActivities.map((RecentAuditActivityStat audit) {
+        final _AuditVisual visual = _auditVisualForAction(audit.action);
+        return _ActivityEntry(
+          timestamp: audit.createdAt,
+          title: audit.title,
+          subtitle: audit.subtitle,
+          status: audit.status,
+          amount: '-',
+          icon: visual.icon,
+          accentColor: visual.color,
+          isPositiveAmount: false,
+        );
+      }),
     ];
 
     rows.sort(
@@ -186,6 +202,47 @@ class HomeRecentActivity extends StatelessWidget {
     final String effectiveSymbol =
         cleanSymbol.isNotEmpty ? cleanSymbol : currencySymbol;
     return '$effectiveSymbol${(cents / 100).toStringAsFixed(2)}';
+  }
+
+  _AuditVisual _auditVisualForAction(String action) {
+    final String safeAction = action.trim().toUpperCase();
+    switch (safeAction) {
+      case 'TPV_TERMINAL_CREATED':
+        return const _AuditVisual(
+          icon: Icons.add_business_rounded,
+          color: Color(0xFF16A34A),
+        );
+      case 'TPV_TERMINAL_UPDATED':
+        return const _AuditVisual(
+          icon: Icons.edit_note_rounded,
+          color: Color(0xFF0284C7),
+        );
+      case 'TPV_TERMINAL_DEACTIVATED':
+        return const _AuditVisual(
+          icon: Icons.domain_disabled_rounded,
+          color: Color(0xFFDC2626),
+        );
+      case 'TPV_SESSION_OPENED':
+        return const _AuditVisual(
+          icon: Icons.play_circle_fill_rounded,
+          color: Color(0xFF0EA5E9),
+        );
+      case 'TPV_SESSION_CLOSED':
+        return const _AuditVisual(
+          icon: Icons.stop_circle_rounded,
+          color: Color(0xFFEA580C),
+        );
+      case 'TPV_SESSION_AUTO_CLOSED':
+        return const _AuditVisual(
+          icon: Icons.auto_mode_rounded,
+          color: Color(0xFF7C3AED),
+        );
+      default:
+        return const _AuditVisual(
+          icon: Icons.history_rounded,
+          color: Color(0xFF64748B),
+        );
+    }
   }
 
   String _formatTimestamp(DateTime value) {
@@ -302,4 +359,14 @@ class _ActivityEntry {
   final IconData icon;
   final Color accentColor;
   final bool isPositiveAmount;
+}
+
+class _AuditVisual {
+  const _AuditVisual({
+    required this.icon,
+    required this.color,
+  });
+
+  final IconData icon;
+  final Color color;
 }

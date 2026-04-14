@@ -11,6 +11,7 @@ import '../../../productos/presentation/productos_providers.dart';
 import '../../data/reportes_local_datasource.dart';
 import '../../../ventas_pos/presentation/ventas_pos_providers.dart';
 import '../../../ventas_pos/domain/sale_models.dart';
+import '../../../ventas_pos/domain/sale_receipt.dart';
 import '../reportes_providers.dart';
 
 class AnalyticsSaleDetailPage extends ConsumerStatefulWidget {
@@ -34,6 +35,8 @@ class _AnalyticsSaleDetailPageState
   SalesAnalyticsSaleDetailStat? detail;
   bool _savingEdit = false;
   bool _hasChanges = false;
+  bool _printingTicket = false;
+  bool _sharingTicket = false;
   Map<String, String> _paymentMethodLabelsByCode = <String, String>{};
 
   @override
@@ -222,6 +225,103 @@ class _AnalyticsSaleDetailPageState
       return 'Metodo';
     }
     return _paymentMethodLabelsByCode[code] ?? defaultPaymentMethodLabel(code);
+  }
+
+  SaleReceipt? _buildReceiptForCurrentDetail() {
+    final SalesAnalyticsSaleDetailStat? current = detail;
+    if (current == null) {
+      return null;
+    }
+    final int paidCents = current.payments.fold<int>(
+      0,
+      (int sum, SalesAnalyticsSalePaymentStat row) => sum + row.amountCents,
+    );
+    final int inferredDiscount =
+        (current.subtotalCents + current.taxCents) - current.totalCents;
+    return SaleReceipt(
+      folio: current.sale.folio,
+      createdAt: current.sale.createdAt,
+      cashierUsername: current.sale.cashierUsername,
+      terminalName: (current.sale.terminalName ?? '').trim().isEmpty
+          ? 'Venta directa'
+          : current.sale.terminalName!.trim(),
+      warehouseName: current.sale.warehouseName,
+      customerName: current.sale.customerName,
+      lines: current.lines
+          .map(
+            (SalesAnalyticsSaleLineStat line) => SaleReceiptLine(
+              name: line.productName,
+              sku: line.sku,
+              qty: line.qty,
+              unitPriceCents: line.unitPriceCents,
+              taxRateBps: line.taxRateBps,
+              unitPriceDisplay: _money(line.unitPriceCents),
+              lineTotalDisplay: _money(line.lineTotalCents),
+            ),
+          )
+          .toList(growable: false),
+      subtotalCents: current.subtotalCents,
+      taxCents: current.taxCents,
+      discountCents: inferredDiscount > 0 ? inferredDiscount : 0,
+      totalCents: current.totalCents,
+      payments: current.payments.isEmpty
+          ? const <ReceiptPayment>[
+              ReceiptPayment(
+                method: 'Consignacion (pendiente)',
+                amountCents: 0,
+              ),
+            ]
+          : current.payments
+              .map(
+                (SalesAnalyticsSalePaymentStat row) => ReceiptPayment(
+                  method: (row.transactionId ?? '').trim().isEmpty
+                      ? _paymentMethodLabel(row.method)
+                      : '${_paymentMethodLabel(row.method)} • TX: ${row.transactionId!.trim()}',
+                  amountCents: row.amountCents,
+                ),
+              )
+              .toList(growable: false),
+      paidCents: paidCents,
+      receivedCents: paidCents,
+      changeCents: 0,
+      changeReturned: true,
+      currencySymbol: widget.currencySymbol,
+    );
+  }
+
+  Future<void> _printTicket() async {
+    final SaleReceipt? receipt = _buildReceiptForCurrentDetail();
+    if (receipt == null || _printingTicket) {
+      return;
+    }
+    setState(() => _printingTicket = true);
+    try {
+      await ref.read(saleTicketPrintServiceProvider).printReceipt(receipt);
+      _show('Se envio el ticket a impresion.');
+    } catch (e) {
+      _show('No se pudo imprimir el ticket: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _printingTicket = false);
+      }
+    }
+  }
+
+  Future<void> _shareTicket() async {
+    final SaleReceipt? receipt = _buildReceiptForCurrentDetail();
+    if (receipt == null || _sharingTicket) {
+      return;
+    }
+    setState(() => _sharingTicket = true);
+    try {
+      await ref.read(saleTicketPrintServiceProvider).shareReceipt(receipt);
+    } catch (e) {
+      _show('No se pudo compartir el ticket: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _sharingTicket = false);
+      }
+    }
   }
 
   @override
@@ -721,7 +821,9 @@ class _AnalyticsSaleDetailPageState
                             children: <Widget>[
                               Expanded(
                                 child: _buildActionButton(
-                                  label: 'Imprimir Ticket',
+                                  label: _printingTicket
+                                      ? 'Imprimiendo...'
+                                      : 'Imprimir Ticket',
                                   icon: Icons.print_outlined,
                                   bgColor: isDark
                                       ? const Color(0xFF1E293B)
@@ -729,23 +831,23 @@ class _AnalyticsSaleDetailPageState
                                   textColor: isDark
                                       ? Colors.white
                                       : const Color(0xFF1F2937),
-                                  onTap: () => _show(
-                                      'Impresión de ticket: próximamente.'),
+                                  onTap: _printTicket,
                                 ),
                               ),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: _buildActionButton(
-                                  label: 'Enviar por Email',
-                                  icon: Icons.mail_outline_rounded,
+                                  label: _sharingTicket
+                                      ? 'Compartiendo...'
+                                      : 'Compartir Ticket',
+                                  icon: Icons.share_outlined,
                                   bgColor: isDark
                                       ? const Color(0xFF1E293B)
                                       : const Color(0xFFE9EDF2),
                                   textColor: isDark
                                       ? Colors.white
                                       : const Color(0xFF1F2937),
-                                  onTap: () =>
-                                      _show('Envío por email: próximamente.'),
+                                  onTap: _shareTicket,
                                 ),
                               ),
                             ],

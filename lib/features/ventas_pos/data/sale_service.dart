@@ -34,6 +34,92 @@ class ArchivedSaleView {
   final String? customerName;
 }
 
+class SaleStockIntegrityRepairResult {
+  const SaleStockIntegrityRepairResult({
+    required this.postedSalesCount,
+    required this.affectedSalesCount,
+    required this.affectedLinesCount,
+    required this.missingQtyTotal,
+    required this.salesWithPurgeEvidence,
+    required this.salesWithVoidedMovements,
+    required this.movementsRebuilt,
+    required this.stockAdjustments,
+    required this.skippedForNegativeStock,
+    required this.sampleFolios,
+    required this.dryRun,
+  });
+
+  final int postedSalesCount;
+  final int affectedSalesCount;
+  final int affectedLinesCount;
+  final double missingQtyTotal;
+  final int salesWithPurgeEvidence;
+  final int salesWithVoidedMovements;
+  final int movementsRebuilt;
+  final int stockAdjustments;
+  final int skippedForNegativeStock;
+  final List<String> sampleFolios;
+  final bool dryRun;
+}
+
+class SaleStockIntegrityIssueLine {
+  const SaleStockIntegrityIssueLine({
+    required this.productId,
+    required this.productName,
+    required this.productSku,
+    required this.expectedQty,
+    required this.coveredQty,
+    required this.missingQty,
+    required this.voidedQty,
+  });
+
+  final String productId;
+  final String productName;
+  final String productSku;
+  final double expectedQty;
+  final double coveredQty;
+  final double missingQty;
+  final double voidedQty;
+}
+
+class SaleStockIntegrityIssue {
+  const SaleStockIntegrityIssue({
+    required this.saleId,
+    required this.folio,
+    required this.createdAt,
+    required this.warehouseId,
+    required this.warehouseName,
+    required this.cashierId,
+    required this.terminalId,
+    required this.hasPurgeEvidence,
+    required this.hasVoidedMovements,
+    required this.totalMissingQty,
+    required this.lines,
+  });
+
+  final String saleId;
+  final String folio;
+  final DateTime createdAt;
+  final String warehouseId;
+  final String warehouseName;
+  final String cashierId;
+  final String terminalId;
+  final bool hasPurgeEvidence;
+  final bool hasVoidedMovements;
+  final double totalMissingQty;
+  final List<SaleStockIntegrityIssueLine> lines;
+}
+
+class SaleStockIntegrityRepairTarget {
+  const SaleStockIntegrityRepairTarget({
+    required this.saleId,
+    required this.productId,
+  });
+
+  final String saleId;
+  final String productId;
+}
+
 class SaleService {
   SaleService(
     this._db, {
@@ -1280,6 +1366,335 @@ class SaleService {
     });
   }
 
+  Future<List<SaleStockIntegrityIssue>> listSalesStockIntegrityIssues({
+    required String userId,
+    int maxSales = 250,
+  }) async {
+    await _licenseService.requireWriteAccess();
+    final String safeUserId = userId.trim();
+    if (safeUserId.isEmpty) {
+      throw const _SaleException('Usuario inválido.');
+    }
+    final bool isAdmin = await _userHasAdminRole(safeUserId);
+    if (!isAdmin) {
+      throw const _SaleException(
+        'Solo un administrador puede consultar integridad ventas/stock.',
+      );
+    }
+    final int safeLimit = maxSales < 1 ? 1 : maxSales;
+    final List<_SalesStockMismatchRow> mismatchRows =
+        await _loadSalesStockMismatchRows();
+    if (mismatchRows.isEmpty) {
+      return const <SaleStockIntegrityIssue>[];
+    }
+
+    final Map<String, _SaleStockIssueBuilder> issueBySaleId =
+        <String, _SaleStockIssueBuilder>{};
+    for (final _SalesStockMismatchRow row in mismatchRows) {
+      final _SaleStockIssueBuilder issue = issueBySaleId.putIfAbsent(
+        row.saleId,
+        () => _SaleStockIssueBuilder(
+          saleId: row.saleId,
+          folio: row.folio,
+          createdAt: row.createdAt,
+          warehouseId: row.warehouseId,
+          warehouseName: row.warehouseName,
+          cashierId: row.cashierId,
+          terminalId: row.terminalId,
+        ),
+      );
+      issue.totalMissingQty += row.missingQty;
+      if (row.voidedQty > 0.000001) {
+        issue.hasVoidedMovements = true;
+      }
+      issue.lines.add(
+        SaleStockIntegrityIssueLine(
+          productId: row.productId,
+          productName: row.productName,
+          productSku: row.productSku,
+          expectedQty: row.expectedQty,
+          coveredQty: row.coveredQty,
+          missingQty: row.missingQty,
+          voidedQty: row.voidedQty,
+        ),
+      );
+    }
+
+    final List<String> saleIds = issueBySaleId.keys.toList(growable: false);
+    for (final String saleId in saleIds) {
+      issueBySaleId[saleId]!.hasPurgeEvidence =
+          await _hasPurgedSaleMovementEvidence(saleId);
+    }
+
+    final List<SaleStockIntegrityIssue> issues = issueBySaleId.values
+        .map((issue) => issue.build())
+        .toList(growable: false)
+      ..sort(
+        (SaleStockIntegrityIssue a, SaleStockIntegrityIssue b) =>
+            b.createdAt.compareTo(a.createdAt),
+      );
+    if (issues.length <= safeLimit) {
+      return issues;
+    }
+    return issues.take(safeLimit).toList(growable: false);
+  }
+
+  Future<SaleStockIntegrityRepairResult> repairSalesStockIntegrity({
+    required String userId,
+    bool dryRun = false,
+    bool allowNegativeStock = true,
+    int sampleLimit = 12,
+    Iterable<String>? saleIds,
+    Iterable<SaleStockIntegrityRepairTarget>? targets,
+  }) async {
+    await _licenseService.requireWriteAccess();
+    final String safeUserId = userId.trim();
+    if (safeUserId.isEmpty) {
+      throw const _SaleException('Usuario inválido.');
+    }
+    final bool isAdmin = await _userHasAdminRole(safeUserId);
+    if (!isAdmin) {
+      throw const _SaleException(
+        'Solo un administrador puede reparar integridad ventas/stock.',
+      );
+    }
+
+    return _db.transaction(() async {
+      final Map<String, Set<String>> selectedProductsBySaleId =
+          <String, Set<String>>{};
+      for (final SaleStockIntegrityRepairTarget target
+          in (targets ?? const <SaleStockIntegrityRepairTarget>[])) {
+        final String safeSaleId = target.saleId.trim();
+        final String safeProductId = target.productId.trim();
+        if (safeSaleId.isEmpty || safeProductId.isEmpty) {
+          continue;
+        }
+        selectedProductsBySaleId
+            .putIfAbsent(safeSaleId, () => <String>{})
+            .add(safeProductId);
+      }
+      final Set<String> selectedSaleIds = (saleIds ?? const <String>[])
+          .map((String value) => value.trim())
+          .where((String value) => value.isNotEmpty)
+          .toSet();
+      selectedSaleIds.addAll(selectedProductsBySaleId.keys);
+      final Expression<int> postedCountExp = _db.sales.id.count();
+      final TypedResult postedCountRow = await (_db.selectOnly(_db.sales)
+            ..addColumns(<Expression<Object>>[postedCountExp])
+            ..where(_db.sales.status.equals('posted')))
+          .getSingle();
+      final int postedSalesCount = postedCountRow.read(postedCountExp) ?? 0;
+
+      final List<_SalesStockMismatchRow> mismatchRows =
+          await _loadSalesStockMismatchRows(
+        saleIds: selectedSaleIds.isEmpty ? null : selectedSaleIds,
+      );
+
+      final Set<String> affectedSales = <String>{};
+      final Set<String> purgeEvidenceSales = <String>{};
+      final Set<String> voidedEvidenceSales = <String>{};
+      final Set<String> sampleFolios = <String>{};
+      final Set<String> affectedProductIds = <String>{};
+      double missingQtyTotal = 0;
+      int movementsRebuilt = 0;
+      int stockAdjustments = 0;
+      int skippedForNegativeStock = 0;
+      int affectedLinesCount = 0;
+
+      final Set<String> mismatchSaleIds =
+          mismatchRows.map((_SalesStockMismatchRow row) => row.saleId).toSet();
+
+      final Map<String, _SalePaymentSummary> paymentSummaryBySaleId =
+          <String, _SalePaymentSummary>{};
+      for (final String saleId in mismatchSaleIds) {
+        final QueryRow? row = await _db.customSelect(
+          '''
+          SELECT
+            CAST(COALESCE(COUNT(*), 0) AS INTEGER) AS payments_count,
+            CAST(
+              COALESCE(
+                SUM(
+                  CASE
+                    WHEN LOWER(COALESCE(NULLIF(TRIM(method), ''), '')) = 'consignment'
+                      THEN 1
+                    ELSE 0
+                  END
+                ),
+                0
+              ) AS INTEGER
+            ) AS consignment_count
+          FROM payments
+          WHERE sale_id = ?
+          LIMIT 1
+          ''',
+          variables: <Variable<Object>>[
+            Variable<String>(saleId),
+          ],
+        ).getSingleOrNull();
+        paymentSummaryBySaleId[saleId] = _SalePaymentSummary(
+          paymentsCount: (row?.data['payments_count'] as num?)?.toInt() ?? 0,
+          consignmentCount:
+              (row?.data['consignment_count'] as num?)?.toInt() ?? 0,
+        );
+      }
+
+      for (final _SalesStockMismatchRow row in mismatchRows) {
+        final String saleId = row.saleId;
+        final String folio = row.folio;
+        final String warehouseId = row.warehouseId;
+        final String productId = row.productId;
+        final String terminalId = row.terminalId;
+        final double missingQty = row.missingQty;
+        final double voidedQty = row.voidedQty;
+        if (saleId.isEmpty ||
+            warehouseId.isEmpty ||
+            productId.isEmpty ||
+            missingQty <= 0.000001) {
+          continue;
+        }
+        final Set<String>? selectedProductIds =
+            selectedProductsBySaleId[saleId];
+        if (selectedProductIds != null &&
+            selectedProductIds.isNotEmpty &&
+            !selectedProductIds.contains(productId)) {
+          continue;
+        }
+
+        affectedSales.add(saleId);
+        affectedLinesCount += 1;
+        missingQtyTotal += missingQty;
+        if (sampleFolios.length < (sampleLimit < 1 ? 1 : sampleLimit) &&
+            folio.isNotEmpty) {
+          sampleFolios.add(folio);
+        }
+        if (voidedQty > 0.000001) {
+          voidedEvidenceSales.add(saleId);
+        }
+        if (await _hasPurgedSaleMovementEvidence(saleId)) {
+          purgeEvidenceSales.add(saleId);
+        }
+
+        if (dryRun) {
+          continue;
+        }
+
+        final StockBalance? balance = await (_db.select(_db.stockBalances)
+              ..where(
+                (StockBalances tbl) =>
+                    tbl.productId.equals(productId) &
+                    tbl.warehouseId.equals(warehouseId),
+              ))
+            .getSingleOrNull();
+        final double currentQty = balance?.qty ?? 0;
+        final double nextQty = currentQty - missingQty;
+        if (!allowNegativeStock && nextQty < 0) {
+          skippedForNegativeStock += 1;
+          continue;
+        }
+
+        final _SalePaymentSummary paymentSummary =
+            paymentSummaryBySaleId[saleId] ??
+                const _SalePaymentSummary(
+                  paymentsCount: 0,
+                  consignmentCount: 0,
+                );
+        final bool isConsignmentSale = paymentSummary.consignmentCount > 0 ||
+            paymentSummary.paymentsCount == 0;
+        final bool isDirectSale = terminalId.isEmpty;
+        final String movementSource = isConsignmentSale
+            ? (isDirectSale ? 'direct_consignment' : 'pos_consignment')
+            : (isDirectSale ? 'direct_sale' : 'pos');
+        final String movementRefType = isConsignmentSale
+            ? (isDirectSale
+                ? 'consignment_sale_direct'
+                : 'consignment_sale_pos')
+            : (isDirectSale ? 'sale_direct' : 'sale_pos');
+        final String movementReasonCode =
+            isConsignmentSale ? 'consignment_sale' : 'sale';
+        final String notePrefix = isConsignmentSale
+            ? (isDirectSale ? 'Consignacion directa' : 'Consignacion POS')
+            : (isDirectSale ? 'Venta directa' : 'Venta POS');
+
+        final DateTime movementAt = row.createdAt;
+        final DateTime repairAppliedAt = DateTime.now();
+        await _upsertStock(
+          productId: productId,
+          warehouseId: warehouseId,
+          qty: nextQty,
+          now: repairAppliedAt,
+        );
+        stockAdjustments += 1;
+
+        await _db.into(_db.stockMovements).insert(
+              StockMovementsCompanion.insert(
+                id: _uuid.v4(),
+                productId: productId,
+                warehouseId: warehouseId,
+                type: 'out',
+                qty: missingQty,
+                reasonCode: Value(movementReasonCode),
+                movementSource: Value(movementSource),
+                refType: Value(movementRefType),
+                refId: Value(saleId),
+                note: Value('$notePrefix $folio (reparacion integridad)'),
+                createdBy: safeUserId,
+                createdAt: Value(movementAt),
+              ),
+            );
+        movementsRebuilt += 1;
+        affectedProductIds.add(productId);
+      }
+
+      if (!dryRun) {
+        await _syncProductsCostFromActiveLots(
+          productIds: affectedProductIds,
+          now: DateTime.now(),
+        );
+        await _db.into(_db.auditLogs).insert(
+              AuditLogsCompanion.insert(
+                id: _uuid.v4(),
+                userId: Value(safeUserId),
+                action: 'SALES_STOCK_INTEGRITY_REPAIRED',
+                entity: 'sales_stock_integrity',
+                entityId: _uuid.v4(),
+                payloadJson: jsonEncode(<String, Object?>{
+                  'dryRun': false,
+                  'affectedSales': affectedSales.length,
+                  'affectedLines': affectedLinesCount,
+                  'missingQtyTotal': missingQtyTotal,
+                  'salesWithPurgeEvidence': purgeEvidenceSales.length,
+                  'salesWithVoidedMovements': voidedEvidenceSales.length,
+                  'movementsRebuilt': movementsRebuilt,
+                  'stockAdjustments': stockAdjustments,
+                  'skippedForNegativeStock': skippedForNegativeStock,
+                  'selectedSalesCount': selectedSaleIds.length,
+                  'selectedProductTargets':
+                      selectedProductsBySaleId.values.fold<int>(
+                    0,
+                    (int sum, Set<String> items) => sum + items.length,
+                  ),
+                  'sampleFolios': sampleFolios.toList(growable: false),
+                }),
+              ),
+            );
+      }
+
+      return SaleStockIntegrityRepairResult(
+        postedSalesCount: postedSalesCount,
+        affectedSalesCount: affectedSales.length,
+        affectedLinesCount: affectedLinesCount,
+        missingQtyTotal: missingQtyTotal,
+        salesWithPurgeEvidence: purgeEvidenceSales.length,
+        salesWithVoidedMovements: voidedEvidenceSales.length,
+        movementsRebuilt: movementsRebuilt,
+        stockAdjustments: stockAdjustments,
+        skippedForNegativeStock: skippedForNegativeStock,
+        sampleFolios: sampleFolios.toList(growable: false),
+        dryRun: dryRun,
+      );
+    });
+  }
+
   String _normalizeCurrencyCode(String? value) {
     return (value ?? '').trim().toUpperCase();
   }
@@ -1419,6 +1834,188 @@ class SaleService {
       return true;
     }
     return false;
+  }
+
+  Future<List<_SalesStockMismatchRow>> _loadSalesStockMismatchRows({
+    Set<String>? saleIds,
+  }) async {
+    final Set<String> selectedSaleIds = (saleIds ?? const <String>{})
+        .map((String value) => value.trim())
+        .where((String value) => value.isNotEmpty)
+        .toSet();
+    final List<Variable<Object>> variables = <Variable<Object>>[];
+    String saleFilter = '';
+    if (selectedSaleIds.isNotEmpty) {
+      final String placeholders =
+          List<String>.filled(selectedSaleIds.length, '?').join(', ');
+      saleFilter = 'AND s.id IN ($placeholders)';
+      variables.addAll(
+        selectedSaleIds.map((String saleId) => Variable<String>(saleId)),
+      );
+    }
+
+    final List<QueryRow> rows = await _db.customSelect(
+      '''
+      WITH sale_lines AS (
+        SELECT
+          s.id AS sale_id,
+          s.folio AS folio,
+          s.warehouse_id AS warehouse_id,
+          s.cashier_id AS cashier_id,
+          COALESCE(s.terminal_id, '') AS terminal_id,
+          s.created_at AS created_at,
+          si.product_id AS product_id,
+          COALESCE(SUM(ABS(COALESCE(si.qty, 0))), 0) AS expected_qty
+        FROM sales s
+        INNER JOIN sale_items si
+          ON si.sale_id = s.id
+        WHERE LOWER(COALESCE(s.status, '')) = 'posted'
+          $saleFilter
+        GROUP BY
+          s.id,
+          s.folio,
+          s.warehouse_id,
+          s.cashier_id,
+          s.terminal_id,
+          s.created_at,
+          si.product_id
+      ),
+      active_movements AS (
+        SELECT
+          sm.ref_id AS sale_id,
+          sm.product_id AS product_id,
+          COALESCE(
+            SUM(
+              CASE
+                WHEN LOWER(COALESCE(sm.type, '')) = 'out'
+                  THEN ABS(COALESCE(sm.qty, 0))
+                WHEN LOWER(COALESCE(sm.type, '')) = 'in'
+                  THEN -ABS(COALESCE(sm.qty, 0))
+                WHEN LOWER(COALESCE(sm.type, '')) = 'adjust'
+                  THEN -COALESCE(sm.qty, 0)
+                ELSE 0
+              END
+            ),
+            0
+          ) AS covered_qty
+        FROM stock_movements sm
+        WHERE LOWER(COALESCE(sm.ref_type, '')) IN (
+          'sale',
+          'sale_pos',
+          'sale_direct',
+          'consignment_sale',
+          'consignment_sale_pos',
+          'consignment_sale_direct'
+        )
+          AND COALESCE(sm.is_voided, 0) = 0
+        GROUP BY sm.ref_id, sm.product_id
+      ),
+      voided_movements AS (
+        SELECT
+          sm.ref_id AS sale_id,
+          sm.product_id AS product_id,
+          COALESCE(
+            SUM(
+              CASE
+                WHEN LOWER(COALESCE(sm.type, '')) = 'out'
+                  THEN ABS(COALESCE(sm.qty, 0))
+                WHEN LOWER(COALESCE(sm.type, '')) = 'in'
+                  THEN -ABS(COALESCE(sm.qty, 0))
+                WHEN LOWER(COALESCE(sm.type, '')) = 'adjust'
+                  THEN -COALESCE(sm.qty, 0)
+                ELSE 0
+              END
+            ),
+            0
+          ) AS voided_qty
+        FROM stock_movements sm
+        WHERE LOWER(COALESCE(sm.ref_type, '')) IN (
+          'sale',
+          'sale_pos',
+          'sale_direct',
+          'consignment_sale',
+          'consignment_sale_pos',
+          'consignment_sale_direct'
+        )
+          AND COALESCE(sm.is_voided, 0) = 1
+        GROUP BY sm.ref_id, sm.product_id
+      )
+      SELECT
+        sl.sale_id AS sale_id,
+        COALESCE(NULLIF(TRIM(sl.folio), ''), sl.sale_id) AS folio,
+        sl.warehouse_id AS warehouse_id,
+        COALESCE(NULLIF(TRIM(w.name), ''), 'Almacen') AS warehouse_name,
+        sl.cashier_id AS cashier_id,
+        sl.terminal_id AS terminal_id,
+        sl.created_at AS created_at,
+        sl.product_id AS product_id,
+        COALESCE(NULLIF(TRIM(p.name), ''), 'Producto') AS product_name,
+        COALESCE(NULLIF(TRIM(p.sku), ''), '-') AS product_sku,
+        COALESCE(sl.expected_qty, 0) AS expected_qty,
+        COALESCE(am.covered_qty, 0) AS covered_qty,
+        COALESCE(vm.voided_qty, 0) AS voided_qty,
+        (COALESCE(sl.expected_qty, 0) - COALESCE(am.covered_qty, 0)) AS missing_qty
+      FROM sale_lines sl
+      LEFT JOIN active_movements am
+        ON am.sale_id = sl.sale_id
+       AND am.product_id = sl.product_id
+      LEFT JOIN voided_movements vm
+        ON vm.sale_id = sl.sale_id
+       AND vm.product_id = sl.product_id
+      LEFT JOIN products p
+        ON p.id = sl.product_id
+      LEFT JOIN warehouses w
+        ON w.id = sl.warehouse_id
+      WHERE (COALESCE(sl.expected_qty, 0) - COALESCE(am.covered_qty, 0)) > 0.000001
+      ORDER BY sl.created_at DESC, sl.sale_id ASC, sl.product_id ASC
+      ''',
+      variables: variables,
+    ).get();
+
+    return rows.map((QueryRow row) {
+      return _SalesStockMismatchRow(
+        saleId: (row.readNullable<String>('sale_id') ?? '').trim(),
+        folio: (row.readNullable<String>('folio') ?? '').trim(),
+        warehouseId: (row.readNullable<String>('warehouse_id') ?? '').trim(),
+        warehouseName:
+            (row.readNullable<String>('warehouse_name') ?? '').trim(),
+        cashierId: (row.readNullable<String>('cashier_id') ?? '').trim(),
+        terminalId: (row.readNullable<String>('terminal_id') ?? '').trim(),
+        createdAt: row.readNullable<DateTime>('created_at') ?? DateTime.now(),
+        productId: (row.readNullable<String>('product_id') ?? '').trim(),
+        productName: (row.readNullable<String>('product_name') ?? '').trim(),
+        productSku: (row.readNullable<String>('product_sku') ?? '').trim(),
+        expectedQty: (row.data['expected_qty'] as num?)?.toDouble() ?? 0,
+        coveredQty: (row.data['covered_qty'] as num?)?.toDouble() ?? 0,
+        voidedQty: (row.data['voided_qty'] as num?)?.toDouble() ?? 0,
+        missingQty: (row.data['missing_qty'] as num?)?.toDouble() ?? 0,
+      );
+    }).where((_SalesStockMismatchRow row) {
+      return row.saleId.isNotEmpty &&
+          row.warehouseId.isNotEmpty &&
+          row.productId.isNotEmpty &&
+          row.missingQty > 0.000001;
+    }).toList(growable: false);
+  }
+
+  Future<bool> _hasPurgedSaleMovementEvidence(String saleId) async {
+    final String safeSaleId = saleId.trim();
+    if (safeSaleId.isEmpty) {
+      return false;
+    }
+    final QueryRow? row = await _db.customSelect(
+      '''
+      SELECT 1 AS ok
+      FROM audit_logs
+      WHERE action = 'STOCK_MOVEMENT_PURGED'
+        AND payload_json LIKE ?
+      LIMIT 1
+      ''',
+      variables: <Variable<Object>>[
+        Variable<String>('%"refId":"$safeSaleId"%'),
+      ],
+    ).getSingleOrNull();
+    return row != null;
   }
 
   Future<void> _upsertStock({
@@ -1881,6 +2478,81 @@ class _ProcessedLine {
   final List<_FifoAllocation> allocations;
 }
 
+class _SaleStockIssueBuilder {
+  _SaleStockIssueBuilder({
+    required this.saleId,
+    required this.folio,
+    required this.createdAt,
+    required this.warehouseId,
+    required this.warehouseName,
+    required this.cashierId,
+    required this.terminalId,
+  });
+
+  final String saleId;
+  final String folio;
+  final DateTime createdAt;
+  final String warehouseId;
+  final String warehouseName;
+  final String cashierId;
+  final String terminalId;
+  final List<SaleStockIntegrityIssueLine> lines =
+      <SaleStockIntegrityIssueLine>[];
+  bool hasPurgeEvidence = false;
+  bool hasVoidedMovements = false;
+  double totalMissingQty = 0;
+
+  SaleStockIntegrityIssue build() {
+    return SaleStockIntegrityIssue(
+      saleId: saleId,
+      folio: folio,
+      createdAt: createdAt,
+      warehouseId: warehouseId,
+      warehouseName: warehouseName,
+      cashierId: cashierId,
+      terminalId: terminalId,
+      hasPurgeEvidence: hasPurgeEvidence,
+      hasVoidedMovements: hasVoidedMovements,
+      totalMissingQty: totalMissingQty,
+      lines: lines.toList(growable: false),
+    );
+  }
+}
+
+class _SalesStockMismatchRow {
+  const _SalesStockMismatchRow({
+    required this.saleId,
+    required this.folio,
+    required this.warehouseId,
+    required this.warehouseName,
+    required this.cashierId,
+    required this.terminalId,
+    required this.createdAt,
+    required this.productId,
+    required this.productName,
+    required this.productSku,
+    required this.expectedQty,
+    required this.coveredQty,
+    required this.voidedQty,
+    required this.missingQty,
+  });
+
+  final String saleId;
+  final String folio;
+  final String warehouseId;
+  final String warehouseName;
+  final String cashierId;
+  final String terminalId;
+  final DateTime createdAt;
+  final String productId;
+  final String productName;
+  final String productSku;
+  final double expectedQty;
+  final double coveredQty;
+  final double voidedQty;
+  final double missingQty;
+}
+
 class _SaleEditProcessedLine {
   const _SaleEditProcessedLine({
     required this.item,
@@ -1911,6 +2583,16 @@ class _SaleMovementDelta {
   final String productId;
   final String warehouseId;
   final double signedDelta;
+}
+
+class _SalePaymentSummary {
+  const _SalePaymentSummary({
+    required this.paymentsCount,
+    required this.consignmentCount,
+  });
+
+  final int paymentsCount;
+  final int consignmentCount;
 }
 
 class _FifoAllocation {

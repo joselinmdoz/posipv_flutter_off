@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/db/database_provider.dart';
 import '../../../core/licensing/license_providers.dart';
 import '../data/sale_service.dart';
+import '../data/sale_ticket_print_service.dart';
 import '../data/ventas_pos_local_datasource.dart';
 import '../../configuracion/data/configuracion_local_datasource.dart';
 import '../../configuracion/presentation/configuracion_providers.dart';
@@ -19,8 +20,15 @@ final Provider<VentasPosLocalDataSource> ventasPosLocalDataSourceProvider =
   return VentasPosLocalDataSource(ref.watch(saleServiceProvider));
 });
 
+final Provider<SaleTicketPrintService> saleTicketPrintServiceProvider =
+    Provider<SaleTicketPrintService>((ref) {
+  return SaleTicketPrintService();
+});
+
 final FutureProvider<List<AppPaymentMethodSetting>>
     paymentMethodOptionsProvider =
     FutureProvider<List<AppPaymentMethodSetting>>((ref) async {
-  return ref.watch(configuracionLocalDataSourceProvider).loadPaymentMethodSettings();
+  return ref
+      .watch(configuracionLocalDataSourceProvider)
+      .loadPaymentMethodSettings();
 });

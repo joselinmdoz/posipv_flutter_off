@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../../core/licensing/license_providers.dart';
 import '../../../../core/utils/perf_trace.dart';
@@ -58,7 +59,7 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
     }
   }
 
-  Future<void> _exportFormat(String format) async {
+  Future<void> _exportFormat(String format, {bool shareFile = false}) async {
     final ReportesLocalDataSource ds =
         ref.read(reportesLocalDataSourceProvider);
     final bool canIncludeAdminProfitColumns =
@@ -71,9 +72,22 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
               includeAdminProfitColumns: canIncludeAdminProfitColumns,
             )
           : await ds.exportIpvReportCsv(widget.summary.reportId);
+      if (shareFile) {
+        await Share.shareXFiles(
+          <XFile>[XFile(path)],
+          text: 'IPV ${widget.summary.terminalName}',
+          subject: 'Reporte IPV',
+        );
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Exportado $format en: $path')),
+        SnackBar(
+          content: Text(
+            shareFile
+                ? 'IPV listo para compartir:\n$path'
+                : 'Exportado $format en: $path',
+          ),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
@@ -472,6 +486,33 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
                       ],
                     ),
                   ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: canExportIpv
+                      ? () => _exportFormat('csv', shareFile: true)
+                      : null,
+                  icon: const Icon(Icons.ios_share_rounded),
+                  label: const Text('Compartir CSV'),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: canExportIpv
+                      ? () => _exportFormat('pdf', shareFile: true)
+                      : null,
+                  icon: const Icon(Icons.ios_share_rounded),
+                  label: const Text('Compartir PDF'),
                 ),
               ),
             ],

@@ -515,6 +515,22 @@ class IpvReportSummaryStat {
   final int totalAmountCents;
 }
 
+class RecentAuditActivityStat {
+  const RecentAuditActivityStat({
+    required this.action,
+    required this.title,
+    required this.subtitle,
+    required this.status,
+    required this.createdAt,
+  });
+
+  final String action;
+  final String title;
+  final String subtitle;
+  final String status;
+  final DateTime createdAt;
+}
+
 class IpvReportLineStat {
   const IpvReportLineStat({
     required this.productId,
@@ -714,6 +730,7 @@ class ReportesDashboard {
     required this.recentSales,
     required this.recentSessionClosures,
     required this.recentIpvReports,
+    required this.recentAuditActivities,
   });
 
   final SalesSummary today;
@@ -723,6 +740,7 @@ class ReportesDashboard {
   final List<RecentSaleStat> recentSales;
   final List<RecentSessionClosureStat> recentSessionClosures;
   final List<IpvReportSummaryStat> recentIpvReports;
+  final List<RecentAuditActivityStat> recentAuditActivities;
 }
 
 class StockAlertStat {
@@ -789,6 +807,14 @@ class ReportesLocalDataSource {
       'Modo demo: la exportacion del informe diario (CSV/PDF) esta disponible solo con licencia activa.';
   static const String _demoManualIpvExportBlockedMessage =
       'Modo demo: la exportacion del IPV manual (CSV/PDF) esta disponible solo con licencia activa.';
+  static const List<String> _homeTrackedAuditActions = <String>[
+    'TPV_TERMINAL_CREATED',
+    'TPV_TERMINAL_UPDATED',
+    'TPV_TERMINAL_DEACTIVATED',
+    'TPV_SESSION_OPENED',
+    'TPV_SESSION_CLOSED',
+    'TPV_SESSION_AUTO_CLOSED',
+  ];
 
   Future<HomeOperationalInsight> loadHomeOperationalInsight({
     double lowStockThreshold = 5,
@@ -898,6 +924,12 @@ class ReportesLocalDataSource {
         _recentSessionClosures(safeSessionClosureLimit);
     final Future<List<IpvReportSummaryStat>> recentIpvReportsFuture =
         listIpvReports(limit: safeIpvLimit);
+    final Future<List<RecentAuditActivityStat>> recentAuditActivitiesFuture =
+        _recentAuditActivities(
+      (safeRecentLimit + safeSessionClosureLimit) > 100
+          ? 100
+          : (safeRecentLimit + safeSessionClosureLimit),
+    );
 
     final List<Sale> todaySales = await todaySalesFuture;
     final List<Sale> yesterdaySales = await yesterdaySalesFuture;
@@ -908,6 +940,8 @@ class ReportesLocalDataSource {
         await recentSessionClosuresFuture;
     final List<IpvReportSummaryStat> recentIpvReports =
         await recentIpvReportsFuture;
+    final List<RecentAuditActivityStat> recentAuditActivities =
+        await recentAuditActivitiesFuture;
 
     return ReportesDashboard(
       today: _buildTodaySummary(todaySales),
@@ -917,6 +951,7 @@ class ReportesLocalDataSource {
       recentSales: recent,
       recentSessionClosures: recentSessionClosures,
       recentIpvReports: recentIpvReports,
+      recentAuditActivities: recentAuditActivities,
     );
   }
 
@@ -2871,6 +2906,155 @@ class ReportesLocalDataSource {
       );
     }
     return result;
+  }
+
+  Future<List<RecentAuditActivityStat>> _recentAuditActivities(
+    int limit,
+  ) async {
+    if (limit < 1 || _homeTrackedAuditActions.isEmpty) {
+      return <RecentAuditActivityStat>[];
+    }
+    final String placeholders =
+        List<String>.filled(_homeTrackedAuditActions.length, '?').join(', ');
+    final List<Variable<Object>> variables = <Variable<Object>>[
+      ..._homeTrackedAuditActions.map<Variable<Object>>(
+        (String action) => Variable<String>(action),
+      ),
+      Variable<int>(limit),
+    ];
+    final List<QueryRow> rows = await _db.customSelect(
+      '''
+      SELECT
+        a.action AS action,
+        a.entity_id AS entity_id,
+        a.payload_json AS payload_json,
+        a.created_at AS created_at,
+        COALESCE(u.username, 'Sistema') AS username
+      FROM audit_logs a
+      LEFT JOIN users u
+        ON u.id = a.user_id
+      WHERE a.action IN ($placeholders)
+      ORDER BY a.created_at DESC
+      LIMIT ?
+      ''',
+      variables: variables,
+    ).get();
+    if (rows.isEmpty) {
+      return <RecentAuditActivityStat>[];
+    }
+    return rows.map(_mapRecentAuditActivity).toList(growable: false);
+  }
+
+  RecentAuditActivityStat _mapRecentAuditActivity(QueryRow row) {
+    final String action =
+        _readTextCell(row, 'action', fallback: '').trim().toUpperCase();
+    final String entityId = _readTextCell(row, 'entity_id', fallback: '-');
+    final String username = _readTextCell(row, 'username', fallback: 'Sistema');
+    final DateTime createdAt =
+        row.readNullable<DateTime>('created_at') ?? DateTime.now();
+    final Map<String, Object?> payload = _decodeAuditPayload(
+      row.readNullable<String>('payload_json'),
+    );
+    final String terminalName = _payloadText(
+      payload,
+      <String>['terminalName', 'name', 'code'],
+      fallback: 'TPV',
+    );
+
+    switch (action) {
+      case 'TPV_TERMINAL_CREATED':
+        return RecentAuditActivityStat(
+          action: action,
+          title: 'TPV creado',
+          subtitle: '$terminalName • $username',
+          status: 'ALTA TPV',
+          createdAt: createdAt,
+        );
+      case 'TPV_TERMINAL_UPDATED':
+        return RecentAuditActivityStat(
+          action: action,
+          title: 'TPV actualizado',
+          subtitle: '$terminalName • $username',
+          status: 'EDICION TPV',
+          createdAt: createdAt,
+        );
+      case 'TPV_TERMINAL_DEACTIVATED':
+        return RecentAuditActivityStat(
+          action: action,
+          title: 'TPV desactivado',
+          subtitle: '$terminalName • $username',
+          status: 'BAJA TPV',
+          createdAt: createdAt,
+        );
+      case 'TPV_SESSION_OPENED':
+        return RecentAuditActivityStat(
+          action: action,
+          title: 'Turno abierto',
+          subtitle: '$terminalName • $username',
+          status: 'TURNO',
+          createdAt: createdAt,
+        );
+      case 'TPV_SESSION_CLOSED':
+        return RecentAuditActivityStat(
+          action: action,
+          title: 'Turno cerrado',
+          subtitle: '$terminalName • $username',
+          status: 'TURNO',
+          createdAt: createdAt,
+        );
+      case 'TPV_SESSION_AUTO_CLOSED':
+        return RecentAuditActivityStat(
+          action: action,
+          title: 'Turno cerrado automáticamente',
+          subtitle: '$terminalName • $username',
+          status: 'AUTO CIERRE',
+          createdAt: createdAt,
+        );
+      default:
+        return RecentAuditActivityStat(
+          action: action,
+          title: action,
+          subtitle: '$entityId • $username',
+          status: 'AUDITORIA',
+          createdAt: createdAt,
+        );
+    }
+  }
+
+  Map<String, Object?> _decodeAuditPayload(String? rawJson) {
+    final String raw = (rawJson ?? '').trim();
+    if (raw.isEmpty) {
+      return <String, Object?>{};
+    }
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        final Map<String, Object?> map = <String, Object?>{};
+        decoded.forEach((Object? key, Object? value) {
+          map[key.toString()] = value;
+        });
+        return map;
+      }
+    } catch (_) {}
+    return <String, Object?>{};
+  }
+
+  String _payloadText(
+    Map<String, Object?> payload,
+    List<String> keys, {
+    required String fallback,
+  }) {
+    for (final String key in keys) {
+      final Object? value = payload[key];
+      if (value == null) {
+        continue;
+      }
+      final String text = value.toString().trim();
+      if (text.isNotEmpty) {
+        return text;
+      }
+    }
+    return fallback;
   }
 
   Future<List<PosTerminal>> listIpvTerminalOptions() {

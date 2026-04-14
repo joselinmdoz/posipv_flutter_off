@@ -13,6 +13,8 @@ import '../../../shared/widgets/app_scaffold.dart';
 import '../../configuracion/presentation/configuracion_providers.dart';
 import '../../almacenes/presentation/almacenes_providers.dart';
 import '../../auth/presentation/auth_providers.dart';
+import '../../ventas_pos/data/sale_service.dart';
+import '../../ventas_pos/presentation/ventas_pos_providers.dart';
 import '../../ventas_pos/presentation/widgets/pos_inventory_movement_dialog.dart';
 import '../data/inventario_local_datasource.dart';
 import 'inventario_providers.dart';
@@ -27,7 +29,7 @@ class MovimientosInventarioPage extends ConsumerStatefulWidget {
       _MovimientosInventarioPageState();
 }
 
-enum _MovementMoreMenuAction { exportFiltered }
+enum _MovementMoreMenuAction { exportFiltered, repairSalesStock }
 
 enum _MovementExportFormat { csv, pdf }
 
@@ -49,6 +51,7 @@ class _MovimientosInventarioPageState
   String _selectedType = 'all';
   String _selectedReasonCode = 'all';
   bool _loading = true;
+  bool _repairingIntegrity = false;
 
   @override
   void initState() {
@@ -232,6 +235,44 @@ class _MovimientosInventarioPageState
       case _MovementMoreMenuAction.exportFiltered:
         await _openExportFormatsSheet();
         break;
+      case _MovementMoreMenuAction.repairSalesStock:
+        await _repairSalesStockIntegrity();
+        break;
+    }
+  }
+
+  Future<void> _repairSalesStockIntegrity() async {
+    final UserSession? session = ref.read(currentSessionProvider);
+    if (session == null) {
+      _show('Debes iniciar sesion.');
+      return;
+    }
+    if (!session.isAdmin) {
+      _show('Solo el administrador puede reparar integridad.');
+      return;
+    }
+    if (_repairingIntegrity) {
+      return;
+    }
+    setState(() => _repairingIntegrity = true);
+    try {
+      final bool? didRepair = await Navigator.of(context).push<bool>(
+        MaterialPageRoute<bool>(
+          builder: (_) => _SalesStockRepairPage(userId: session.userId),
+          fullscreenDialog: true,
+        ),
+      );
+      if (didRepair == true && mounted) {
+        await _bootstrap();
+      }
+    } catch (e) {
+      if (mounted) {
+        _show('No se pudo reparar integridad: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _repairingIntegrity = false);
+      }
     }
   }
 
@@ -1364,6 +1405,8 @@ class _MovimientosInventarioPageState
           }).toList();
     final List<_MovementDateGroup> groups = _groupByDate(filteredMovements);
     final license = ref.watch(currentLicenseStatusProvider);
+    final UserSession? session = ref.watch(currentSessionProvider);
+    final bool canRepairSalesStock = session?.isAdmin ?? false;
 
     return AppScaffold(
       title: 'Movimientos',
@@ -1412,6 +1455,27 @@ class _MovimientosInventarioPageState
                 title: Text('Exportar filtrados'),
               ),
             ),
+            if (canRepairSalesStock)
+              PopupMenuItem<_MovementMoreMenuAction>(
+                value: _MovementMoreMenuAction.repairSalesStock,
+                enabled: !_repairingIntegrity,
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: _repairingIntegrity
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.build_circle_outlined),
+                  title: Text(
+                    _repairingIntegrity
+                        ? 'Reparando integridad...'
+                        : 'Reparar ventas/stock',
+                  ),
+                ),
+              ),
           ],
         ),
       ],
@@ -1562,4 +1626,769 @@ class _MovementDateGroup {
 
   final DateTime date;
   final List<InventoryMovementView> items;
+}
+
+class _SalesStockRepairPage extends ConsumerStatefulWidget {
+  const _SalesStockRepairPage({
+    required this.userId,
+  });
+
+  final String userId;
+
+  @override
+  ConsumerState<_SalesStockRepairPage> createState() =>
+      _SalesStockRepairPageState();
+}
+
+class _SalesStockRepairPageState extends ConsumerState<_SalesStockRepairPage> {
+  List<SaleStockIntegrityIssue> _issues = <SaleStockIntegrityIssue>[];
+  Set<String> _selectedLineKeys = <String>{};
+  bool _loading = true;
+  bool _running = false;
+  bool _allowNegativeStock = true;
+  bool _didRepair = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _loadIssues();
+    });
+  }
+
+  Future<void> _loadIssues({bool showLoader = true}) async {
+    if (showLoader && mounted) {
+      setState(() => _loading = true);
+    }
+    try {
+      final List<SaleStockIntegrityIssue> issues = await ref
+          .read(ventasPosLocalDataSourceProvider)
+          .listSalesStockIntegrityIssues(
+            userId: widget.userId,
+          );
+      if (!mounted) {
+        return;
+      }
+      final Set<String> validLineKeys = _allLineKeysFrom(issues);
+      Set<String> nextSelection;
+      if (_selectedLineKeys.isEmpty) {
+        nextSelection = validLineKeys;
+      } else {
+        nextSelection = _selectedLineKeys.intersection(validLineKeys);
+        if (nextSelection.isEmpty && validLineKeys.isNotEmpty) {
+          nextSelection = validLineKeys;
+        }
+      }
+      setState(() {
+        _issues = issues;
+        _selectedLineKeys = nextSelection;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _loading = false);
+      _show('No se pudo cargar inconsistencias: $e');
+    }
+  }
+
+  void _show(String message) {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  String _lineKey(String saleId, String productId) {
+    return '$saleId|$productId';
+  }
+
+  Set<String> _allLineKeysFrom(List<SaleStockIntegrityIssue> issues) {
+    final Set<String> keys = <String>{};
+    for (final SaleStockIntegrityIssue issue in issues) {
+      for (final SaleStockIntegrityIssueLine line in issue.lines) {
+        keys.add(_lineKey(issue.saleId, line.productId));
+      }
+    }
+    return keys;
+  }
+
+  bool _isLineSelected(
+    SaleStockIntegrityIssue issue,
+    SaleStockIntegrityIssueLine line,
+  ) {
+    return _selectedLineKeys.contains(_lineKey(issue.saleId, line.productId));
+  }
+
+  bool _isSaleFullySelected(SaleStockIntegrityIssue issue) {
+    if (issue.lines.isEmpty) {
+      return false;
+    }
+    return issue.lines.every(
+      (SaleStockIntegrityIssueLine line) => _isLineSelected(issue, line),
+    );
+  }
+
+  bool _isSalePartiallySelected(SaleStockIntegrityIssue issue) {
+    final bool anySelected = issue.lines.any(
+      (SaleStockIntegrityIssueLine line) => _isLineSelected(issue, line),
+    );
+    return anySelected && !_isSaleFullySelected(issue);
+  }
+
+  int get _selectedLinesCount => _selectedLineKeys.length;
+
+  int get _selectedSalesCount {
+    final Set<String> selectedSales = <String>{};
+    for (final SaleStockIntegrityIssue issue in _issues) {
+      final bool anySelected = issue.lines.any(
+        (SaleStockIntegrityIssueLine line) => _isLineSelected(issue, line),
+      );
+      if (anySelected) {
+        selectedSales.add(issue.saleId);
+      }
+    }
+    return selectedSales.length;
+  }
+
+  double get _selectedMissingQty {
+    double total = 0;
+    for (final SaleStockIntegrityIssue issue in _issues) {
+      for (final SaleStockIntegrityIssueLine line in issue.lines) {
+        if (_isLineSelected(issue, line)) {
+          total += line.missingQty;
+        }
+      }
+    }
+    return total;
+  }
+
+  int get _selectedWithPurgeEvidence {
+    return _issues.where((SaleStockIntegrityIssue issue) {
+      return issue.hasPurgeEvidence &&
+          issue.lines.any(
+            (SaleStockIntegrityIssueLine line) => _isLineSelected(issue, line),
+          );
+    }).length;
+  }
+
+  int get _selectedWithVoidedEvidence {
+    return _issues.where((SaleStockIntegrityIssue issue) {
+      return issue.hasVoidedMovements &&
+          issue.lines.any(
+            (SaleStockIntegrityIssueLine line) => _isLineSelected(issue, line),
+          );
+    }).length;
+  }
+
+  void _toggleSaleSelection(String saleId, bool selected) {
+    setState(() {
+      SaleStockIntegrityIssue? issue;
+      for (final SaleStockIntegrityIssue row in _issues) {
+        if (row.saleId == saleId) {
+          issue = row;
+          break;
+        }
+      }
+      if (issue == null) {
+        return;
+      }
+      for (final SaleStockIntegrityIssueLine line in issue.lines) {
+        final String key = _lineKey(issue.saleId, line.productId);
+        if (selected) {
+          _selectedLineKeys.add(key);
+        } else {
+          _selectedLineKeys.remove(key);
+        }
+      }
+    });
+  }
+
+  void _toggleLineSelection({
+    required SaleStockIntegrityIssue issue,
+    required SaleStockIntegrityIssueLine line,
+    required bool selected,
+  }) {
+    setState(() {
+      final String key = _lineKey(issue.saleId, line.productId);
+      if (selected) {
+        _selectedLineKeys.add(key);
+      } else {
+        _selectedLineKeys.remove(key);
+      }
+    });
+  }
+
+  void _selectAll() {
+    setState(() {
+      _selectedLineKeys = _allLineKeysFrom(_issues);
+    });
+  }
+
+  void _clearSelection() {
+    setState(() => _selectedLineKeys = <String>{});
+  }
+
+  List<SaleStockIntegrityRepairTarget> _selectedTargets() {
+    final List<SaleStockIntegrityRepairTarget> result =
+        <SaleStockIntegrityRepairTarget>[];
+    for (final SaleStockIntegrityIssue issue in _issues) {
+      for (final SaleStockIntegrityIssueLine line in issue.lines) {
+        if (!_isLineSelected(issue, line)) {
+          continue;
+        }
+        result.add(
+          SaleStockIntegrityRepairTarget(
+            saleId: issue.saleId,
+            productId: line.productId,
+          ),
+        );
+      }
+    }
+    return result;
+  }
+
+  Future<void> _runRepair() async {
+    if (_running) {
+      return;
+    }
+    final List<SaleStockIntegrityRepairTarget> selectedTargets =
+        _selectedTargets();
+    if (selectedTargets.isEmpty) {
+      _show('Selecciona al menos un producto para reparar.');
+      return;
+    }
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Confirmar reparación'),
+          content: Text(
+            'Se repararán $_selectedSalesCount ventas seleccionadas.\n'
+            '• Productos seleccionados: $_selectedLinesCount\n'
+            '• Cantidad faltante: ${_formatQty(_selectedMissingQty)}\n'
+            '• Evidencia de borrado manual: $_selectedWithPurgeEvidence\n'
+            '• Con movimientos archivados: $_selectedWithVoidedEvidence',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Reparar'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirm != true || !mounted) {
+      return;
+    }
+
+    setState(() => _running = true);
+    try {
+      final SaleStockIntegrityRepairResult result = await ref
+          .read(ventasPosLocalDataSourceProvider)
+          .repairSalesStockIntegrity(
+            userId: widget.userId,
+            dryRun: false,
+            allowNegativeStock: _allowNegativeStock,
+            targets: selectedTargets,
+          );
+      if (!mounted) {
+        return;
+      }
+      _didRepair = true;
+      ref.read(inventoryRefreshSignalProvider.notifier).state += 1;
+      _show(
+        'Integridad reparada.\n'
+        'Movimientos reconstruidos: ${result.movementsRebuilt}\n'
+        'Ajustes de stock: ${result.stockAdjustments}\n'
+        'Saltadas por stock negativo: ${result.skippedForNegativeStock}',
+      );
+      await _loadIssues(showLoader: false);
+    } catch (e) {
+      if (mounted) {
+        _show('No se pudo reparar integridad: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _running = false);
+      }
+    }
+  }
+
+  String _formatQty(double value) {
+    final double abs = value.abs();
+    if ((abs - abs.roundToDouble()).abs() < 0.000001) {
+      return value.round().toString();
+    }
+    return value.toStringAsFixed(2);
+  }
+
+  String _formatDateTime(DateTime value) {
+    final DateTime local = value.toLocal();
+    final String day = local.day.toString().padLeft(2, '0');
+    final String month = local.month.toString().padLeft(2, '0');
+    final String year = local.year.toString().padLeft(4, '0');
+    final String hour = local.hour.toString().padLeft(2, '0');
+    final String minute = local.minute.toString().padLeft(2, '0');
+    return '$day/$month/$year • $hour:$minute';
+  }
+
+  String _channelLabel(SaleStockIntegrityIssue issue) {
+    return issue.terminalId.trim().isEmpty ? 'Venta directa' : 'TPV';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colors = theme.colorScheme;
+    final int selectedCount = _selectedSalesCount;
+    final int totalCount = _issues.length;
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) {
+          return;
+        }
+        Navigator.of(context).pop(_didRepair);
+      },
+      child: AppScaffold(
+        title: 'Reparar ventas/stock',
+        currentRoute: '/inventario-movimientos',
+        onRefresh: _loadIssues,
+        useDefaultActions: false,
+        showDrawer: false,
+        showBottomNavigationBar: false,
+        appBarLeading: IconButton(
+          tooltip: 'Volver',
+          onPressed: () => Navigator.of(context).pop(_didRepair),
+          icon: const Icon(Icons.arrow_back_rounded),
+        ),
+        appBarActions: <Widget>[
+          IconButton(
+            tooltip: 'Recargar',
+            onPressed: _loading || _running ? null : _loadIssues,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : Column(
+                children: <Widget>[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+                    child: Container(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                      decoration: BoxDecoration(
+                        color: colors.surfaceContainerLowest,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: colors.outlineVariant),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            'Ventas con inconsistencias detectadas',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '$selectedCount de $totalCount seleccionadas • '
+                            '$_selectedLinesCount productos • '
+                            'Faltante ${_formatQty(_selectedMissingQty)}',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: <Widget>[
+                              TextButton.icon(
+                                onPressed: _issues.isEmpty ? null : _selectAll,
+                                icon: const Icon(Icons.select_all_rounded),
+                                label: const Text('Seleccionar todo'),
+                              ),
+                              const SizedBox(width: 6),
+                              TextButton.icon(
+                                onPressed: _selectedLineKeys.isEmpty
+                                    ? null
+                                    : _clearSelection,
+                                icon: const Icon(Icons.deselect_rounded),
+                                label: const Text('Limpiar'),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: _issues.isEmpty
+                        ? Center(
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 24),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  Icon(
+                                    Icons.verified_rounded,
+                                    size: 54,
+                                    color: colors.primary,
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    'No hay inconsistencias pendientes entre ventas y stock.',
+                                    textAlign: TextAlign.center,
+                                    style:
+                                        theme.textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            key: const PageStorageKey<String>(
+                              'sales-stock-repair-list',
+                            ),
+                            padding: const EdgeInsets.fromLTRB(16, 2, 16, 12),
+                            itemCount: _issues.length,
+                            itemBuilder: (BuildContext context, int index) {
+                              final SaleStockIntegrityIssue issue =
+                                  _issues[index];
+                              final bool selected = _isSaleFullySelected(issue);
+                              final bool partiallySelected =
+                                  _isSalePartiallySelected(issue);
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  side:
+                                      BorderSide(color: colors.outlineVariant),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: <Widget>[
+                                    InkWell(
+                                      borderRadius: const BorderRadius.vertical(
+                                        top: Radius.circular(14),
+                                      ),
+                                      onTap: () => _toggleSaleSelection(
+                                        issue.saleId,
+                                        !selected,
+                                      ),
+                                      child: Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                            8, 8, 10, 6),
+                                        child: Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: <Widget>[
+                                            Checkbox(
+                                              tristate: true,
+                                              fillColor: WidgetStateProperty
+                                                  .resolveWith<Color?>(
+                                                (Set<WidgetState> states) {
+                                                  if (partiallySelected &&
+                                                      !selected) {
+                                                    return colors.primary;
+                                                  }
+                                                  return null;
+                                                },
+                                              ),
+                                              side: BorderSide(
+                                                color: colors.outline,
+                                              ),
+                                              value: partiallySelected
+                                                  ? null
+                                                  : selected,
+                                              checkColor:
+                                                  partiallySelected && !selected
+                                                      ? colors.onPrimary
+                                                      : null,
+                                              materialTapTargetSize:
+                                                  MaterialTapTargetSize
+                                                      .shrinkWrap,
+                                              onChanged: _running
+                                                  ? null
+                                                  : (bool? value) {
+                                                      _toggleSaleSelection(
+                                                        issue.saleId,
+                                                        value ?? false,
+                                                      );
+                                                    },
+                                            ),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: <Widget>[
+                                                  Text(
+                                                    issue.folio.trim().isEmpty
+                                                        ? issue.saleId
+                                                        : issue.folio,
+                                                    style: theme
+                                                        .textTheme.titleSmall
+                                                        ?.copyWith(
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Text(
+                                                    '${issue.warehouseName} • ${_channelLabel(issue)}',
+                                                    style: theme
+                                                        .textTheme.bodySmall
+                                                        ?.copyWith(
+                                                      color: colors
+                                                          .onSurfaceVariant,
+                                                    ),
+                                                  ),
+                                                  Text(
+                                                    _formatDateTime(
+                                                      issue.createdAt,
+                                                    ),
+                                                    style: theme
+                                                        .textTheme.bodySmall
+                                                        ?.copyWith(
+                                                      color: colors
+                                                          .onSurfaceVariant,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              'Faltante\n${_formatQty(issue.totalMissingQty)}',
+                                              textAlign: TextAlign.right,
+                                              style: theme.textTheme.bodySmall
+                                                  ?.copyWith(
+                                                color: colors.error,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    if (issue.hasPurgeEvidence ||
+                                        issue.hasVoidedMovements)
+                                      Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                            14, 0, 14, 8),
+                                        child: Wrap(
+                                          spacing: 8,
+                                          runSpacing: 6,
+                                          children: <Widget>[
+                                            if (issue.hasPurgeEvidence)
+                                              Chip(
+                                                label: const Text(
+                                                  'Borrado manual detectado',
+                                                ),
+                                                visualDensity:
+                                                    VisualDensity.compact,
+                                                backgroundColor: colors
+                                                    .errorContainer
+                                                    .withValues(alpha: 0.75),
+                                              ),
+                                            if (issue.hasVoidedMovements)
+                                              Chip(
+                                                label: const Text(
+                                                  'Movimientos archivados',
+                                                ),
+                                                visualDensity:
+                                                    VisualDensity.compact,
+                                                backgroundColor: colors
+                                                    .secondaryContainer
+                                                    .withValues(alpha: 0.85),
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                    ExpansionTile(
+                                      key: PageStorageKey<String>(
+                                        'repair-sale-${issue.saleId}',
+                                      ),
+                                      tilePadding: const EdgeInsets.fromLTRB(
+                                          14, 0, 14, 2),
+                                      childrenPadding:
+                                          const EdgeInsets.fromLTRB(
+                                              14, 0, 14, 10),
+                                      title: Text(
+                                        'Productos afectados (${issue.lines.length})',
+                                        style: theme.textTheme.bodyMedium
+                                            ?.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      children: issue.lines
+                                          .map(
+                                            (SaleStockIntegrityIssueLine
+                                                    line) =>
+                                                Padding(
+                                              padding:
+                                                  const EdgeInsets.only(top: 8),
+                                              child: Row(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: <Widget>[
+                                                  Checkbox(
+                                                    value: _isLineSelected(
+                                                      issue,
+                                                      line,
+                                                    ),
+                                                    materialTapTargetSize:
+                                                        MaterialTapTargetSize
+                                                            .shrinkWrap,
+                                                    onChanged: _running
+                                                        ? null
+                                                        : (bool? value) {
+                                                            _toggleLineSelection(
+                                                              issue: issue,
+                                                              line: line,
+                                                              selected: value ??
+                                                                  false,
+                                                            );
+                                                          },
+                                                  ),
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: <Widget>[
+                                                        Text(
+                                                          line.productName,
+                                                          style: theme.textTheme
+                                                              .bodyMedium
+                                                              ?.copyWith(
+                                                            fontWeight:
+                                                                FontWeight.w700,
+                                                          ),
+                                                        ),
+                                                        const SizedBox(
+                                                            height: 2),
+                                                        Text(
+                                                          'SKU: ${line.productSku}',
+                                                          style: theme.textTheme
+                                                              .bodySmall
+                                                              ?.copyWith(
+                                                            color: colors
+                                                                .onSurfaceVariant,
+                                                          ),
+                                                        ),
+                                                        Text(
+                                                          'Esperado ${_formatQty(line.expectedQty)} • Cubierto ${_formatQty(line.coveredQty)}',
+                                                          style: theme.textTheme
+                                                              .bodySmall
+                                                              ?.copyWith(
+                                                            color: colors
+                                                                .onSurfaceVariant,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                  Text(
+                                                    '-${_formatQty(line.missingQty)}',
+                                                    style: theme
+                                                        .textTheme.bodyMedium
+                                                        ?.copyWith(
+                                                      color: colors.error,
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          )
+                                          .toList(growable: false),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                  SafeArea(
+                    top: false,
+                    child: Container(
+                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+                      decoration: BoxDecoration(
+                        color: colors.surface,
+                        border: Border(
+                          top: BorderSide(color: colors.outlineVariant),
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          SwitchListTile.adaptive(
+                            dense: true,
+                            visualDensity: VisualDensity.compact,
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text(
+                              'Permitir stock negativo en reparación',
+                            ),
+                            value: _allowNegativeStock,
+                            onChanged: _running
+                                ? null
+                                : (bool value) {
+                                    setState(
+                                      () => _allowNegativeStock = value,
+                                    );
+                                  },
+                          ),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              onPressed: _running ||
+                                      _issues.isEmpty ||
+                                      _selectedLineKeys.isEmpty
+                                  ? null
+                                  : _runRepair,
+                              icon: _running
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.build_circle_rounded),
+                              label: Text(
+                                _running
+                                    ? 'Reparando...'
+                                    : 'Reparar seleccionadas ($_selectedLinesCount productos)',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
 }

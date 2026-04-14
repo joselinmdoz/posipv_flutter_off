@@ -9,10 +9,12 @@ class PosSaleReceiptPage extends StatelessWidget {
     super.key,
     required this.receipt,
     this.onPrint,
+    this.onShare,
   });
 
   final SaleReceipt receipt;
   final VoidCallback? onPrint;
+  final VoidCallback? onShare;
 
   String _money(int cents) {
     final bool negative = cents < 0;
@@ -580,34 +582,69 @@ class PosSaleReceiptPage extends StatelessWidget {
               ),
             ),
           ),
-          if (onPrint != null) ...[
+          if (onPrint != null || onShare != null) ...[
             const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.pop(context);
-                  onPrint?.call();
-                },
-                icon: const Icon(Icons.print_rounded, size: 18),
-                label: const Text(
-                  'Imprimir Comprobante',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-                ),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                  side: BorderSide(
-                    color: isDark
-                        ? const Color(0xFF334155)
-                        : const Color(0xFFE2E8F0),
+            Row(
+              children: [
+                if (onShare != null)
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        onShare?.call();
+                      },
+                      icon: const Icon(Icons.share_outlined, size: 18),
+                      label: const Text(
+                        'Compartir Ticket',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w600, fontSize: 14),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                        side: BorderSide(
+                          color: isDark
+                              ? const Color(0xFF334155)
+                              : const Color(0xFFE2E8F0),
+                        ),
+                        foregroundColor: isDark
+                            ? const Color(0xFFCBD5E1)
+                            : const Color(0xFF475569),
+                      ),
+                    ),
                   ),
-                  foregroundColor: isDark
-                      ? const Color(0xFFCBD5E1)
-                      : const Color(0xFF475569),
-                ),
-              ),
+                if (onShare != null && onPrint != null)
+                  const SizedBox(width: 10),
+                if (onPrint != null)
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        onPrint?.call();
+                      },
+                      icon: const Icon(Icons.print_rounded, size: 18),
+                      label: const Text(
+                        'Imprimir Ticket',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w600, fontSize: 14),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                        side: BorderSide(
+                          color: isDark
+                              ? const Color(0xFF334155)
+                              : const Color(0xFFE2E8F0),
+                        ),
+                        foregroundColor: isDark
+                            ? const Color(0xFFCBD5E1)
+                            : const Color(0xFF475569),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ],
         ],

@@ -196,6 +196,7 @@ class _HomePageState extends ConsumerState<HomePage> {
       recentSales: <RecentSaleStat>[],
       recentSessionClosures: <RecentSessionClosureStat>[],
       recentIpvReports: <IpvReportSummaryStat>[],
+      recentAuditActivities: <RecentAuditActivityStat>[],
     );
     HomeOperationalInsight insight = const HomeOperationalInsight.empty();
     AppConfig config = AppConfig.defaults;

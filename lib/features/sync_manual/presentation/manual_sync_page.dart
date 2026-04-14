@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../shared/widgets/app_scaffold.dart';
 import '../data/manual_sync_local_datasource.dart';
@@ -120,6 +123,28 @@ class _ManualSyncPageState extends ConsumerState<ManualSyncPage> {
       if (mounted) {
         setState(() => _exporting = false);
       }
+    }
+  }
+
+  Future<void> _shareLastExportPackage() async {
+    final String path = (_lastExportPath ?? '').trim();
+    if (path.isEmpty) {
+      _show('Primero exporta un paquete para poder compartirlo.');
+      return;
+    }
+    final File file = File(path);
+    if (!file.existsSync()) {
+      _show('El archivo exportado no existe. Exporta nuevamente.');
+      return;
+    }
+    try {
+      await Share.shareXFiles(
+        <XFile>[XFile(path)],
+        text: 'Paquete de sincronización manual POSIPV',
+        subject: 'Sincronización manual POSIPV',
+      );
+    } catch (e) {
+      _show('No se pudo compartir el paquete: $e');
     }
   }
 
@@ -320,6 +345,7 @@ class _ManualSyncPageState extends ConsumerState<ManualSyncPage> {
                         setState(() => _selectedSessionId = value);
                       },
                       onExport: _exportSelectedSession,
+                      onShare: _shareLastExportPackage,
                       exporting: _exporting,
                       lastExportPath: _lastExportPath,
                     ),

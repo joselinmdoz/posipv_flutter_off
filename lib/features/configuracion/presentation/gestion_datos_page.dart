@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
+import 'package:share_plus/share_plus.dart';
 
 import '../../auth/presentation/auth_providers.dart';
 import '../../../core/licensing/license_providers.dart';
@@ -25,6 +27,7 @@ class _GestionDatosPageState extends ConsumerState<GestionDatosPage> {
   List<DataFileEntry> _csvFiles = <DataFileEntry>[];
   List<DataFileEntry> _backupFiles = <DataFileEntry>[];
   List<DataFileEntry> _qrPdfFiles = <DataFileEntry>[];
+  String? _lastBackupPath;
 
   @override
   void initState() {
@@ -56,6 +59,9 @@ class _GestionDatosPageState extends ConsumerState<GestionDatosPage> {
         _csvFiles = csvFiles;
         _backupFiles = backupFiles;
         _qrPdfFiles = qrPdfFiles;
+        _lastBackupPath = (_lastBackupPath ?? '').trim().isNotEmpty
+            ? _lastBackupPath
+            : (backupFiles.isNotEmpty ? backupFiles.first.path : null);
         _loadingFiles = false;
       });
     } catch (e) {
@@ -77,6 +83,7 @@ class _GestionDatosPageState extends ConsumerState<GestionDatosPage> {
       if (!mounted) {
         return;
       }
+      setState(() => _lastBackupPath = result.path);
       _show(
         'Copia creada (${_bytes(result.sizeBytes)})\n${result.path}',
       );
@@ -448,6 +455,31 @@ class _GestionDatosPageState extends ConsumerState<GestionDatosPage> {
     }
   }
 
+  Future<void> _shareBackup({String? path}) async {
+    final String safePath = (path ?? _lastBackupPath ?? '').trim();
+    final String fallbackPath = safePath.isNotEmpty
+        ? safePath
+        : (_backupFiles.isNotEmpty ? _backupFiles.first.path : '');
+    if (fallbackPath.trim().isEmpty) {
+      _show('No hay copia de base de datos para compartir.');
+      return;
+    }
+    final File file = File(fallbackPath);
+    if (!file.existsSync()) {
+      _show('El archivo de copia no existe: $fallbackPath');
+      return;
+    }
+    try {
+      await Share.shareXFiles(
+        <XFile>[XFile(fallbackPath)],
+        text: 'Copia de base de datos POSIPV',
+        subject: 'Respaldo POSIPV (.db)',
+      );
+    } catch (e) {
+      _show('No se pudo compartir la copia: $e');
+    }
+  }
+
   Future<bool> _confirm({
     required String title,
     required String message,
@@ -566,6 +598,18 @@ class _GestionDatosPageState extends ConsumerState<GestionDatosPage> {
                           : _showFullLicenseRequired),
                 ),
                 _option(
+                  icon: Icons.share_outlined,
+                  title: 'Compartir copia (.db)',
+                  subtitle: isFullLicense
+                      ? 'Compartir la última copia de seguridad'
+                      : 'Disponible con licencia activa',
+                  onTap: _working || isLicenseLoading
+                      ? null
+                      : (isFullLicense
+                          ? () => _shareBackup()
+                          : _showFullLicenseRequired),
+                ),
+                _option(
                   icon: Icons.restore_rounded,
                   title: 'Restaurar copia',
                   subtitle: isFullLicense
@@ -653,6 +697,13 @@ class _GestionDatosPageState extends ConsumerState<GestionDatosPage> {
                       dense: true,
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.folder_copy_outlined),
+                      trailing: IconButton(
+                        tooltip: 'Compartir copia',
+                        onPressed: _working || !isFullLicense
+                            ? null
+                            : () => _shareBackup(path: item.path),
+                        icon: const Icon(Icons.share_outlined),
+                      ),
                       title: Text(
                         item.name,
                         maxLines: 1,

@@ -9,6 +9,7 @@ class ManualSyncExportCard extends StatelessWidget {
     required this.selectedSessionId,
     required this.onSessionChanged,
     required this.onExport,
+    required this.onShare,
     required this.exporting,
     this.lastExportPath,
   });
@@ -17,6 +18,7 @@ class ManualSyncExportCard extends StatelessWidget {
   final String? selectedSessionId;
   final ValueChanged<String?> onSessionChanged;
   final VoidCallback onExport;
+  final VoidCallback onShare;
   final bool exporting;
   final String? lastExportPath;
 
@@ -118,6 +120,15 @@ class ManualSyncExportCard extends StatelessWidget {
             ),
           ),
           if ((lastExportPath ?? '').trim().isNotEmpty) ...<Widget>[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: exporting ? null : onShare,
+                icon: const Icon(Icons.share_outlined),
+                label: const Text('Compartir paquete'),
+              ),
+            ),
             const SizedBox(height: 10),
             Text(
               'Archivo generado:\n$lastExportPath',

@@ -1,6 +1,11 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:drift/drift.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 import 'package:uuid/uuid.dart';
 
 import '../../../core/db/app_database.dart';
@@ -191,6 +196,20 @@ class PurchaseProductOption {
   final int defaultCostCents;
 }
 
+class PurchaseExportFilters {
+  const PurchaseExportFilters({
+    this.dateFrom = '-',
+    this.dateTo = '-',
+    this.product = 'Todos',
+    this.search = '-',
+  });
+
+  final String dateFrom;
+  final String dateTo;
+  final String product;
+  final String search;
+}
+
 class ComprasLocalDataSource {
   ComprasLocalDataSource(
     this._db, {
@@ -202,6 +221,8 @@ class ComprasLocalDataSource {
   final AppDatabase _db;
   final OfflineLicenseService _licenseService;
   final Uuid _uuid;
+  static const String _exportPurchasesBlockedMessage =
+      'Modo demo: exportar compras (CSV/PDF) requiere licencia activa.';
 
   Future<List<PurchaseWarehouseOption>> listActiveWarehouses() async {
     final List<Warehouse> rows = await (_db.select(_db.warehouses)
@@ -291,11 +312,15 @@ class ComprasLocalDataSource {
   Future<List<PurchaseSummaryView>> listPurchases({
     String? search,
     String? warehouseId,
+    String? productId,
+    DateTime? createdFrom,
+    DateTime? createdTo,
     int limit = 100,
     int offset = 0,
   }) async {
     final String cleanedSearch = (search ?? '').trim().toLowerCase();
     final String cleanedWarehouseId = (warehouseId ?? '').trim();
+    final String cleanedProductId = (productId ?? '').trim();
     final int safeLimit = limit <= 0 ? 100 : limit;
     final int safeOffset = offset < 0 ? 0 : offset;
 
@@ -326,6 +351,27 @@ class ComprasLocalDataSource {
     if (cleanedWarehouseId.isNotEmpty) {
       sql.write(' AND p.warehouse_id = ? ');
       variables.add(Variable<String>(cleanedWarehouseId));
+    }
+    if (cleanedProductId.isNotEmpty) {
+      sql.write(
+        '''
+        AND EXISTS (
+          SELECT 1
+          FROM purchase_items pi_filter
+          WHERE pi_filter.purchase_id = p.id
+            AND pi_filter.product_id = ?
+        )
+        ''',
+      );
+      variables.add(Variable<String>(cleanedProductId));
+    }
+    if (createdFrom != null) {
+      sql.write(' AND p.created_at >= ? ');
+      variables.add(Variable<DateTime>(createdFrom));
+    }
+    if (createdTo != null) {
+      sql.write(' AND p.created_at < ? ');
+      variables.add(Variable<DateTime>(createdTo));
     }
     if (cleanedSearch.isNotEmpty) {
       final String pattern = '%$cleanedSearch%';
@@ -395,6 +441,148 @@ class ComprasLocalDataSource {
         })
         .where((PurchaseSummaryView row) => row.id.isNotEmpty)
         .toList(growable: false);
+  }
+
+  Future<String> exportPurchasesCsv({
+    required List<PurchaseSummaryView> purchases,
+    PurchaseExportFilters filters = const PurchaseExportFilters(),
+  }) async {
+    await _licenseService.requireFullAccess(
+      message: _exportPurchasesBlockedMessage,
+    );
+    if (purchases.isEmpty) {
+      throw Exception('No hay compras filtradas para exportar.');
+    }
+
+    final DateTime now = DateTime.now();
+    final String stamp = _ts(now);
+    final Directory dir = await _resolvePurchasesExportDir();
+    final File file = File(p.join(dir.path, 'compras-$stamp.csv'));
+    final int totalCents = purchases.fold<int>(
+      0,
+      (int sum, PurchaseSummaryView row) => sum + row.totalCents,
+    );
+
+    final StringBuffer csv = StringBuffer()
+      ..writeln('Reporte,Compras')
+      ..writeln('Generado,${_csvCell(_formatDateTimeExport(now))}')
+      ..writeln('Registros,${purchases.length}')
+      ..writeln('Total,${_csvCell(_money(totalCents))}')
+      ..writeln('Desde,${_csvCell(filters.dateFrom)}')
+      ..writeln('Hasta,${_csvCell(filters.dateTo)}')
+      ..writeln('Producto,${_csvCell(filters.product)}')
+      ..writeln('Busqueda,${_csvCell(filters.search)}')
+      ..writeln('')
+      ..writeln(
+        'ID,Folio,Fecha,Almacen,Proveedor,Documento proveedor,Lineas,Total,Creado por',
+      );
+
+    for (final PurchaseSummaryView row in purchases) {
+      csv.writeln(
+        <String>[
+          _csvCell(row.id),
+          _csvCell(row.folio),
+          _csvCell(_formatDateTimeExport(row.createdAt)),
+          _csvCell(row.warehouseName),
+          _csvCell(_safe(row.supplierName)),
+          _csvCell(_safe(row.supplierDoc)),
+          _csvCell(row.linesCount.toString()),
+          _csvCell(_money(row.totalCents)),
+          _csvCell(row.createdByUsername),
+        ].join(','),
+      );
+    }
+
+    await file.writeAsString(csv.toString(), encoding: utf8, flush: true);
+    return file.path;
+  }
+
+  Future<String> exportPurchasesPdf({
+    required List<PurchaseSummaryView> purchases,
+    PurchaseExportFilters filters = const PurchaseExportFilters(),
+  }) async {
+    await _licenseService.requireFullAccess(
+      message: _exportPurchasesBlockedMessage,
+    );
+    if (purchases.isEmpty) {
+      throw Exception('No hay compras filtradas para exportar.');
+    }
+
+    final DateTime now = DateTime.now();
+    final String stamp = _ts(now);
+    final Directory dir = await _resolvePurchasesExportDir();
+    final File file = File(p.join(dir.path, 'compras-$stamp.pdf'));
+    final int totalCents = purchases.fold<int>(
+      0,
+      (int sum, PurchaseSummaryView row) => sum + row.totalCents,
+    );
+
+    final pw.Document doc = pw.Document();
+    doc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.fromLTRB(20, 20, 20, 20),
+        build: (pw.Context context) {
+          return <pw.Widget>[
+            pw.Text(
+              'Listado de Compras',
+              style: pw.TextStyle(
+                fontSize: 16,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+            pw.SizedBox(height: 6),
+            pw.Text(
+              'Generado: ${_formatDateTimeExport(now)}',
+              style: const pw.TextStyle(fontSize: 10),
+            ),
+            pw.Text(
+              'Registros: ${purchases.length}',
+              style: const pw.TextStyle(fontSize: 10),
+            ),
+            pw.Text(
+              'Total: ${_money(totalCents)}',
+              style: const pw.TextStyle(fontSize: 10),
+            ),
+            pw.SizedBox(height: 8),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(8),
+              decoration: pw.BoxDecoration(
+                color: PdfColors.grey100,
+                border: pw.Border.all(color: PdfColors.grey300),
+                borderRadius: pw.BorderRadius.circular(6),
+              ),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: <pw.Widget>[
+                  pw.Text(
+                    'Filtros aplicados',
+                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                  ),
+                  pw.SizedBox(height: 4),
+                  pw.Text('Desde: ${filters.dateFrom}',
+                      style: const pw.TextStyle(fontSize: 9)),
+                  pw.Text('Hasta: ${filters.dateTo}',
+                      style: const pw.TextStyle(fontSize: 9)),
+                  pw.Text('Producto: ${filters.product}',
+                      style: const pw.TextStyle(fontSize: 9)),
+                  pw.Text('Búsqueda: ${filters.search}',
+                      style: const pw.TextStyle(fontSize: 9)),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 10),
+            ...purchases.asMap().entries.map(
+                  (MapEntry<int, PurchaseSummaryView> entry) =>
+                      _buildPurchasePdfCard(entry.value, index: entry.key + 1),
+                ),
+          ];
+        },
+      ),
+    );
+
+    await file.writeAsBytes(await doc.save(), flush: true);
+    return file.path;
   }
 
   Future<PurchaseDetailView?> getPurchaseDetail(String purchaseId) async {
@@ -913,6 +1101,147 @@ class ComprasLocalDataSource {
       return null;
     }
     return clean;
+  }
+
+  Future<Directory> _resolvePurchasesExportDir() async {
+    final Directory preferredBase = await _resolveDownloadsBaseDir();
+    Directory dir = Directory(
+      p.join(preferredBase.path, 'POSIPV', 'Exportaciones', 'Compras'),
+    );
+    try {
+      if (!dir.existsSync()) {
+        await dir.create(recursive: true);
+      }
+      return dir;
+    } catch (_) {
+      final Directory docs = await getApplicationDocumentsDirectory();
+      dir = Directory(p.join(docs.path, 'exports', 'compras'));
+      if (!dir.existsSync()) {
+        await dir.create(recursive: true);
+      }
+    }
+    return dir;
+  }
+
+  Future<Directory> _resolveDownloadsBaseDir() async {
+    if (Platform.isAndroid) {
+      const List<String> candidates = <String>[
+        '/storage/emulated/0/Download',
+        '/storage/emulated/0/Descargas',
+      ];
+      for (final String path in candidates) {
+        final Directory dir = Directory(path);
+        try {
+          if (dir.existsSync()) {
+            return dir;
+          }
+          await dir.create(recursive: true);
+          if (dir.existsSync()) {
+            return dir;
+          }
+        } catch (_) {}
+      }
+      return getApplicationDocumentsDirectory();
+    }
+
+    final Directory? downloads = await getDownloadsDirectory();
+    if (downloads != null) {
+      return downloads;
+    }
+    return getApplicationDocumentsDirectory();
+  }
+
+  pw.Widget _buildPurchasePdfCard(
+    PurchaseSummaryView row, {
+    required int index,
+  }) {
+    pw.Widget item(String label, String value) {
+      return pw.Container(
+        width: 250,
+        margin: const pw.EdgeInsets.only(bottom: 2),
+        child: pw.RichText(
+          text: pw.TextSpan(
+            style: const pw.TextStyle(fontSize: 8.4, color: PdfColors.black),
+            children: <pw.InlineSpan>[
+              pw.TextSpan(
+                text: '$label: ',
+                style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+              ),
+              pw.TextSpan(text: value),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return pw.Container(
+      margin: const pw.EdgeInsets.only(bottom: 8),
+      padding: const pw.EdgeInsets.all(8),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey400, width: 0.6),
+        borderRadius: pw.BorderRadius.circular(6),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: <pw.Widget>[
+          pw.Text(
+            '$index. ${row.folio}',
+            style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+          ),
+          pw.SizedBox(height: 4),
+          pw.Wrap(
+            spacing: 8,
+            runSpacing: 0,
+            children: <pw.Widget>[
+              item('Fecha', _formatDateTimeExport(row.createdAt)),
+              item('Almacén', row.warehouseName),
+              item('Proveedor', _safe(row.supplierName)),
+              item('Documento proveedor', _safe(row.supplierDoc)),
+              item('Líneas', row.linesCount.toString()),
+              item('Total', _money(row.totalCents)),
+              item('Creado por', row.createdByUsername),
+              item('ID', row.id),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _safe(String? value) {
+    final String clean = (value ?? '').trim();
+    return clean.isEmpty ? '-' : clean;
+  }
+
+  String _money(int cents) {
+    return '\$${(cents / 100).toStringAsFixed(2)}';
+  }
+
+  String _formatDateTimeExport(DateTime date) {
+    final DateTime local = date.toLocal();
+    final String y = local.year.toString().padLeft(4, '0');
+    final String m = local.month.toString().padLeft(2, '0');
+    final String d = local.day.toString().padLeft(2, '0');
+    final String hh = local.hour.toString().padLeft(2, '0');
+    final String mm = local.minute.toString().padLeft(2, '0');
+    final String ss = local.second.toString().padLeft(2, '0');
+    return '$y-$m-$d $hh:$mm:$ss';
+  }
+
+  String _csvCell(String value) {
+    final String escaped = value.replaceAll('"', '""');
+    return '"$escaped"';
+  }
+
+  String _ts(DateTime date) {
+    final DateTime local = date.toLocal();
+    final String y = local.year.toString().padLeft(4, '0');
+    final String mo = local.month.toString().padLeft(2, '0');
+    final String d = local.day.toString().padLeft(2, '0');
+    final String h = local.hour.toString().padLeft(2, '0');
+    final String mi = local.minute.toString().padLeft(2, '0');
+    final String s = local.second.toString().padLeft(2, '0');
+    return '$y$mo$d-$h$mi$s';
   }
 }
 

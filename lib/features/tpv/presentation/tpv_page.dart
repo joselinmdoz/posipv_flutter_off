@@ -253,9 +253,11 @@ class _TpvPageState extends ConsumerState<TpvPage> {
     }
 
     try {
-      await ref
-          .read(tpvLocalDataSourceProvider)
-          .deactivateTerminal(terminal.terminal.id);
+      final String? actorUserId = ref.read(currentSessionProvider)?.userId;
+      await ref.read(tpvLocalDataSourceProvider).deactivateTerminal(
+            terminal.terminal.id,
+            actorUserId: actorUserId,
+          );
       await _load();
       _show('TPV desactivado.');
     } catch (e) {

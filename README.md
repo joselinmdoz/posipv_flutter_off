@@ -108,3 +108,7 @@ flutter build appbundle --release
    - APK universal: `build/app/outputs/flutter-apk/app-release.apk`
    - APKs split: `build/app/outputs/flutter-apk/app-*-release.apk`
    - AAB: `build/app/outputs/bundle/release/app-release.aab`
+
+
+levantar a app en debug
+ flutter run -d afc25562 --debug
