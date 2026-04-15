@@ -340,6 +340,8 @@ class IpvReportLines extends Table {
   RealColumn get finalQty => real().withDefault(const Constant(0))();
   IntColumn get salePriceCents => integer().withDefault(const Constant(0))();
   IntColumn get totalAmountCents => integer().withDefault(const Constant(0))();
+  IntColumn get profitMarginCents => integer().withDefault(const Constant(0))();
+  IntColumn get realProfitCents => integer().withDefault(const Constant(0))();
 
   @override
   Set<Column> get primaryKey => <Column>{reportId, productId};
@@ -519,7 +521,7 @@ class AppDatabase extends _$AppDatabase {
   final Uuid _uuid = const Uuid();
 
   @override
-  int get schemaVersion => 26;
+  int get schemaVersion => 27;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -864,6 +866,80 @@ class AppDatabase extends _$AppDatabase {
               await m.createTable(saleItemLotAllocations);
             }
             await _createPerformanceIndexes();
+          }
+          if (from < 27) {
+            await _addIpvReportLineColumnIfMissing(
+              m,
+              'profit_margin_cents',
+              () =>
+                  m.addColumn(ipvReportLines, ipvReportLines.profitMarginCents),
+            );
+            await _addIpvReportLineColumnIfMissing(
+              m,
+              'real_profit_cents',
+              () => m.addColumn(ipvReportLines, ipvReportLines.realProfitCents),
+            );
+            await customStatement(
+              '''
+              UPDATE ipv_report_lines AS l
+              SET
+                real_profit_cents = COALESCE(
+                  (
+                    SELECT CAST(
+                      COALESCE(
+                        SUM(
+                          COALESCE(
+                            si.line_subtotal_cents,
+                            CAST(ROUND(COALESCE(si.qty, 0) * COALESCE(si.unit_price_cents, 0)) AS INTEGER)
+                          ) - COALESCE(
+                            si.line_cost_cents,
+                            CAST(ROUND(COALESCE(si.qty, 0) * COALESCE(si.unit_cost_cents, 0)) AS INTEGER)
+                          )
+                        ),
+                        0
+                      ) AS INTEGER
+                    )
+                    FROM sales s
+                    INNER JOIN sale_items si ON si.sale_id = s.id
+                    INNER JOIN ipv_reports r ON r.session_id = s.terminal_session_id
+                    WHERE r.id = l.report_id
+                      AND s.status = 'posted'
+                      AND si.product_id = l.product_id
+                  ),
+                  COALESCE(l.real_profit_cents, 0)
+                ),
+                profit_margin_cents = COALESCE(
+                  (
+                    SELECT CAST(
+                      ROUND(
+                        COALESCE(
+                          SUM(
+                            COALESCE(
+                              si.line_subtotal_cents,
+                              CAST(ROUND(COALESCE(si.qty, 0) * COALESCE(si.unit_price_cents, 0)) AS INTEGER)
+                            ) - COALESCE(
+                              si.line_cost_cents,
+                              CAST(ROUND(COALESCE(si.qty, 0) * COALESCE(si.unit_cost_cents, 0)) AS INTEGER)
+                            )
+                          ),
+                          0
+                        ) / CASE
+                              WHEN ABS(COALESCE(SUM(si.qty), 0)) <= 0.000001 THEN 1
+                              ELSE ABS(COALESCE(SUM(si.qty), 0))
+                            END
+                      ) AS INTEGER
+                    )
+                    FROM sales s
+                    INNER JOIN sale_items si ON si.sale_id = s.id
+                    INNER JOIN ipv_reports r ON r.session_id = s.terminal_session_id
+                    WHERE r.id = l.report_id
+                      AND s.status = 'posted'
+                      AND si.product_id = l.product_id
+                  ),
+                  COALESCE(l.profit_margin_cents, 0)
+                )
+              ''',
+            );
           }
         },
       );

@@ -16,6 +16,7 @@ import '../../auth/presentation/auth_providers.dart';
 import '../../ventas_pos/data/sale_service.dart';
 import '../../ventas_pos/presentation/ventas_pos_providers.dart';
 import '../../ventas_pos/presentation/widgets/pos_inventory_movement_dialog.dart';
+import '../../reportes/presentation/widgets/analytics_sale_detail_page.dart';
 import '../data/inventario_local_datasource.dart';
 import 'inventario_providers.dart';
 import 'widgets/inventory_movement_card.dart';
@@ -1262,6 +1263,43 @@ class _MovimientosInventarioPageState
     context.go('/inventario');
   }
 
+  bool _isSaleMovementReference(InventoryMovementView movement) {
+    final String refType = (movement.refType ?? '').trim().toLowerCase();
+    return refType == 'sale' ||
+        refType == 'sale_pos' ||
+        refType == 'sale_direct' ||
+        refType == 'consignment_sale' ||
+        refType == 'consignment_sale_pos' ||
+        refType == 'consignment_sale_direct';
+  }
+
+  bool _canOpenSaleDetail(InventoryMovementView movement) {
+    if (!_isSaleMovementReference(movement)) {
+      return false;
+    }
+    return (movement.refId ?? '').trim().isNotEmpty;
+  }
+
+  Future<void> _openLinkedSaleDetail(InventoryMovementView movement) async {
+    if (!_canOpenSaleDetail(movement)) {
+      return;
+    }
+    final String saleId = movement.refId!.trim();
+    final String currencySymbol =
+        ref.read(currentAppConfigProvider).currencySymbol;
+    final bool? result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => AnalyticsSaleDetailPage(
+          saleId: saleId,
+          currencySymbol: currencySymbol,
+        ),
+      ),
+    );
+    if (result == true && mounted) {
+      await _reloadMovements();
+    }
+  }
+
   bool _canArchiveMovement(InventoryMovementView movement) {
     final String source = movement.movementSource.trim().toLowerCase();
     if (source == 'transfer' || movement.reasonCode == 'transfer') {
@@ -1271,25 +1309,13 @@ class _MovimientosInventarioPageState
     if (session?.isAdmin ?? false) {
       return true;
     }
-    final String refType = (movement.refType ?? '').trim().toLowerCase();
-    final bool isSaleRef = refType == 'sale' ||
-        refType == 'sale_pos' ||
-        refType == 'sale_direct' ||
-        refType == 'consignment_sale' ||
-        refType == 'consignment_sale_pos' ||
-        refType == 'consignment_sale_direct';
+    final bool isSaleRef = _isSaleMovementReference(movement);
     return source == 'manual' && !isSaleRef && movement.reasonCode != 'sale';
   }
 
   bool _canEditMovement(InventoryMovementView movement) {
     final String source = movement.movementSource.trim().toLowerCase();
-    final String refType = (movement.refType ?? '').trim().toLowerCase();
-    final bool isSaleRef = refType == 'sale' ||
-        refType == 'sale_pos' ||
-        refType == 'sale_direct' ||
-        refType == 'consignment_sale' ||
-        refType == 'consignment_sale_pos' ||
-        refType == 'consignment_sale_direct';
+    final bool isSaleRef = _isSaleMovementReference(movement);
     return source == 'manual' && !isSaleRef && movement.reasonCode != 'sale';
   }
 
@@ -1381,6 +1407,9 @@ class _MovimientosInventarioPageState
           InventoryMovementCard(
             movement: movement,
             timeLabel: _formatTimeShort(movement.createdAt),
+            onTap: _canOpenSaleDetail(movement)
+                ? () => _openLinkedSaleDetail(movement)
+                : null,
             onEdit: canEdit && _canEditMovement(movement)
                 ? () => _editMovement(movement)
                 : null,

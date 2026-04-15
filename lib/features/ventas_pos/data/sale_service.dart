@@ -270,6 +270,7 @@ class SaleService {
         }
 
         final DateTime now = DateTime.now();
+        final DateTime saleCreatedAt = input.createdAt?.toLocal() ?? now;
         await _enforceDailySalesLimit(now);
         final String saleId = _uuid.v4();
         final String folio = _buildFolio(now);
@@ -390,6 +391,7 @@ class SaleService {
                 subtotalCents: subtotalCents,
                 taxCents: taxCents,
                 totalCents: totalCents,
+                createdAt: Value(saleCreatedAt),
               ),
             );
 
@@ -416,6 +418,7 @@ class SaleService {
             productId: line.item.productId,
             warehouseId: input.warehouseId,
             allocations: line.allocations,
+            createdAt: saleCreatedAt,
           );
 
           await _upsertStock(
@@ -438,6 +441,7 @@ class SaleService {
                   refId: Value(saleId),
                   note: Value('$movementNotePrefix $folio'),
                   createdBy: input.cashierId,
+                  createdAt: Value(saleCreatedAt),
                 ),
               );
         }
@@ -460,6 +464,7 @@ class SaleService {
                   ),
                   sourceCurrencyCode: Value(payment.sourceCurrencyCode),
                   sourceAmountCents: Value(payment.sourceAmountCents),
+                  createdAt: Value(saleCreatedAt),
                 ),
               );
         }
@@ -478,6 +483,7 @@ class SaleService {
                   'discountCents': input.discountCents,
                   'totalCents': totalCents,
                   'items': processed.length,
+                  'saleCreatedAt': saleCreatedAt.toIso8601String(),
                 }),
               ),
             );
@@ -792,6 +798,7 @@ class SaleService {
           productId: line.item.productId,
           warehouseId: sale.warehouseId,
           allocations: line.allocations,
+          createdAt: sale.createdAt,
         );
         await _db.into(_db.stockMovements).insert(
               StockMovementsCompanion.insert(
@@ -806,6 +813,7 @@ class SaleService {
                 refId: Value(safeSaleId),
                 note: Value('$movementNotePrefix ${sale.folio}'),
                 createdBy: safeUserId,
+                createdAt: Value(sale.createdAt),
               ),
             );
       }
@@ -820,6 +828,7 @@ class SaleService {
                 transactionId: Value(_normalizeOptional(payment.transactionId)),
                 sourceCurrencyCode: Value(payment.sourceCurrencyCode),
                 sourceAmountCents: Value(payment.sourceAmountCents),
+                createdAt: Value(sale.createdAt),
               ),
             );
       }
@@ -2106,6 +2115,7 @@ class SaleService {
     required String productId,
     required String warehouseId,
     required List<_FifoAllocation> allocations,
+    required DateTime createdAt,
   }) async {
     for (final _FifoAllocation allocation in allocations) {
       await _db.into(_db.saleItemLotAllocations).insert(
@@ -2119,6 +2129,7 @@ class SaleService {
               qty: Value(allocation.qty),
               unitCostCents: Value(allocation.unitCostCents),
               lineCostCents: Value(allocation.lineCostCents),
+              createdAt: Value(createdAt),
             ),
           );
     }

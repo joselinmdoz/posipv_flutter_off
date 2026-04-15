@@ -35,6 +35,7 @@ class CreateSaleInput {
     this.customerId,
     this.terminalId,
     this.terminalSessionId,
+    this.createdAt,
     required this.items,
     required this.payments,
     this.discountCents = 0,
@@ -48,6 +49,7 @@ class CreateSaleInput {
   final String? customerId;
   final String? terminalId;
   final String? terminalSessionId;
+  final DateTime? createdAt;
   final List<SaleItemInput> items;
   final List<PaymentInput> payments;
   final int discountCents;

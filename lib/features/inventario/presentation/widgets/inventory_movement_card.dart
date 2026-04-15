@@ -7,12 +7,14 @@ class InventoryMovementCard extends StatelessWidget {
     super.key,
     required this.movement,
     required this.timeLabel,
+    this.onTap,
     this.onEdit,
     this.onArchive,
   });
 
   final InventoryMovementView movement;
   final String timeLabel;
+  final VoidCallback? onTap;
   final VoidCallback? onEdit;
   final VoidCallback? onArchive;
 
@@ -20,168 +22,177 @@ class InventoryMovementCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final _MovementVisual visual = _resolveVisual(movement);
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-        boxShadow: const <BoxShadow>[
-          BoxShadow(
-            color: Color(0x140F172A),
-            blurRadius: 14,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(22),
-        child: Stack(
-          children: <Widget>[
-            Positioned(
-              left: 0,
-              top: 0,
-              bottom: 0,
-              child: Container(
-                width: 5,
-                color: visual.accent,
-              ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(22),
+          child: Ink(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: const Color(0xFFE5E7EB)),
+              boxShadow: const <BoxShadow>[
+                BoxShadow(
+                  color: Color(0x140F172A),
+                  blurRadius: 14,
+                  offset: Offset(0, 4),
+                ),
+              ],
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(22),
+              child: Stack(
                 children: <Widget>[
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Container(
-                        width: 56,
-                        height: 56,
-                        decoration: BoxDecoration(
-                          color: visual.soft,
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Icon(visual.icon, color: visual.accent),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 5,
+                      color: visual.accent,
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
-                            Text(
-                              movement.productName,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 38 / 2,
-                                height: 1.2,
-                                fontWeight: FontWeight.w800,
-                                color: Color(0xFF111827),
+                            Container(
+                              width: 56,
+                              height: 56,
+                              decoration: BoxDecoration(
+                                color: visual.soft,
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: Icon(visual.icon, color: visual.accent),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  Text(
+                                    movement.productName,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 38 / 2,
+                                      height: 1.2,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(0xFF111827),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    'SKU: ${movement.sku} • Almacén ${movement.warehouseName}',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 15,
+                                      color: Color(0xFF4B5563),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                            const SizedBox(height: 3),
-                            Text(
-                              'SKU: ${movement.sku} • Almacén ${movement.warehouseName}',
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 15,
-                                color: Color(0xFF4B5563),
-                              ),
+                            const SizedBox(width: 8),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: <Widget>[
+                                Text(
+                                  visual.amountLabel,
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w900,
+                                    color: visual.accent,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                _ReasonBadge(
+                                  text: movement.reasonLabel.toUpperCase(),
+                                  background: visual.badgeBg,
+                                  color: visual.badgeText,
+                                ),
+                              ],
                             ),
                           ],
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: <Widget>[
-                          Text(
-                            visual.amountLabel,
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w900,
-                              color: visual.accent,
+                        const SizedBox(height: 12),
+                        const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: <Widget>[
+                            const Icon(
+                              Icons.person_rounded,
+                              size: 18,
+                              color: Color(0xFF374151),
                             ),
-                          ),
-                          const SizedBox(height: 6),
-                          _ReasonBadge(
-                            text: movement.reasonLabel.toUpperCase(),
-                            background: visual.badgeBg,
-                            color: visual.badgeText,
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  const Divider(height: 1, color: Color(0xFFE5E7EB)),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: <Widget>[
-                      const Icon(
-                        Icons.person_rounded,
-                        size: 18,
-                        color: Color(0xFF374151),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Operador: ${movement.username}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 17 / 1.2,
-                            fontWeight: FontWeight.w500,
-                            color: Color(0xFF374151),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      const Icon(
-                        Icons.access_time_filled_rounded,
-                        size: 17,
-                        color: Color(0xFF374151),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        timeLabel,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          color: Color(0xFF374151),
-                        ),
-                      ),
-                      if (onEdit != null) ...<Widget>[
-                        const SizedBox(width: 8),
-                        IconButton(
-                          tooltip: 'Editar movimiento',
-                          onPressed: onEdit,
-                          icon: const Icon(
-                            Icons.edit_outlined,
-                            size: 20,
-                            color: Color(0xFF1D4ED8),
-                          ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Operador: ${movement.username}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 17 / 1.2,
+                                  fontWeight: FontWeight.w500,
+                                  color: Color(0xFF374151),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Icon(
+                              Icons.access_time_filled_rounded,
+                              size: 17,
+                              color: Color(0xFF374151),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              timeLabel,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                color: Color(0xFF374151),
+                              ),
+                            ),
+                            if (onEdit != null) ...<Widget>[
+                              const SizedBox(width: 8),
+                              IconButton(
+                                tooltip: 'Editar movimiento',
+                                onPressed: onEdit,
+                                icon: const Icon(
+                                  Icons.edit_outlined,
+                                  size: 20,
+                                  color: Color(0xFF1D4ED8),
+                                ),
+                              ),
+                            ],
+                            if (onArchive != null) ...<Widget>[
+                              const SizedBox(width: 8),
+                              IconButton(
+                                tooltip: 'Eliminar movimiento',
+                                onPressed: onArchive,
+                                icon: const Icon(
+                                  Icons.delete_outline_rounded,
+                                  size: 20,
+                                  color: Color(0xFFB91C1C),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ],
-                      if (onArchive != null) ...<Widget>[
-                        const SizedBox(width: 8),
-                        IconButton(
-                          tooltip: 'Eliminar movimiento',
-                          onPressed: onArchive,
-                          icon: const Icon(
-                            Icons.delete_outline_rounded,
-                            size: 20,
-                            color: Color(0xFFB91C1C),
-                          ),
-                        ),
-                      ],
-                    ],
+                    ),
                   ),
                 ],
               ),
             ),
-          ],
+          ),
         ),
       ),
     );

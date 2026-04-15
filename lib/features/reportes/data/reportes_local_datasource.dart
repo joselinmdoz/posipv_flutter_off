@@ -145,6 +145,18 @@ class SalesAnalyticsSaleStat {
   final String channel;
 }
 
+class SalesAnalyticsProductOption {
+  const SalesAnalyticsProductOption({
+    required this.productId,
+    required this.productName,
+    required this.sku,
+  });
+
+  final String productId;
+  final String productName;
+  final String sku;
+}
+
 class SalesAnalyticsSaleLineStat {
   const SalesAnalyticsSaleLineStat({
     required this.productId,
@@ -1632,6 +1644,7 @@ class ReportesLocalDataSource {
     String? terminalId,
     String? paymentMethodKey,
     String? dependentKey,
+    String? productId,
   }) async {
     final DateTime from = _startOfDay(fromDate);
     DateTime toExclusive = _startOfDay(toDate).add(const Duration(days: 1));
@@ -1644,6 +1657,10 @@ class ReportesLocalDataSource {
     final String? normalizedPaymentMethod =
         _normalizePaymentMethodKey(paymentMethodKey);
     final String? normalizedDependentKey = _normalizeDependentKey(dependentKey);
+    final _DependentFilter? dependentFilter =
+        _parseDependentFilter(normalizedDependentKey);
+    final String? normalizedProductId =
+        (productId ?? '').trim().isEmpty ? null : productId!.trim();
     final int safeLimit = limit < 1 ? 1 : limit;
 
     final StringBuffer sql = StringBuffer(
@@ -1666,9 +1683,6 @@ class ReportesLocalDataSource {
             (
               SELECT COUNT(*)
               FROM sale_items si
-              INNER JOIN products p_si
-                ON p_si.id = si.product_id
-               AND p_si.is_active = 1
               WHERE si.sale_id = s.id
             ),
             0
@@ -1711,6 +1725,36 @@ class ReportesLocalDataSource {
       );
       variables.add(Variable<String>(normalizedPaymentMethod));
     }
+    if (normalizedProductId != null) {
+      sql.write(
+        '''
+        AND EXISTS (
+          SELECT 1
+          FROM sale_items si_filter
+          WHERE si_filter.sale_id = s.id
+            AND si_filter.product_id = ?
+        )
+        ''',
+      );
+      variables.add(Variable<String>(normalizedProductId));
+    }
+    if (dependentFilter != null) {
+      if (dependentFilter.type == 'emp') {
+        sql.write(
+          '''
+          AND EXISTS (
+            SELECT 1
+            FROM pos_session_employees se_filter
+            WHERE se_filter.session_id = s.terminal_session_id
+              AND se_filter.employee_id = ?
+          )
+          ''',
+        );
+      } else {
+        sql.write(" AND COALESCE(TRIM(s.cashier_id), '') = ?");
+      }
+      variables.add(Variable<String>(dependentFilter.id));
+    }
     sql.write(
       '''
       GROUP BY
@@ -1726,20 +1770,6 @@ class ReportesLocalDataSource {
         t.name
       ''',
     );
-    if (normalizedDependentKey != null) {
-      sql.write(
-        '''
-        HAVING (
-          CASE
-            WHEN MIN(e.id) IS NOT NULL AND TRIM(MIN(e.id)) <> ''
-              THEN 'emp:' || MIN(e.id)
-            ELSE 'usr:' || COALESCE(s.cashier_id, '')
-          END
-        ) = ?
-        ''',
-      );
-      variables.add(Variable<String>(normalizedDependentKey));
-    }
     sql.write(
       '''
       ORDER BY s.created_at DESC
@@ -1781,6 +1811,127 @@ class ReportesLocalDataSource {
     }).toList(growable: false);
   }
 
+  Future<List<SalesAnalyticsProductOption>> listSalesProductOptionsForRange({
+    required DateTime fromDate,
+    required DateTime toDate,
+    String? channel,
+    String? terminalId,
+    String? paymentMethodKey,
+    String? dependentKey,
+    int limit = 3000,
+  }) async {
+    final DateTime from = _startOfDay(fromDate);
+    DateTime toExclusive = _startOfDay(toDate).add(const Duration(days: 1));
+    if (!toExclusive.isAfter(from)) {
+      toExclusive = from.add(const Duration(days: 1));
+    }
+    final String? normalizedTerminalId = _normalizeTerminalIdFilter(terminalId);
+    final String? normalizedChannel =
+        normalizedTerminalId == null ? _normalizeChannelFilter(channel) : 'pos';
+    final String? normalizedPaymentMethod =
+        _normalizePaymentMethodKey(paymentMethodKey);
+    final String? normalizedDependentKey = _normalizeDependentKey(dependentKey);
+    final _DependentFilter? dependentFilter =
+        _parseDependentFilter(normalizedDependentKey);
+    final int safeLimit = limit < 1 ? 1 : limit;
+
+    final StringBuffer sql = StringBuffer(
+      '''
+      WITH filtered_sales AS (
+        SELECT
+          s.id AS sale_id,
+          s.cashier_id AS cashier_id
+        FROM sales s
+        LEFT JOIN pos_session_employees se ON se.session_id = s.terminal_session_id
+        LEFT JOIN employees e ON e.id = se.employee_id
+        WHERE s.status = 'posted'
+          AND s.created_at >= ?
+          AND s.created_at < ?
+      ''',
+    );
+    final List<Variable<Object>> variables = <Variable<Object>>[
+      Variable<DateTime>(from),
+      Variable<DateTime>(toExclusive),
+    ];
+
+    if (normalizedTerminalId != null) {
+      sql.write(" AND COALESCE(TRIM(s.terminal_id), '') = ?");
+      variables.add(Variable<String>(normalizedTerminalId));
+    } else if (normalizedChannel == 'pos') {
+      sql.write(" AND COALESCE(TRIM(s.terminal_id), '') <> ''");
+    } else if (normalizedChannel == 'directa') {
+      sql.write(" AND COALESCE(TRIM(s.terminal_id), '') = ''");
+    }
+    if (normalizedPaymentMethod != null) {
+      sql.write(
+        '''
+        AND EXISTS (
+          SELECT 1
+          FROM payments p_filter
+          WHERE p_filter.sale_id = s.id
+            AND LOWER(COALESCE(NULLIF(TRIM(p_filter.method), ''), 'unknown')) = ?
+        )
+        ''',
+      );
+      variables.add(Variable<String>(normalizedPaymentMethod));
+    }
+    if (dependentFilter != null) {
+      if (dependentFilter.type == 'emp') {
+        sql.write(
+          '''
+          AND EXISTS (
+            SELECT 1
+            FROM pos_session_employees se_filter
+            WHERE se_filter.session_id = s.terminal_session_id
+              AND se_filter.employee_id = ?
+          )
+          ''',
+        );
+      } else {
+        sql.write(" AND COALESCE(TRIM(s.cashier_id), '') = ?");
+      }
+      variables.add(Variable<String>(dependentFilter.id));
+    }
+
+    sql.write(
+      '''
+        GROUP BY s.id, s.cashier_id, s.terminal_id, s.terminal_session_id
+      ''',
+    );
+    sql.write(
+      '''
+      )
+      SELECT
+        si.product_id AS product_id,
+        COALESCE(NULLIF(TRIM(p.name), ''), si.product_id) AS product_name,
+        COALESCE(NULLIF(TRIM(p.sku), ''), '-') AS sku
+      FROM sale_items si
+      INNER JOIN filtered_sales fs ON fs.sale_id = si.sale_id
+      LEFT JOIN products p ON p.id = si.product_id
+      GROUP BY si.product_id, p.name, p.sku
+      ORDER BY product_name COLLATE NOCASE ASC, sku COLLATE NOCASE ASC
+      LIMIT ?
+      ''',
+    );
+    variables.add(Variable<int>(safeLimit));
+
+    final List<QueryRow> rows = await _db
+        .customSelect(
+          sql.toString(),
+          variables: variables,
+        )
+        .get();
+    return rows.map((QueryRow row) {
+      return SalesAnalyticsProductOption(
+        productId: _readTextCell(row, 'product_id', fallback: ''),
+        productName: _readTextCell(row, 'product_name', fallback: 'Producto'),
+        sku: _readTextCell(row, 'sku', fallback: '-'),
+      );
+    }).where((SalesAnalyticsProductOption row) {
+      return row.productId.trim().isNotEmpty;
+    }).toList(growable: false);
+  }
+
   Future<SalesAnalyticsSaleDetailStat?> getSaleDetailForAnalytics(
     String saleId,
   ) async {
@@ -1810,9 +1961,6 @@ class ReportesLocalDataSource {
             (
               SELECT COUNT(*)
               FROM sale_items si
-              INNER JOIN products p_si
-                ON p_si.id = si.product_id
-               AND p_si.is_active = 1
               WHERE si.sale_id = s.id
             ),
             0
@@ -1864,9 +2012,8 @@ class ReportesLocalDataSource {
         COALESCE(si.tax_rate_bps, 0) AS tax_rate_bps,
         COALESCE(si.line_total_cents, 0) AS line_total_cents
       FROM sale_items si
-      INNER JOIN products p
+      LEFT JOIN products p
         ON p.id = si.product_id
-       AND p.is_active = 1
       WHERE si.sale_id = ?
       ORDER BY product_name ASC
       ''',
@@ -2284,9 +2431,8 @@ class ReportesLocalDataSource {
       FROM sale_items si
       INNER JOIN sales s
         ON s.id = si.sale_id
-      INNER JOIN products p
+      LEFT JOIN products p
         ON p.id = si.product_id
-       AND p.is_active = 1
       WHERE s.status = 'posted'
         AND s.created_at >= ?
       GROUP BY si.product_id, p.name, p.sku
@@ -2335,9 +2481,8 @@ class ReportesLocalDataSource {
       FROM sale_items si
       INNER JOIN sales s
         ON s.id = si.sale_id
-      INNER JOIN products p
+      LEFT JOIN products p
         ON p.id = si.product_id
-       AND p.is_active = 1
       WHERE s.status = 'posted'
         AND s.created_at >= ?
         AND s.created_at < ?
@@ -2371,9 +2516,6 @@ class ReportesLocalDataSource {
         FROM sale_items si
         INNER JOIN sales s
           ON s.id = si.sale_id
-        INNER JOIN products p
-          ON p.id = si.product_id
-         AND p.is_active = 1
         WHERE s.status = 'posted'
           AND s.created_at >= ?
           AND s.created_at < ?
@@ -2430,9 +2572,6 @@ class ReportesLocalDataSource {
       SELECT COALESCE(SUM(si.qty), 0) AS qty
       FROM sale_items si
       INNER JOIN sales s ON s.id = si.sale_id
-      INNER JOIN products p
-        ON p.id = si.product_id
-       AND p.is_active = 1
       WHERE s.status = 'posted'
         AND s.created_at >= ?
         AND s.created_at < ?
@@ -3086,17 +3225,13 @@ class ReportesLocalDataSource {
         r.opening_source AS opening_source,
         t.name AS terminal_name,
         t.currency_symbol AS currency_symbol,
-        COUNT(p.id) AS line_count,
+        COUNT(l.product_id) AS line_count,
         COALESCE(
           SUM(
-            CASE
-              WHEN p.id IS NOT NULL
-                THEN COALESCE(
-                  l.total_amount_cents,
-                  CAST(ROUND(COALESCE(l.sales_qty, 0) * COALESCE(l.sale_price_cents, 0)) AS INTEGER)
-                )
-              ELSE 0
-            END
+            COALESCE(
+              l.total_amount_cents,
+              CAST(ROUND(COALESCE(l.sales_qty, 0) * COALESCE(l.sale_price_cents, 0)) AS INTEGER)
+            )
           ),
           0
         ) AS total_amount_cents
@@ -3105,9 +3240,6 @@ class ReportesLocalDataSource {
         ON t.id = r.terminal_id
       LEFT JOIN ipv_report_lines l
         ON l.report_id = r.id
-      LEFT JOIN products p
-        ON p.id = l.product_id
-       AND p.is_active = 1
       WHERE 1 = 1
       ''',
     );
@@ -3211,17 +3343,13 @@ class ReportesLocalDataSource {
         r.opening_source AS opening_source,
         t.name AS terminal_name,
         t.currency_symbol AS currency_symbol,
-        COUNT(p.id) AS line_count,
+        COUNT(l.product_id) AS line_count,
         COALESCE(
           SUM(
-            CASE
-              WHEN p.id IS NOT NULL
-                THEN COALESCE(
-                  l.total_amount_cents,
-                  CAST(ROUND(COALESCE(l.sales_qty, 0) * COALESCE(l.sale_price_cents, 0)) AS INTEGER)
-                )
-              ELSE 0
-            END
+            COALESCE(
+              l.total_amount_cents,
+              CAST(ROUND(COALESCE(l.sales_qty, 0) * COALESCE(l.sale_price_cents, 0)) AS INTEGER)
+            )
           ),
           0
         ) AS total_amount_cents
@@ -3230,9 +3358,6 @@ class ReportesLocalDataSource {
         ON t.id = r.terminal_id
       LEFT JOIN ipv_report_lines l
         ON l.report_id = r.id
-      LEFT JOIN products p
-        ON p.id = l.product_id
-       AND p.is_active = 1
       WHERE r.session_id = ?
       ''',
     );
@@ -3327,15 +3452,11 @@ class ReportesLocalDataSource {
         COALESCE(sales_qty, 0) AS sales_qty,
         COALESCE(final_qty, 0) AS final_qty,
         COALESCE(sale_price_cents, 0) AS sale_price_cents,
-        COALESCE(total_amount_cents, 0) AS total_amount_cents
+        COALESCE(total_amount_cents, 0) AS total_amount_cents,
+        COALESCE(profit_margin_cents, 0) AS profit_margin_cents,
+        COALESCE(real_profit_cents, 0) AS real_profit_cents
       FROM ipv_report_lines l
       WHERE l.report_id = ?
-        AND EXISTS (
-          SELECT 1
-          FROM products p
-          WHERE p.id = l.product_id
-            AND p.is_active = 1
-        )
       ''',
       variables: <Variable<Object>>[Variable<String>(id)],
     ).get();
@@ -3380,8 +3501,6 @@ class ReportesLocalDataSource {
                 (row.data['sale_price_cents'] as num?)?.toInt() ?? 0,
           ),
     };
-
-    final bool includeStartBoundary = movementStart.isAtSameMomentAs(openedAt);
 
     final List<QueryRow> movementRows = warehouseId.isEmpty
         ? <QueryRow>[]
@@ -3466,7 +3585,7 @@ class ReportesLocalDataSource {
               ), 0) AS sales_qty
             FROM stock_movements sm
             WHERE sm.warehouse_id = ?
-              AND sm.created_at ${includeStartBoundary ? '>=' : '>'} ?
+              AND sm.created_at > ?
               AND sm.created_at <= ?
               AND COALESCE(sm.is_voided, 0) = 0
             GROUP BY sm.product_id
@@ -3559,9 +3678,6 @@ class ReportesLocalDataSource {
     required List<QueryRow> baseLineRows,
   }) async {
     int totalAmountCents = 0;
-    final String sessionId = _readTextCell(header, 'session_id', fallback: '');
-    final Map<String, _IpvProfitByProduct> profitByProduct =
-        await _loadIpvProfitByProductForSession(sessionId);
     final List<IpvReportLineStat> lines = <IpvReportLineStat>[];
     for (final QueryRow row in baseLineRows) {
       final String productId = _readTextCell(row, 'product_id', fallback: '');
@@ -3578,15 +3694,14 @@ class ReportesLocalDataSource {
           (startQty + entriesQty - outputsQty - salesQty);
       final int salePriceCents =
           (row.data['sale_price_cents'] as num?)?.toInt() ?? 0;
-      final _IpvProfitByProduct? profit = profitByProduct[productId];
-      final int resolvedSalePriceCents = (profit != null && profit.soldQty > 0)
-          ? profit.unitSalePriceCents
-          : salePriceCents;
-      final int resolvedAmountCents =
-          (salesQty * resolvedSalePriceCents).round();
-      final int realProfitCents = profit?.profitCents ?? 0;
-      final int marginCents = profit?.unitMarginCents ?? 0;
-      totalAmountCents += resolvedAmountCents;
+      final int amountCents =
+          (row.data['total_amount_cents'] as num?)?.toInt() ??
+              (salesQty * salePriceCents).round();
+      final int realProfitCents =
+          (row.data['real_profit_cents'] as num?)?.toInt() ?? 0;
+      final int marginCents =
+          (row.data['profit_margin_cents'] as num?)?.toInt() ?? 0;
+      totalAmountCents += amountCents;
 
       final String snapshotName =
           _readTextCell(row, 'product_name_snapshot', fallback: '');
@@ -3602,8 +3717,8 @@ class ReportesLocalDataSource {
           outputsQty: outputsQty,
           salesQty: salesQty,
           finalQty: finalQty,
-          salePriceCents: resolvedSalePriceCents,
-          totalAmountCents: resolvedAmountCents,
+          salePriceCents: salePriceCents,
+          totalAmountCents: amountCents,
           profitMarginCents: marginCents,
           realProfitCents: realProfitCents,
         ),
@@ -4509,24 +4624,6 @@ class ReportesLocalDataSource {
       INNER JOIN sales s ON s.id = si.sale_id
       WHERE s.status = 'posted'
         AND s.terminal_session_id = ?
-        AND NOT EXISTS (
-          SELECT 1
-          FROM stock_movements sm
-          WHERE sm.ref_id = s.id
-            AND COALESCE(sm.is_voided, 0) = 0
-            AND (
-              LOWER(COALESCE(sm.reason_code, '')) = 'consignment_sale'
-              OR LOWER(COALESCE(sm.ref_type, '')) IN (
-                'consignment_sale',
-                'consignment_sale_pos',
-                'consignment_sale_direct'
-              )
-              OR LOWER(COALESCE(sm.movement_source, '')) IN (
-                'pos_consignment',
-                'direct_consignment'
-              )
-            )
-        )
       GROUP BY si.product_id
       ''',
       variables: <Variable<Object>>[Variable<String>(id)],
@@ -4672,7 +4769,6 @@ class ReportesLocalDataSource {
         COALESCE(price_cents, 0) AS price_cents
       FROM products
       WHERE id IN (${List<String>.filled(productIds.length, '?').join(', ')})
-        AND is_active = 1
       ''',
       variables: productIds
           .map((String productId) => Variable<String>(productId))
@@ -6717,6 +6813,28 @@ class ReportesLocalDataSource {
     return 'usr:$clean';
   }
 
+  _DependentFilter? _parseDependentFilter(String? normalizedDependentKey) {
+    final String clean = (normalizedDependentKey ?? '').trim().toLowerCase();
+    if (clean.isEmpty) {
+      return null;
+    }
+    if (clean.startsWith('emp:')) {
+      final String id = clean.substring(4).trim();
+      if (id.isEmpty) {
+        return null;
+      }
+      return _DependentFilter(type: 'emp', id: id);
+    }
+    if (clean.startsWith('usr:')) {
+      final String id = clean.substring(4).trim();
+      if (id.isEmpty) {
+        return null;
+      }
+      return _DependentFilter(type: 'usr', id: id);
+    }
+    return _DependentFilter(type: 'usr', id: clean);
+  }
+
   Future<Map<String, String>> _loadMovementReasonLabels() async {
     const String settingKey = 'inventory_movement_reasons_v1';
     final Map<String, String> labels = <String, String>{
@@ -7136,6 +7254,16 @@ class _SalesFilterSql {
 
   final String sql;
   final List<Variable<Object>> variables;
+}
+
+class _DependentFilter {
+  const _DependentFilter({
+    required this.type,
+    required this.id,
+  });
+
+  final String type;
+  final String id;
 }
 
 class _ManualIpvPreviousReport {

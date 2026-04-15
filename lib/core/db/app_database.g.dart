@@ -9622,6 +9622,22 @@ class $IpvReportLinesTable extends IpvReportLines
       type: DriftSqlType.int,
       requiredDuringInsert: false,
       defaultValue: const Constant(0));
+  static const VerificationMeta _profitMarginCentsMeta =
+      const VerificationMeta('profitMarginCents');
+  @override
+  late final GeneratedColumn<int> profitMarginCents = GeneratedColumn<int>(
+      'profit_margin_cents', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _realProfitCentsMeta =
+      const VerificationMeta('realProfitCents');
+  @override
+  late final GeneratedColumn<int> realProfitCents = GeneratedColumn<int>(
+      'real_profit_cents', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
   @override
   List<GeneratedColumn> get $columns => [
         reportId,
@@ -9634,7 +9650,9 @@ class $IpvReportLinesTable extends IpvReportLines
         salesQty,
         finalQty,
         salePriceCents,
-        totalAmountCents
+        totalAmountCents,
+        profitMarginCents,
+        realProfitCents
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -9706,6 +9724,18 @@ class $IpvReportLinesTable extends IpvReportLines
           totalAmountCents.isAcceptableOrUnknown(
               data['total_amount_cents']!, _totalAmountCentsMeta));
     }
+    if (data.containsKey('profit_margin_cents')) {
+      context.handle(
+          _profitMarginCentsMeta,
+          profitMarginCents.isAcceptableOrUnknown(
+              data['profit_margin_cents']!, _profitMarginCentsMeta));
+    }
+    if (data.containsKey('real_profit_cents')) {
+      context.handle(
+          _realProfitCentsMeta,
+          realProfitCents.isAcceptableOrUnknown(
+              data['real_profit_cents']!, _realProfitCentsMeta));
+    }
     return context;
   }
 
@@ -9737,6 +9767,10 @@ class $IpvReportLinesTable extends IpvReportLines
           .read(DriftSqlType.int, data['${effectivePrefix}sale_price_cents'])!,
       totalAmountCents: attachedDatabase.typeMapping.read(
           DriftSqlType.int, data['${effectivePrefix}total_amount_cents'])!,
+      profitMarginCents: attachedDatabase.typeMapping.read(
+          DriftSqlType.int, data['${effectivePrefix}profit_margin_cents'])!,
+      realProfitCents: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}real_profit_cents'])!,
     );
   }
 
@@ -9758,6 +9792,8 @@ class IpvReportLine extends DataClass implements Insertable<IpvReportLine> {
   final double finalQty;
   final int salePriceCents;
   final int totalAmountCents;
+  final int profitMarginCents;
+  final int realProfitCents;
   const IpvReportLine(
       {required this.reportId,
       required this.productId,
@@ -9769,7 +9805,9 @@ class IpvReportLine extends DataClass implements Insertable<IpvReportLine> {
       required this.salesQty,
       required this.finalQty,
       required this.salePriceCents,
-      required this.totalAmountCents});
+      required this.totalAmountCents,
+      required this.profitMarginCents,
+      required this.realProfitCents});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -9788,6 +9826,8 @@ class IpvReportLine extends DataClass implements Insertable<IpvReportLine> {
     map['final_qty'] = Variable<double>(finalQty);
     map['sale_price_cents'] = Variable<int>(salePriceCents);
     map['total_amount_cents'] = Variable<int>(totalAmountCents);
+    map['profit_margin_cents'] = Variable<int>(profitMarginCents);
+    map['real_profit_cents'] = Variable<int>(realProfitCents);
     return map;
   }
 
@@ -9808,6 +9848,8 @@ class IpvReportLine extends DataClass implements Insertable<IpvReportLine> {
       finalQty: Value(finalQty),
       salePriceCents: Value(salePriceCents),
       totalAmountCents: Value(totalAmountCents),
+      profitMarginCents: Value(profitMarginCents),
+      realProfitCents: Value(realProfitCents),
     );
   }
 
@@ -9828,6 +9870,8 @@ class IpvReportLine extends DataClass implements Insertable<IpvReportLine> {
       finalQty: serializer.fromJson<double>(json['finalQty']),
       salePriceCents: serializer.fromJson<int>(json['salePriceCents']),
       totalAmountCents: serializer.fromJson<int>(json['totalAmountCents']),
+      profitMarginCents: serializer.fromJson<int>(json['profitMarginCents']),
+      realProfitCents: serializer.fromJson<int>(json['realProfitCents']),
     );
   }
   @override
@@ -9845,6 +9889,8 @@ class IpvReportLine extends DataClass implements Insertable<IpvReportLine> {
       'finalQty': serializer.toJson<double>(finalQty),
       'salePriceCents': serializer.toJson<int>(salePriceCents),
       'totalAmountCents': serializer.toJson<int>(totalAmountCents),
+      'profitMarginCents': serializer.toJson<int>(profitMarginCents),
+      'realProfitCents': serializer.toJson<int>(realProfitCents),
     };
   }
 
@@ -9859,7 +9905,9 @@ class IpvReportLine extends DataClass implements Insertable<IpvReportLine> {
           double? salesQty,
           double? finalQty,
           int? salePriceCents,
-          int? totalAmountCents}) =>
+          int? totalAmountCents,
+          int? profitMarginCents,
+          int? realProfitCents}) =>
       IpvReportLine(
         reportId: reportId ?? this.reportId,
         productId: productId ?? this.productId,
@@ -9876,6 +9924,8 @@ class IpvReportLine extends DataClass implements Insertable<IpvReportLine> {
         finalQty: finalQty ?? this.finalQty,
         salePriceCents: salePriceCents ?? this.salePriceCents,
         totalAmountCents: totalAmountCents ?? this.totalAmountCents,
+        profitMarginCents: profitMarginCents ?? this.profitMarginCents,
+        realProfitCents: realProfitCents ?? this.realProfitCents,
       );
   IpvReportLine copyWithCompanion(IpvReportLinesCompanion data) {
     return IpvReportLine(
@@ -9900,6 +9950,12 @@ class IpvReportLine extends DataClass implements Insertable<IpvReportLine> {
       totalAmountCents: data.totalAmountCents.present
           ? data.totalAmountCents.value
           : this.totalAmountCents,
+      profitMarginCents: data.profitMarginCents.present
+          ? data.profitMarginCents.value
+          : this.profitMarginCents,
+      realProfitCents: data.realProfitCents.present
+          ? data.realProfitCents.value
+          : this.realProfitCents,
     );
   }
 
@@ -9916,7 +9972,9 @@ class IpvReportLine extends DataClass implements Insertable<IpvReportLine> {
           ..write('salesQty: $salesQty, ')
           ..write('finalQty: $finalQty, ')
           ..write('salePriceCents: $salePriceCents, ')
-          ..write('totalAmountCents: $totalAmountCents')
+          ..write('totalAmountCents: $totalAmountCents, ')
+          ..write('profitMarginCents: $profitMarginCents, ')
+          ..write('realProfitCents: $realProfitCents')
           ..write(')'))
         .toString();
   }
@@ -9933,7 +9991,9 @@ class IpvReportLine extends DataClass implements Insertable<IpvReportLine> {
       salesQty,
       finalQty,
       salePriceCents,
-      totalAmountCents);
+      totalAmountCents,
+      profitMarginCents,
+      realProfitCents);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -9948,7 +10008,9 @@ class IpvReportLine extends DataClass implements Insertable<IpvReportLine> {
           other.salesQty == this.salesQty &&
           other.finalQty == this.finalQty &&
           other.salePriceCents == this.salePriceCents &&
-          other.totalAmountCents == this.totalAmountCents);
+          other.totalAmountCents == this.totalAmountCents &&
+          other.profitMarginCents == this.profitMarginCents &&
+          other.realProfitCents == this.realProfitCents);
 }
 
 class IpvReportLinesCompanion extends UpdateCompanion<IpvReportLine> {
@@ -9963,6 +10025,8 @@ class IpvReportLinesCompanion extends UpdateCompanion<IpvReportLine> {
   final Value<double> finalQty;
   final Value<int> salePriceCents;
   final Value<int> totalAmountCents;
+  final Value<int> profitMarginCents;
+  final Value<int> realProfitCents;
   final Value<int> rowid;
   const IpvReportLinesCompanion({
     this.reportId = const Value.absent(),
@@ -9976,6 +10040,8 @@ class IpvReportLinesCompanion extends UpdateCompanion<IpvReportLine> {
     this.finalQty = const Value.absent(),
     this.salePriceCents = const Value.absent(),
     this.totalAmountCents = const Value.absent(),
+    this.profitMarginCents = const Value.absent(),
+    this.realProfitCents = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   IpvReportLinesCompanion.insert({
@@ -9990,6 +10056,8 @@ class IpvReportLinesCompanion extends UpdateCompanion<IpvReportLine> {
     this.finalQty = const Value.absent(),
     this.salePriceCents = const Value.absent(),
     this.totalAmountCents = const Value.absent(),
+    this.profitMarginCents = const Value.absent(),
+    this.realProfitCents = const Value.absent(),
     this.rowid = const Value.absent(),
   })  : reportId = Value(reportId),
         productId = Value(productId);
@@ -10005,6 +10073,8 @@ class IpvReportLinesCompanion extends UpdateCompanion<IpvReportLine> {
     Expression<double>? finalQty,
     Expression<int>? salePriceCents,
     Expression<int>? totalAmountCents,
+    Expression<int>? profitMarginCents,
+    Expression<int>? realProfitCents,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -10021,6 +10091,8 @@ class IpvReportLinesCompanion extends UpdateCompanion<IpvReportLine> {
       if (finalQty != null) 'final_qty': finalQty,
       if (salePriceCents != null) 'sale_price_cents': salePriceCents,
       if (totalAmountCents != null) 'total_amount_cents': totalAmountCents,
+      if (profitMarginCents != null) 'profit_margin_cents': profitMarginCents,
+      if (realProfitCents != null) 'real_profit_cents': realProfitCents,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -10037,6 +10109,8 @@ class IpvReportLinesCompanion extends UpdateCompanion<IpvReportLine> {
       Value<double>? finalQty,
       Value<int>? salePriceCents,
       Value<int>? totalAmountCents,
+      Value<int>? profitMarginCents,
+      Value<int>? realProfitCents,
       Value<int>? rowid}) {
     return IpvReportLinesCompanion(
       reportId: reportId ?? this.reportId,
@@ -10050,6 +10124,8 @@ class IpvReportLinesCompanion extends UpdateCompanion<IpvReportLine> {
       finalQty: finalQty ?? this.finalQty,
       salePriceCents: salePriceCents ?? this.salePriceCents,
       totalAmountCents: totalAmountCents ?? this.totalAmountCents,
+      profitMarginCents: profitMarginCents ?? this.profitMarginCents,
+      realProfitCents: realProfitCents ?? this.realProfitCents,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -10091,6 +10167,12 @@ class IpvReportLinesCompanion extends UpdateCompanion<IpvReportLine> {
     if (totalAmountCents.present) {
       map['total_amount_cents'] = Variable<int>(totalAmountCents.value);
     }
+    if (profitMarginCents.present) {
+      map['profit_margin_cents'] = Variable<int>(profitMarginCents.value);
+    }
+    if (realProfitCents.present) {
+      map['real_profit_cents'] = Variable<int>(realProfitCents.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -10111,6 +10193,8 @@ class IpvReportLinesCompanion extends UpdateCompanion<IpvReportLine> {
           ..write('finalQty: $finalQty, ')
           ..write('salePriceCents: $salePriceCents, ')
           ..write('totalAmountCents: $totalAmountCents, ')
+          ..write('profitMarginCents: $profitMarginCents, ')
+          ..write('realProfitCents: $realProfitCents, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -25327,6 +25411,8 @@ typedef $$IpvReportLinesTableCreateCompanionBuilder = IpvReportLinesCompanion
   Value<double> finalQty,
   Value<int> salePriceCents,
   Value<int> totalAmountCents,
+  Value<int> profitMarginCents,
+  Value<int> realProfitCents,
   Value<int> rowid,
 });
 typedef $$IpvReportLinesTableUpdateCompanionBuilder = IpvReportLinesCompanion
@@ -25342,6 +25428,8 @@ typedef $$IpvReportLinesTableUpdateCompanionBuilder = IpvReportLinesCompanion
   Value<double> finalQty,
   Value<int> salePriceCents,
   Value<int> totalAmountCents,
+  Value<int> profitMarginCents,
+  Value<int> realProfitCents,
   Value<int> rowid,
 });
 
@@ -25419,6 +25507,14 @@ class $$IpvReportLinesTableFilterComposer
 
   ColumnFilters<int> get totalAmountCents => $composableBuilder(
       column: $table.totalAmountCents,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get profitMarginCents => $composableBuilder(
+      column: $table.profitMarginCents,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get realProfitCents => $composableBuilder(
+      column: $table.realProfitCents,
       builder: (column) => ColumnFilters(column));
 
   $$IpvReportsTableFilterComposer get reportId {
@@ -25502,6 +25598,14 @@ class $$IpvReportLinesTableOrderingComposer
       column: $table.totalAmountCents,
       builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<int> get profitMarginCents => $composableBuilder(
+      column: $table.profitMarginCents,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get realProfitCents => $composableBuilder(
+      column: $table.realProfitCents,
+      builder: (column) => ColumnOrderings(column));
+
   $$IpvReportsTableOrderingComposer get reportId {
     final $$IpvReportsTableOrderingComposer composer = $composerBuilder(
         composer: this,
@@ -25579,6 +25683,12 @@ class $$IpvReportLinesTableAnnotationComposer
   GeneratedColumn<int> get totalAmountCents => $composableBuilder(
       column: $table.totalAmountCents, builder: (column) => column);
 
+  GeneratedColumn<int> get profitMarginCents => $composableBuilder(
+      column: $table.profitMarginCents, builder: (column) => column);
+
+  GeneratedColumn<int> get realProfitCents => $composableBuilder(
+      column: $table.realProfitCents, builder: (column) => column);
+
   $$IpvReportsTableAnnotationComposer get reportId {
     final $$IpvReportsTableAnnotationComposer composer = $composerBuilder(
         composer: this,
@@ -25655,6 +25765,8 @@ class $$IpvReportLinesTableTableManager extends RootTableManager<
             Value<double> finalQty = const Value.absent(),
             Value<int> salePriceCents = const Value.absent(),
             Value<int> totalAmountCents = const Value.absent(),
+            Value<int> profitMarginCents = const Value.absent(),
+            Value<int> realProfitCents = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               IpvReportLinesCompanion(
@@ -25669,6 +25781,8 @@ class $$IpvReportLinesTableTableManager extends RootTableManager<
             finalQty: finalQty,
             salePriceCents: salePriceCents,
             totalAmountCents: totalAmountCents,
+            profitMarginCents: profitMarginCents,
+            realProfitCents: realProfitCents,
             rowid: rowid,
           ),
           createCompanionCallback: ({
@@ -25683,6 +25797,8 @@ class $$IpvReportLinesTableTableManager extends RootTableManager<
             Value<double> finalQty = const Value.absent(),
             Value<int> salePriceCents = const Value.absent(),
             Value<int> totalAmountCents = const Value.absent(),
+            Value<int> profitMarginCents = const Value.absent(),
+            Value<int> realProfitCents = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               IpvReportLinesCompanion.insert(
@@ -25697,6 +25813,8 @@ class $$IpvReportLinesTableTableManager extends RootTableManager<
             finalQty: finalQty,
             salePriceCents: salePriceCents,
             totalAmountCents: totalAmountCents,
+            profitMarginCents: profitMarginCents,
+            realProfitCents: realProfitCents,
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0

@@ -2478,6 +2478,8 @@ class TpvLocalDataSource {
       final int priceCents = qtyForPrice.abs() > 0.000001
           ? (amountCents / qtyForPrice).round()
           : productSnapshot.priceCents;
+      final int realProfitCents = salesAgg?.profitCents ?? 0;
+      final int marginCents = salesAgg?.unitMarginCents ?? 0;
       final double finalQty =
           acc.startQty + acc.entriesQty - acc.outputsQty - acc.salesQty;
       final IpvReportLinesCompanion payload = IpvReportLinesCompanion(
@@ -2492,6 +2494,8 @@ class TpvLocalDataSource {
         finalQty: Value(finalQty),
         salePriceCents: Value(priceCents),
         totalAmountCents: Value(amountCents),
+        profitMarginCents: Value(marginCents),
+        realProfitCents: Value(realProfitCents),
       );
       if (existingProductIds.contains(productId)) {
         await (_db.update(_db.ipvReportLines)
@@ -2513,6 +2517,8 @@ class TpvLocalDataSource {
                 finalQty: Value(finalQty),
                 salePriceCents: Value(priceCents),
                 totalAmountCents: Value(amountCents),
+                profitMarginCents: Value(marginCents),
+                realProfitCents: Value(realProfitCents),
               ),
             );
       }
@@ -2609,7 +2615,25 @@ class TpvLocalDataSource {
       SELECT
         si.product_id AS product_id,
         COALESCE(SUM(si.qty), 0) AS sales_qty,
-        COALESCE(SUM(si.line_total_cents), 0) AS total_amount_cents
+        COALESCE(SUM(si.line_total_cents), 0) AS total_amount_cents,
+        COALESCE(
+          SUM(
+            COALESCE(
+              si.line_subtotal_cents,
+              CAST(ROUND(COALESCE(si.qty, 0) * COALESCE(si.unit_price_cents, 0)) AS INTEGER)
+            )
+          ),
+          0
+        ) AS subtotal_cents,
+        COALESCE(
+          SUM(
+            COALESCE(
+              si.line_cost_cents,
+              CAST(ROUND(COALESCE(si.qty, 0) * COALESCE(si.unit_cost_cents, 0)) AS INTEGER)
+            )
+          ),
+          0
+        ) AS cost_cents
       FROM sale_items si
       INNER JOIN sales s ON s.id = si.sale_id
       WHERE s.terminal_session_id = ?
@@ -2628,6 +2652,8 @@ class TpvLocalDataSource {
           qty: (row.data['sales_qty'] as num?)?.toDouble() ?? 0,
           totalAmountCents:
               (row.data['total_amount_cents'] as num?)?.toInt() ?? 0,
+          subtotalCents: (row.data['subtotal_cents'] as num?)?.toInt() ?? 0,
+          costCents: (row.data['cost_cents'] as num?)?.toInt() ?? 0,
         ),
     }..removeWhere((String key, _IpvSalesAggregate value) => key.isEmpty);
   }
@@ -2894,10 +2920,23 @@ class _IpvSalesAggregate {
   const _IpvSalesAggregate({
     required this.qty,
     required this.totalAmountCents,
+    required this.subtotalCents,
+    required this.costCents,
   });
 
   final double qty;
   final int totalAmountCents;
+  final int subtotalCents;
+  final int costCents;
+
+  int get profitCents => subtotalCents - costCents;
+
+  int get unitMarginCents {
+    if (qty.abs() <= 0.000001) {
+      return 0;
+    }
+    return (profitCents / qty).round();
+  }
 }
 
 class _IpvProductFrozenInfo {

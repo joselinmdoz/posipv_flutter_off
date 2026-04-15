@@ -1458,33 +1458,62 @@ class ProductosLocalDataSource {
   }
 
   Future<void> _ensureCatalogDefaultsForKind(ProductCatalogKind kind) async {
+    final List<ProductCatalogItem> sameKind =
+        await (_db.select(_db.productCatalogItems)
+              ..where((ProductCatalogItems tbl) => tbl.kind.equals(kind.key)))
+            .get();
     for (final String value in kind.defaults) {
-      final String cleaned = _normalizeCatalogValue(value);
+      final String cleaned = kind == ProductCatalogKind.unit
+          ? _normalizeUnitSymbol(value)
+          : _normalizeCatalogValue(value);
       if (cleaned.isEmpty) {
         continue;
       }
-      final ProductCatalogItem? existing =
-          await (_db.select(_db.productCatalogItems)
-                ..where((ProductCatalogItems tbl) =>
-                    tbl.kind.equals(kind.key) & tbl.value.equals(cleaned)))
-              .getSingleOrNull();
+      ProductCatalogItem? existing;
+      for (final ProductCatalogItem row in sameKind) {
+        if (row.value.trim().toLowerCase() == cleaned.toLowerCase()) {
+          existing = row;
+          break;
+        }
+      }
       if (existing == null) {
+        final String id = _uuid.v4();
+        final DateTime now = DateTime.now();
         await _db.into(_db.productCatalogItems).insert(
               ProductCatalogItemsCompanion.insert(
-                id: _uuid.v4(),
+                id: id,
                 kind: kind.key,
                 value: cleaned,
               ),
               mode: InsertMode.insertOrIgnore,
             );
+        sameKind.add(
+          ProductCatalogItem(
+            id: id,
+            kind: kind.key,
+            value: cleaned,
+            isActive: true,
+            createdAt: now,
+            updatedAt: null,
+          ),
+        );
       } else if (!existing.isActive) {
+        final ProductCatalogItem existingItem = existing;
+        final DateTime now = DateTime.now();
         await (_db.update(_db.productCatalogItems)
-              ..where((ProductCatalogItems tbl) => tbl.id.equals(existing.id)))
+              ..where(
+                  (ProductCatalogItems tbl) => tbl.id.equals(existingItem.id)))
             .write(
           ProductCatalogItemsCompanion(
             isActive: const Value(true),
-            updatedAt: Value(DateTime.now()),
+            updatedAt: Value(now),
           ),
+        );
+        sameKind[sameKind.indexWhere((ProductCatalogItem row) {
+          return row.id == existingItem.id;
+        })] = existingItem.copyWith(
+          isActive: true,
+          updatedAt: Value(now),
         );
       }
     }
@@ -1749,29 +1778,135 @@ class ProductosLocalDataSource {
               ))
             .get();
 
+    // Normaliza duplicados legacy (ej. "Kg" y "kg") antes de sincronizar.
+    final Map<String, List<ProductCatalogItem>> groupedByValue =
+        <String, List<ProductCatalogItem>>{};
+    for (final ProductCatalogItem row in catalogUnits) {
+      final String key = row.value.trim().toLowerCase();
+      groupedByValue.putIfAbsent(key, () => <ProductCatalogItem>[]).add(row);
+    }
+    for (final List<ProductCatalogItem> group in groupedByValue.values) {
+      if (group.length <= 1) {
+        continue;
+      }
+      group.sort((ProductCatalogItem a, ProductCatalogItem b) {
+        if (a.isActive != b.isActive) {
+          return a.isActive ? -1 : 1;
+        }
+        final int createdCmp = a.createdAt.compareTo(b.createdAt);
+        if (createdCmp != 0) {
+          return createdCmp;
+        }
+        return a.id.compareTo(b.id);
+      });
+      for (int i = 1; i < group.length; i++) {
+        final ProductCatalogItem duplicate = group[i];
+        await (_db.delete(_db.productCatalogItems)
+              ..where((ProductCatalogItems tbl) => tbl.id.equals(duplicate.id)))
+            .go();
+      }
+    }
+
+    List<ProductCatalogItem> freshCatalogUnits =
+        await (_db.select(_db.productCatalogItems)
+              ..where(
+                (ProductCatalogItems tbl) => tbl.kind.equals(
+                  ProductCatalogKind.unit.key,
+                ),
+              ))
+            .get();
+
     for (final MeasurementUnitModel unit in units) {
-      ProductCatalogItem? existing;
-      for (final ProductCatalogItem row in catalogUnits) {
-        if (row.value.trim().toLowerCase() == unit.symbol.toLowerCase()) {
-          existing = row;
+      ProductCatalogItem? exactMatch;
+      ProductCatalogItem? caseInsensitiveMatch;
+      for (final ProductCatalogItem row in freshCatalogUnits) {
+        final String rowValue = row.value.trim();
+        if (rowValue == unit.symbol) {
+          exactMatch = row;
           break;
         }
+        if (caseInsensitiveMatch == null &&
+            rowValue.toLowerCase() == unit.symbol.toLowerCase()) {
+          caseInsensitiveMatch = row;
+        }
       }
+      ProductCatalogItem? existing = exactMatch ?? caseInsensitiveMatch;
       if (existing == null) {
         if (unit.isActive) {
+          final String id = _uuid.v4();
+          final DateTime now = DateTime.now();
           await _db.into(_db.productCatalogItems).insert(
                 ProductCatalogItemsCompanion.insert(
-                  id: _uuid.v4(),
+                  id: id,
                   kind: ProductCatalogKind.unit.key,
                   value: unit.symbol,
                 ),
               );
+          freshCatalogUnits = <ProductCatalogItem>[
+            ...freshCatalogUnits,
+            ProductCatalogItem(
+              id: id,
+              kind: ProductCatalogKind.unit.key,
+              value: unit.symbol,
+              isActive: true,
+              createdAt: now,
+              updatedAt: null,
+            ),
+          ];
         }
         continue;
       }
-      final ProductCatalogItem catalogItem = existing;
+
+      ProductCatalogItem catalogItem = existing;
+      if (catalogItem.value != unit.symbol) {
+        ProductCatalogItem? exactConflict;
+        for (final ProductCatalogItem row in freshCatalogUnits) {
+          if (row.id == catalogItem.id) {
+            continue;
+          }
+          if (row.value.trim() == unit.symbol) {
+            exactConflict = row;
+            break;
+          }
+        }
+        if (exactConflict != null) {
+          if (exactConflict.isActive != unit.isActive) {
+            final DateTime now = DateTime.now();
+            await (_db.update(_db.productCatalogItems)
+                  ..where(
+                    (ProductCatalogItems tbl) =>
+                        tbl.id.equals(exactConflict!.id),
+                  ))
+                .write(
+              ProductCatalogItemsCompanion(
+                isActive: Value(unit.isActive),
+                updatedAt: Value(now),
+              ),
+            );
+            final int idx =
+                freshCatalogUnits.indexWhere((ProductCatalogItem row) {
+              return row.id == exactConflict!.id;
+            });
+            if (idx >= 0) {
+              freshCatalogUnits[idx] = freshCatalogUnits[idx].copyWith(
+                isActive: unit.isActive,
+                updatedAt: Value(now),
+              );
+            }
+          }
+          await (_db.delete(_db.productCatalogItems)
+                ..where(
+                    (ProductCatalogItems tbl) => tbl.id.equals(catalogItem.id)))
+              .go();
+          freshCatalogUnits.removeWhere((ProductCatalogItem row) {
+            return row.id == catalogItem.id;
+          });
+          continue;
+        }
+      }
       if (catalogItem.value != unit.symbol ||
           catalogItem.isActive != unit.isActive) {
+        final DateTime now = DateTime.now();
         await (_db.update(_db.productCatalogItems)
               ..where(
                 (ProductCatalogItems tbl) => tbl.id.equals(catalogItem.id),
@@ -1780,9 +1915,19 @@ class ProductosLocalDataSource {
           ProductCatalogItemsCompanion(
             value: Value(unit.symbol),
             isActive: Value(unit.isActive),
-            updatedAt: Value(DateTime.now()),
+            updatedAt: Value(now),
           ),
         );
+        final int idx = freshCatalogUnits.indexWhere((ProductCatalogItem row) {
+          return row.id == catalogItem.id;
+        });
+        if (idx >= 0) {
+          freshCatalogUnits[idx] = freshCatalogUnits[idx].copyWith(
+            value: unit.symbol,
+            isActive: unit.isActive,
+            updatedAt: Value(now),
+          );
+        }
       }
     }
   }
