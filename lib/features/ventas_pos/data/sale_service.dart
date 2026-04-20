@@ -191,6 +191,8 @@ class SaleService {
         final String movementNotePrefix = isConsignmentSale
             ? (isDirectSale ? 'Consignacion directa' : 'Consignacion POS')
             : (isDirectSale ? 'Venta directa' : 'Venta POS');
+        final DateTime now = DateTime.now();
+        final DateTime saleCreatedAt = input.createdAt?.toLocal() ?? now;
         String? terminalCurrencyCode;
         String? saleTerminalId = input.terminalId?.trim();
         String? saleTerminalSessionId = input.terminalSessionId?.trim();
@@ -202,10 +204,9 @@ class SaleService {
         }
 
         if (!isDirectSale) {
-          if (saleTerminalId == null || saleTerminalSessionId == null) {
+          if (saleTerminalId == null) {
             throw const _SaleException(
-              'Debe existir un TPV con turno abierto para vender en POS.',
-            );
+                'Debe seleccionar un TPV para vender en POS.');
           }
           final PosTerminal? terminal = await (_db.select(_db.posTerminals)
                 ..where((PosTerminals tbl) => tbl.id.equals(saleTerminalId!)))
@@ -221,24 +222,36 @@ class SaleService {
             );
           }
 
-          final PosSession? tpvSession = await (_db.select(_db.posSessions)
-                ..where((PosSessions tbl) =>
-                    tbl.id.equals(saleTerminalSessionId!) &
-                    tbl.terminalId.equals(saleTerminalId!)))
-              .getSingleOrNull();
-          if (tpvSession == null || tpvSession.status != 'open') {
+          final PosSession tpvSession = await _resolvePosSessionForSale(
+            terminalId: saleTerminalId,
+            preferredSessionId: saleTerminalSessionId,
+            saleCreatedAt: saleCreatedAt,
+          );
+          saleTerminalSessionId = tpvSession.id;
+          if (saleCreatedAt.isBefore(tpvSession.openedAt)) {
             throw const _SaleException(
-              'No hay un turno abierto valido en este TPV.',
+              'La fecha de la venta no puede ser anterior a la apertura del turno.',
             );
           }
-          if (tpvSession.userId != input.cashierId) {
-            final bool cashierIsAdmin =
-                await _userHasAdminRole(input.cashierId);
+          if (tpvSession.closedAt != null &&
+              saleCreatedAt.isAfter(tpvSession.closedAt!)) {
+            throw const _SaleException(
+              'La fecha de la venta no puede ser posterior al cierre del turno.',
+            );
+          }
+          final bool cashierIsAdmin = await _userHasAdminRole(input.cashierId);
+          if (tpvSession.status.trim().toLowerCase() == 'open' &&
+              tpvSession.userId != input.cashierId) {
             if (!cashierIsAdmin) {
               throw const _SaleException(
                 'El turno abierto pertenece a otro usuario.',
               );
             }
+          } else if (tpvSession.status.trim().toLowerCase() != 'open' &&
+              !cashierIsAdmin) {
+            throw const _SaleException(
+              'Solo administrador puede registrar ventas en turnos cerrados.',
+            );
           }
         } else {
           saleTerminalId = null;
@@ -269,8 +282,6 @@ class SaleService {
           }
         }
 
-        final DateTime now = DateTime.now();
-        final DateTime saleCreatedAt = input.createdAt?.toLocal() ?? now;
         await _enforceDailySalesLimit(now);
         final String saleId = _uuid.v4();
         final String folio = _buildFolio(now);
@@ -583,6 +594,15 @@ class SaleService {
 
       String? terminalCurrencyCode;
       final bool isDirectSale = (sale.terminalId ?? '').trim().isEmpty;
+      final DateTime now = DateTime.now();
+      final DateTime nextSaleCreatedAt =
+          input.createdAt?.toLocal() ?? sale.createdAt;
+      if (nextSaleCreatedAt.isAfter(now)) {
+        throw const _SaleException(
+          'La fecha de la venta no puede estar en el futuro.',
+        );
+      }
+      String? nextSaleTerminalSessionId = sale.terminalSessionId;
       if (!isDirectSale) {
         final PosTerminal? terminal = await (_db.select(_db.posTerminals)
               ..where((PosTerminals tbl) => tbl.id.equals(sale.terminalId!)))
@@ -596,6 +616,32 @@ class SaleService {
             'La venta tiene un TPV que no corresponde a su almacén.',
           );
         }
+        final PosSession resolvedSession = await _resolvePosSessionForSale(
+          terminalId: terminal.id,
+          preferredSessionId: input.terminalSessionId ?? sale.terminalSessionId,
+          saleCreatedAt: nextSaleCreatedAt,
+        );
+        nextSaleTerminalSessionId = resolvedSession.id;
+        if (nextSaleCreatedAt.isBefore(resolvedSession.openedAt)) {
+          throw const _SaleException(
+            'La fecha de la venta no puede ser anterior a la apertura del turno.',
+          );
+        }
+        if (resolvedSession.closedAt != null &&
+            nextSaleCreatedAt.isAfter(resolvedSession.closedAt!)) {
+          throw const _SaleException(
+            'La fecha de la venta no puede ser posterior al cierre del turno.',
+          );
+        }
+        final bool editorIsAdmin = await _userHasAdminRole(safeUserId);
+        if (resolvedSession.status.trim().toLowerCase() != 'open' &&
+            !editorIsAdmin) {
+          throw const _SaleException(
+            'Solo administrador puede mover ventas a turnos cerrados.',
+          );
+        }
+      } else {
+        nextSaleTerminalSessionId = null;
       }
 
       final List<SaleItem> previousLines = await (_db.select(_db.saleItems)
@@ -710,7 +756,6 @@ class SaleService {
         ...previousQtyByProduct.keys,
         ...nextQtyByProduct.keys,
       };
-      final DateTime now = DateTime.now();
       for (final String productId in stockProductIds) {
         final double oldQtyInSale = previousQtyByProduct[productId] ?? 0;
         final double nextQtyInSale = nextQtyByProduct[productId] ?? 0;
@@ -798,7 +843,7 @@ class SaleService {
           productId: line.item.productId,
           warehouseId: sale.warehouseId,
           allocations: line.allocations,
-          createdAt: sale.createdAt,
+          createdAt: nextSaleCreatedAt,
         );
         await _db.into(_db.stockMovements).insert(
               StockMovementsCompanion.insert(
@@ -813,7 +858,7 @@ class SaleService {
                 refId: Value(safeSaleId),
                 note: Value('$movementNotePrefix ${sale.folio}'),
                 createdBy: safeUserId,
-                createdAt: Value(sale.createdAt),
+                createdAt: Value(nextSaleCreatedAt),
               ),
             );
       }
@@ -828,7 +873,7 @@ class SaleService {
                 transactionId: Value(_normalizeOptional(payment.transactionId)),
                 sourceCurrencyCode: Value(payment.sourceCurrencyCode),
                 sourceAmountCents: Value(payment.sourceAmountCents),
-                createdAt: Value(sale.createdAt),
+                createdAt: Value(nextSaleCreatedAt),
               ),
             );
       }
@@ -841,6 +886,8 @@ class SaleService {
           subtotalCents: Value(subtotalCents),
           taxCents: Value(taxCents),
           totalCents: Value(totalCents),
+          terminalSessionId: Value(nextSaleTerminalSessionId),
+          createdAt: Value(nextSaleCreatedAt),
           status: const Value('posted'),
         ),
       );
@@ -866,6 +913,10 @@ class SaleService {
                 'newSubtotalCents': subtotalCents,
                 'newTaxCents': taxCents,
                 'newTotalCents': totalCents,
+                'oldCreatedAt': sale.createdAt.toIso8601String(),
+                'newCreatedAt': nextSaleCreatedAt.toIso8601String(),
+                'oldTerminalSessionId': sale.terminalSessionId,
+                'newTerminalSessionId': nextSaleTerminalSessionId,
                 'oldItemsCount': previousLines.length,
                 'newItemsCount': processedLines.length,
                 'newPaymentsCount': input.payments.length,
@@ -1702,6 +1753,50 @@ class SaleService {
         dryRun: dryRun,
       );
     });
+  }
+
+  Future<PosSession> _resolvePosSessionForSale({
+    required String terminalId,
+    required String? preferredSessionId,
+    required DateTime saleCreatedAt,
+  }) async {
+    final String safeTerminalId = terminalId.trim();
+    if (safeTerminalId.isEmpty) {
+      throw const _SaleException('TPV inválido para la venta.');
+    }
+    final String safePreferredSessionId = (preferredSessionId ?? '').trim();
+    if (safePreferredSessionId.isNotEmpty) {
+      final PosSession? explicit = await (_db.select(_db.posSessions)
+            ..where((PosSessions tbl) =>
+                tbl.id.equals(safePreferredSessionId) &
+                tbl.terminalId.equals(safeTerminalId)))
+          .getSingleOrNull();
+      if (explicit == null) {
+        throw const _SaleException(
+          'La sesión TPV seleccionada no existe o no pertenece al TPV.',
+        );
+      }
+      return explicit;
+    }
+
+    final PosSession? byDate = await (_db.select(_db.posSessions)
+          ..where((PosSessions tbl) =>
+              tbl.terminalId.equals(safeTerminalId) &
+              tbl.openedAt.isSmallerOrEqualValue(saleCreatedAt) &
+              (tbl.closedAt.isNull() |
+                  tbl.closedAt.isBiggerOrEqualValue(saleCreatedAt)))
+          ..orderBy(<OrderingTerm Function(PosSessions)>[
+            (PosSessions tbl) => OrderingTerm.desc(tbl.openedAt),
+          ])
+          ..limit(1))
+        .getSingleOrNull();
+    if (byDate != null) {
+      return byDate;
+    }
+
+    throw const _SaleException(
+      'No existe una sesión TPV que cubra la fecha/hora de la venta.',
+    );
   }
 
   String _normalizeCurrencyCode(String? value) {

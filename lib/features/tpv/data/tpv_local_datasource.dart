@@ -1394,6 +1394,9 @@ class TpvLocalDataSource {
       terminalId: terminalId,
       warehouseId: terminal.warehouseId,
     );
+    final int calculatedOpeningFloat = openingFloatCents > 0
+        ? openingFloatCents
+        : await _getLastClosingCash(terminalId);
     await _db.transaction(() async {
       await _db.into(_db.posSessions).insert(
             PosSessionsCompanion.insert(
@@ -1401,7 +1404,7 @@ class TpvLocalDataSource {
               terminalId: terminalId,
               userId: safeUserId,
               openedAt: Value(openedAt),
-              openingFloatCents: Value(openingFloatCents),
+              openingFloatCents: Value(calculatedOpeningFloat),
               note: Value(_normalizeOptional(note)),
             ),
           );
@@ -1741,16 +1744,305 @@ class TpvLocalDataSource {
           'closedAt': closedAt.toIso8601String(),
           'openingFloatCents': session.openingFloatCents,
           'closingCashCents': finalClosingCashCents,
-          'cashBreakdown': sanitizedBreakdown,
+          'cashBreakdown': <String, int>{
+            for (final MapEntry<int, int> entry in sanitizedBreakdown.entries)
+              entry.key.toString(): entry.value,
+          },
           'note': _normalizeOptional(note),
         },
       );
     });
   }
 
+  Future<PosSession> updateSessionTimeline({
+    required String sessionId,
+    required String actorUserId,
+    required DateTime openedAt,
+    DateTime? closedAt,
+    String? note,
+  }) async {
+    await _licenseService.requireWriteAccess();
+    final String safeSessionId = sessionId.trim();
+    final String safeActorUserId = actorUserId.trim();
+    if (safeSessionId.isEmpty) {
+      throw Exception('La sesion no existe.');
+    }
+    if (safeActorUserId.isEmpty) {
+      throw Exception('Usuario inválido.');
+    }
+    final bool isAdmin = await _isAdminUser(safeActorUserId);
+    if (!isAdmin) {
+      throw Exception('Solo administrador puede ajustar fecha/hora del turno.');
+    }
+
+    final DateTime targetOpenedAt = openedAt.toLocal();
+    final DateTime now = DateTime.now();
+    if (targetOpenedAt.isAfter(now)) {
+      throw Exception('La apertura no puede estar en el futuro.');
+    }
+
+    return _db.transaction(() async {
+      final PosSession? session = await (_db.select(_db.posSessions)
+            ..where((PosSessions tbl) => tbl.id.equals(safeSessionId)))
+          .getSingleOrNull();
+      if (session == null) {
+        throw Exception('La sesion no existe.');
+      }
+
+      final bool isOpen = session.status.trim().toLowerCase() == 'open';
+      DateTime? targetClosedAt = isOpen ? null : (closedAt ?? session.closedAt);
+      if (!isOpen && targetClosedAt == null) {
+        throw Exception('Un turno cerrado debe tener fecha/hora de cierre.');
+      }
+      targetClosedAt = targetClosedAt?.toLocal();
+      if (targetClosedAt != null) {
+        if (targetClosedAt.isAfter(now)) {
+          throw Exception('El cierre no puede estar en el futuro.');
+        }
+        if (targetClosedAt.isBefore(targetOpenedAt)) {
+          throw Exception('El cierre no puede ser anterior a la apertura.');
+        }
+      }
+      final Duration timelineShift =
+          targetOpenedAt.difference(session.openedAt);
+
+      final List<PosSession> siblingSessions =
+          await (_db.select(_db.posSessions)
+                ..where((PosSessions tbl) =>
+                    tbl.terminalId.equals(session.terminalId) &
+                    tbl.id.isNotValue(session.id)))
+              .get();
+      for (final PosSession other in siblingSessions) {
+        if (_intervalsOverlap(
+          startA: targetOpenedAt,
+          endA: targetClosedAt,
+          startB: other.openedAt,
+          endB: other.closedAt,
+        )) {
+          throw Exception(
+            'El rango del turno se solapa con otro turno existente (${other.id.substring(0, 8)}).',
+          );
+        }
+      }
+
+      final List<Sale> sessionSales = await (_db.select(_db.sales)
+            ..where((Sales tbl) => tbl.terminalSessionId.equals(session.id)))
+          .get();
+      DateTime? minSaleAt;
+      DateTime? maxSaleAt;
+      for (final Sale sale in sessionSales) {
+        if (minSaleAt == null || sale.createdAt.isBefore(minSaleAt)) {
+          minSaleAt = sale.createdAt;
+        }
+        if (maxSaleAt == null || sale.createdAt.isAfter(maxSaleAt)) {
+          maxSaleAt = sale.createdAt;
+        }
+      }
+      final DateTime? shiftedMinSaleAt = minSaleAt?.add(timelineShift);
+      final DateTime? shiftedMaxSaleAt = maxSaleAt?.add(timelineShift);
+      if (shiftedMinSaleAt != null &&
+          shiftedMinSaleAt.isBefore(targetOpenedAt)) {
+        throw Exception(
+          'Hay ventas anteriores a la nueva apertura (${shiftedMinSaleAt.toIso8601String()}). Ajusta fecha/hora de ventas o apertura.',
+        );
+      }
+      final DateTime maxAllowedSalesAt = targetClosedAt ?? now;
+      if (shiftedMaxSaleAt != null &&
+          shiftedMaxSaleAt.isAfter(maxAllowedSalesAt)) {
+        throw Exception(
+          'Hay ventas posteriores al rango permitido (${shiftedMaxSaleAt.toIso8601String()}). Ajusta fecha/hora del turno.',
+        );
+      }
+      if (targetClosedAt != null &&
+          shiftedMaxSaleAt != null &&
+          shiftedMaxSaleAt.isAfter(targetClosedAt)) {
+        throw Exception(
+          'Hay ventas posteriores al nuevo cierre (${shiftedMaxSaleAt.toIso8601String()}). Ajusta fecha/hora de ventas o cierre.',
+        );
+      }
+
+      await (_db.update(_db.posSessions)
+            ..where((PosSessions tbl) => tbl.id.equals(session.id)))
+          .write(
+        PosSessionsCompanion(
+          openedAt: Value(targetOpenedAt),
+          closedAt: isOpen ? const Value.absent() : Value(targetClosedAt),
+          note: Value(_mergeNotes(session.note, note)),
+        ),
+      );
+
+      final IpvReport? linkedReport = await (_db.select(_db.ipvReports)
+            ..where((IpvReports tbl) => tbl.sessionId.equals(session.id)))
+          .getSingleOrNull();
+      if (linkedReport != null) {
+        final bool reportClosed =
+            linkedReport.status.trim().toLowerCase() == 'closed';
+        await (_db.update(_db.ipvReports)
+              ..where((IpvReports tbl) => tbl.id.equals(linkedReport.id)))
+            .write(
+          IpvReportsCompanion(
+            openedAt: Value(targetOpenedAt),
+            closedAt:
+                reportClosed ? Value(targetClosedAt) : const Value.absent(),
+            note: Value(
+              _mergeNotes(
+                linkedReport.note,
+                'Ajuste de horario de turno por $safeActorUserId',
+              ),
+            ),
+          ),
+        );
+      }
+
+      if (timelineShift != Duration.zero && sessionSales.isNotEmpty) {
+        await _shiftSessionLinkedTimeline(
+          sessionId: session.id,
+          sales: sessionSales,
+          shift: timelineShift,
+        );
+      }
+
+      final DateTime recalcFrom = session.openedAt.isBefore(targetOpenedAt)
+          ? session.openedAt
+          : targetOpenedAt;
+      await _recalculateIpvTerminalChainFrom(
+        terminalId: session.terminalId,
+        fromOpenedAt: recalcFrom,
+      );
+
+      await _logAudit(
+        userId: safeActorUserId,
+        action: 'TPV_SESSION_TIMELINE_UPDATED',
+        entity: 'pos_session',
+        entityId: session.id,
+        payload: <String, Object?>{
+          'terminalId': session.terminalId,
+          'oldOpenedAt': session.openedAt.toIso8601String(),
+          'newOpenedAt': targetOpenedAt.toIso8601String(),
+          'oldClosedAt': session.closedAt?.toIso8601String(),
+          'newClosedAt': targetClosedAt?.toIso8601String(),
+          'shiftSeconds': timelineShift.inSeconds,
+          'status': session.status,
+          'note': _normalizeOptional(note),
+        },
+      );
+
+      return ((_db.select(_db.posSessions)
+            ..where((PosSessions tbl) => tbl.id.equals(session.id)))
+          .getSingle());
+    });
+  }
+
+  Future<void> _shiftSessionLinkedTimeline({
+    required String sessionId,
+    required List<Sale> sales,
+    required Duration shift,
+  }) async {
+    if (sales.isEmpty || shift == Duration.zero) {
+      return;
+    }
+    await _db.batch((Batch batch) {
+      for (final Sale sale in sales) {
+        batch.update(
+          _db.sales,
+          SalesCompanion(createdAt: Value(sale.createdAt.add(shift))),
+          where: (Sales tbl) => tbl.id.equals(sale.id),
+        );
+      }
+    });
+
+    final List<_TimelineRow> paymentRows = await _loadTimelineRows(
+      '''
+      SELECT p.id AS id, p.created_at AS created_at
+      FROM payments p
+      INNER JOIN sales s ON s.id = p.sale_id
+      WHERE s.terminal_session_id = ?
+      ''',
+      <Variable<Object>>[Variable<String>(sessionId)],
+    );
+    if (paymentRows.isNotEmpty) {
+      await _db.batch((Batch batch) {
+        for (final _TimelineRow row in paymentRows) {
+          batch.update(
+            _db.payments,
+            PaymentsCompanion(createdAt: Value(row.createdAt.add(shift))),
+            where: (Payments tbl) => tbl.id.equals(row.id),
+          );
+        }
+      });
+    }
+
+    final List<_TimelineRow> stockRows = await _loadTimelineRows(
+      '''
+      SELECT sm.id AS id, sm.created_at AS created_at
+      FROM stock_movements sm
+      INNER JOIN sales s ON s.id = sm.ref_id
+      WHERE s.terminal_session_id = ?
+      ''',
+      <Variable<Object>>[Variable<String>(sessionId)],
+    );
+    if (stockRows.isNotEmpty) {
+      await _db.batch((Batch batch) {
+        for (final _TimelineRow row in stockRows) {
+          batch.update(
+            _db.stockMovements,
+            StockMovementsCompanion(createdAt: Value(row.createdAt.add(shift))),
+            where: (StockMovements tbl) => tbl.id.equals(row.id),
+          );
+        }
+      });
+    }
+
+    final List<_TimelineRow> allocationRows = await _loadTimelineRows(
+      '''
+      SELECT a.id AS id, a.created_at AS created_at
+      FROM sale_item_lot_allocations a
+      INNER JOIN sales s ON s.id = a.sale_id
+      WHERE s.terminal_session_id = ?
+      ''',
+      <Variable<Object>>[Variable<String>(sessionId)],
+    );
+    if (allocationRows.isNotEmpty) {
+      await _db.batch((Batch batch) {
+        for (final _TimelineRow row in allocationRows) {
+          batch.update(
+            _db.saleItemLotAllocations,
+            SaleItemLotAllocationsCompanion(
+              createdAt: Value(row.createdAt.add(shift)),
+            ),
+            where: (SaleItemLotAllocations tbl) => tbl.id.equals(row.id),
+          );
+        }
+      });
+    }
+  }
+
+  Future<List<_TimelineRow>> _loadTimelineRows(
+    String query,
+    List<Variable<Object>> variables,
+  ) async {
+    final List<QueryRow> rows = await _db
+        .customSelect(
+          query,
+          variables: variables,
+        )
+        .get();
+    final List<_TimelineRow> mapped = <_TimelineRow>[];
+    for (final QueryRow row in rows) {
+      final String id = (row.readNullable<String>('id') ?? '').trim();
+      final DateTime? createdAt = row.readNullable<DateTime>('created_at');
+      if (id.isEmpty || createdAt == null) {
+        continue;
+      }
+      mapped.add(_TimelineRow(id: id, createdAt: createdAt));
+    }
+    return mapped;
+  }
+
   Future<Map<String, int>> getSessionExpectedPaymentsByMethod(
     String sessionId,
   ) async {
+    final DateTime now = DateTime.now();
     final List<QueryRow> rows = await _db.customSelect(
       '''
       SELECT
@@ -1759,11 +2051,18 @@ class TpvLocalDataSource {
       FROM payments p
       INNER JOIN sales s
         ON s.id = p.sale_id
-      WHERE s.terminal_session_id = ?
+      INNER JOIN pos_sessions ps
+        ON ps.id = s.terminal_session_id
+      WHERE ps.id = ?
         AND s.status = 'posted'
+        AND s.created_at > ps.opened_at
+        AND s.created_at <= COALESCE(ps.closed_at, ?)
       GROUP BY p.method
       ''',
-      variables: <Variable<Object>>[Variable<String>(sessionId)],
+      variables: <Variable<Object>>[
+        Variable<String>(sessionId),
+        Variable<DateTime>(now),
+      ],
     ).get();
 
     final Map<String, int> result = <String, int>{};
@@ -1775,6 +2074,7 @@ class TpvLocalDataSource {
       final int amount = row.read<int>('total_cents');
       result[method] = (result[method] ?? 0) + amount;
     }
+
     return result;
   }
 
@@ -1791,6 +2091,7 @@ class TpvLocalDataSource {
       );
     }
 
+    final DateTime now = DateTime.now();
     final QueryRow? row = await _db.customSelect(
       '''
       SELECT
@@ -1800,9 +2101,15 @@ class TpvLocalDataSource {
         COALESCE(SUM(CASE WHEN LOWER(COALESCE(s.status, '')) = 'posted' THEN s.total_cents ELSE 0 END), 0) AS posted_total_cents,
         COALESCE(SUM(CASE WHEN LOWER(COALESCE(s.status, '')) = 'archived' THEN 1 ELSE 0 END), 0) AS archived_count
       FROM sales s
-      WHERE s.terminal_session_id = ?
+      INNER JOIN pos_sessions ps ON ps.id = s.terminal_session_id
+      WHERE ps.id = ?
+        AND s.created_at > ps.opened_at
+        AND s.created_at <= COALESCE(ps.closed_at, ?)
       ''',
-      variables: <Variable<Object>>[Variable<String>(safeSessionId)],
+      variables: <Variable<Object>>[
+        Variable<String>(safeSessionId),
+        Variable<DateTime>(now),
+      ],
     ).getSingleOrNull();
 
     return TpvSessionSalesSummary(
@@ -1826,6 +2133,7 @@ class TpvLocalDataSource {
     }
     final int safeLimit = limit < 1 ? 1 : limit;
     final int safeOffset = offset < 0 ? 0 : offset;
+    final DateTime now = DateTime.now();
     final List<QueryRow> rows = await _db.customSelect(
       '''
       SELECT
@@ -1839,9 +2147,12 @@ class TpvLocalDataSource {
         c.full_name AS customer_name,
         COALESCE(GROUP_CONCAT(DISTINCT LOWER(COALESCE(p.method, ''))), '') AS methods
       FROM sales s
+      INNER JOIN pos_sessions ps ON ps.id = s.terminal_session_id
       LEFT JOIN customers c ON c.id = s.customer_id
       LEFT JOIN payments p ON p.sale_id = s.id
-      WHERE s.terminal_session_id = ?
+      WHERE ps.id = ?
+        AND s.created_at > ps.opened_at
+        AND s.created_at <= COALESCE(ps.closed_at, ?)
       GROUP BY
         s.id,
         s.folio,
@@ -1857,6 +2168,7 @@ class TpvLocalDataSource {
       ''',
       variables: <Variable<Object>>[
         Variable<String>(safeSessionId),
+        Variable<DateTime>(now),
         Variable<int>(safeLimit),
         Variable<int>(safeOffset),
       ],
@@ -1911,51 +2223,149 @@ class TpvLocalDataSource {
       if (report == null) {
         throw Exception('El reporte IPV no existe.');
       }
-
-      final DateTime movementStart = await _resolveMovementStartForReport(
-        terminalId: report.terminalId,
-        openedAt: report.openedAt,
-        currentReportId: report.id,
-      );
-      final DateTime movementEnd = report.closedAt ?? DateTime.now();
-
-      await _recalculateIpvReportLines(
+      await _reconcileIpvReportInTransaction(
         report: report,
-        movementStart: movementStart,
-        movementEnd: movementEnd,
+        userId: safeUserId,
+        reconciledAt: DateTime.now(),
       );
-
-      final String? note = _mergeNotes(
-        report.note,
-        'Reconciliado ${DateTime.now().toIso8601String()} por $safeUserId',
-      );
-      await (_db.update(_db.ipvReports)
-            ..where((IpvReports tbl) => tbl.id.equals(report.id)))
-          .write(
-        IpvReportsCompanion(
-          note: Value(note),
-          closedBy: report.status == 'closed'
-              ? Value(safeUserId)
-              : const Value.absent(),
-        ),
-      );
-
-      await _db.into(_db.auditLogs).insert(
-            AuditLogsCompanion.insert(
-              id: _uuid.v4(),
-              userId: Value(safeUserId),
-              action: 'IPV_RECONCILED',
-              entity: 'ipv_report',
-              entityId: report.id,
-              payloadJson: jsonEncode(<String, Object?>{
-                'sessionId': report.sessionId,
-                'status': report.status,
-                'movementStart': movementStart.toIso8601String(),
-                'movementEnd': movementEnd.toIso8601String(),
-              }),
-            ),
-          );
     });
+  }
+
+  Future<int> reconcileIpvReportsFromDate({
+    required DateTime fromDate,
+    required String userId,
+  }) async {
+    await _licenseService.requireWriteAccess();
+    final String safeUserId = userId.trim();
+    if (safeUserId.isEmpty) {
+      throw Exception('Usuario inválido.');
+    }
+    final DateTime normalizedFromDate = DateTime(
+      fromDate.year,
+      fromDate.month,
+      fromDate.day,
+    );
+    return _db.transaction(() async {
+      final List<IpvReport> reports = await (_db.select(_db.ipvReports)
+            ..where((IpvReports tbl) =>
+                tbl.openedAt.isBiggerOrEqualValue(normalizedFromDate))
+            ..orderBy(<OrderingTerm Function(IpvReports)>[
+              (IpvReports tbl) => OrderingTerm.asc(tbl.openedAt),
+            ]))
+          .get();
+      return _reconcileIpvReportsBatchInTransaction(
+        reports: reports,
+        userId: safeUserId,
+        batchAction: 'IPV_RECONCILED_FROM_DATE',
+        batchPayload: <String, Object?>{
+          'fromDate': normalizedFromDate.toIso8601String(),
+        },
+      );
+    });
+  }
+
+  Future<int> reconcileAllIpvReports({
+    required String userId,
+  }) async {
+    await _licenseService.requireWriteAccess();
+    final String safeUserId = userId.trim();
+    if (safeUserId.isEmpty) {
+      throw Exception('Usuario inválido.');
+    }
+    return _db.transaction(() async {
+      final List<IpvReport> reports = await (_db.select(_db.ipvReports)
+            ..orderBy(<OrderingTerm Function(IpvReports)>[
+              (IpvReports tbl) => OrderingTerm.asc(tbl.openedAt),
+            ]))
+          .get();
+      return _reconcileIpvReportsBatchInTransaction(
+        reports: reports,
+        userId: safeUserId,
+        batchAction: 'IPV_RECONCILED_ALL',
+      );
+    });
+  }
+
+  Future<int> _reconcileIpvReportsBatchInTransaction({
+    required List<IpvReport> reports,
+    required String userId,
+    required String batchAction,
+    Map<String, Object?> batchPayload = const <String, Object?>{},
+  }) async {
+    final DateTime reconciledAt = DateTime.now();
+    int reconciledCount = 0;
+    for (final IpvReport report in reports) {
+      await _reconcileIpvReportInTransaction(
+        report: report,
+        userId: userId,
+        reconciledAt: reconciledAt,
+      );
+      reconciledCount += 1;
+    }
+    await _db.into(_db.auditLogs).insert(
+          AuditLogsCompanion.insert(
+            id: _uuid.v4(),
+            userId: Value(userId),
+            action: batchAction,
+            entity: 'ipv_report',
+            entityId: 'batch',
+            payloadJson: jsonEncode(<String, Object?>{
+              ...batchPayload,
+              'reconciledAt': reconciledAt.toIso8601String(),
+              'count': reconciledCount,
+            }),
+          ),
+        );
+    return reconciledCount;
+  }
+
+  Future<void> _reconcileIpvReportInTransaction({
+    required IpvReport report,
+    required String userId,
+    required DateTime reconciledAt,
+  }) async {
+    final DateTime movementStart = await _resolveMovementStartForReport(
+      terminalId: report.terminalId,
+      openedAt: report.openedAt,
+      currentReportId: report.id,
+    );
+    final DateTime movementEnd = report.closedAt ?? DateTime.now();
+
+    await _recalculateIpvReportLines(
+      report: report,
+      movementStart: movementStart,
+      movementEnd: movementEnd,
+    );
+
+    final String? note = _mergeNotes(
+      report.note,
+      'Reconciliado ${reconciledAt.toIso8601String()} por $userId',
+    );
+    await (_db.update(_db.ipvReports)
+          ..where((IpvReports tbl) => tbl.id.equals(report.id)))
+        .write(
+      IpvReportsCompanion(
+        note: Value(note),
+        closedBy:
+            report.status == 'closed' ? Value(userId) : const Value.absent(),
+      ),
+    );
+
+    await _db.into(_db.auditLogs).insert(
+          AuditLogsCompanion.insert(
+            id: _uuid.v4(),
+            userId: Value(userId),
+            action: 'IPV_RECONCILED',
+            entity: 'ipv_report',
+            entityId: report.id,
+            payloadJson: jsonEncode(<String, Object?>{
+              'sessionId': report.sessionId,
+              'status': report.status,
+              'movementStart': movementStart.toIso8601String(),
+              'movementEnd': movementEnd.toIso8601String(),
+            }),
+          ),
+        );
   }
 
   Future<List<TpvSessionCashBreakdown>> listSessionCashBreakdown(
@@ -2444,7 +2854,11 @@ class TpvLocalDataSource {
     }
 
     final Map<String, _IpvSalesAggregate> salesByProduct =
-        await _loadSessionSalesByProduct(report.sessionId);
+        await _loadSessionSalesByProduct(
+      report.sessionId,
+      movementStart: movementStart,
+      movementEnd: movementEnd,
+    );
     for (final MapEntry<String, _IpvSalesAggregate> entry
         in salesByProduct.entries) {
       final _IpvLineAccumulator acc = byProduct.putIfAbsent(
@@ -2461,6 +2875,8 @@ class TpvLocalDataSource {
         await _loadProductSnapshotByProduct(productIds);
     final Set<String> existingProductIds =
         existingLines.map((IpvReportLine row) => row.productId).toSet();
+    final Set<String> staleProductIdsToDelete =
+        existingProductIds.difference(byProduct.keys.toSet()).toSet();
 
     for (final MapEntry<String, _IpvLineAccumulator> entry
         in byProduct.entries) {
@@ -2482,6 +2898,15 @@ class TpvLocalDataSource {
       final int marginCents = salesAgg?.unitMarginCents ?? 0;
       final double finalQty =
           acc.startQty + acc.entriesQty - acc.outputsQty - acc.salesQty;
+      if (acc.startQty == 0 &&
+          acc.entriesQty == 0 &&
+          acc.outputsQty == 0 &&
+          acc.salesQty == 0) {
+        if (existingProductIds.contains(productId)) {
+          staleProductIdsToDelete.add(productId);
+        }
+        continue;
+      }
       final IpvReportLinesCompanion payload = IpvReportLinesCompanion(
         reportId: Value(report.id),
         productId: Value(productId),
@@ -2523,16 +2948,30 @@ class TpvLocalDataSource {
             );
       }
     }
+
+    if (staleProductIdsToDelete.isNotEmpty) {
+      await (_db.delete(_db.ipvReportLines)
+            ..where((IpvReportLines tbl) =>
+                tbl.reportId.equals(report.id) &
+                tbl.productId.isIn(staleProductIdsToDelete)))
+          .go();
+    }
+
+    // Eliminar líneas existentes que ahora tienen todos los valores en cero
+    await (_db.delete(_db.ipvReportLines)
+          ..where((IpvReportLines tbl) =>
+              tbl.reportId.equals(report.id) &
+              tbl.startQty.equals(0) &
+              tbl.entriesQty.equals(0) &
+              tbl.outputsQty.equals(0) &
+              tbl.salesQty.equals(0)))
+        .go();
   }
 
   Future<Map<String, double>> _resolveStartQtyForReconciliation({
     required IpvReport report,
     required List<IpvReportLine> existingLines,
   }) async {
-    final Map<String, double> fallback = <String, double>{
-      for (final IpvReportLine line in existingLines)
-        line.productId: line.startQty,
-    };
     final QueryRow? previousRow = await _db.customSelect(
       '''
       SELECT r.id AS report_id
@@ -2554,7 +2993,10 @@ class TpvLocalDataSource {
     final String previousReportId =
         (previousRow?.readNullable<String>('report_id') ?? '').trim();
     if (previousReportId.isEmpty) {
-      return fallback;
+      return <String, double>{
+        for (final IpvReportLine line in existingLines)
+          line.productId: line.finalQty,
+      };
     }
 
     final List<IpvReportLine> previousLines = await (_db
@@ -2563,17 +3005,92 @@ class TpvLocalDataSource {
               (IpvReportLines tbl) => tbl.reportId.equals(previousReportId)))
         .get();
     if (previousLines.isEmpty) {
-      return fallback;
+      return <String, double>{};
     }
 
-    final Map<String, double> resolved = <String, double>{
+    return <String, double>{
       for (final IpvReportLine line in previousLines)
         line.productId: line.finalQty,
     };
-    for (final IpvReportLine line in existingLines) {
-      resolved.putIfAbsent(line.productId, () => line.startQty);
+  }
+
+  Future<int> _getLastClosingCash(String terminalId) async {
+    final QueryRow? row = await _db.customSelect(
+      '''
+      SELECT s.closing_cash_cents AS closing_cash
+      FROM pos_sessions s
+      WHERE s.terminal_id = ?
+        AND s.status = 'closed'
+        AND s.closing_cash_cents IS NOT NULL
+      ORDER BY s.closed_at DESC
+      LIMIT 1
+      ''',
+      variables: <Variable<Object>>[Variable<String>(terminalId)],
+    ).getSingleOrNull();
+    return row?.read<int>('closing_cash') ?? 0;
+  }
+
+  bool _intervalsOverlap({
+    required DateTime startA,
+    required DateTime? endA,
+    required DateTime startB,
+    required DateTime? endB,
+  }) {
+    if (endA != null && !endA.isAfter(startB)) {
+      return false;
     }
-    return resolved;
+    if (endB != null && !endB.isAfter(startA)) {
+      return false;
+    }
+    return true;
+  }
+
+  Future<bool> _isAdminUser(String userId) async {
+    final String safeUserId = userId.trim();
+    if (safeUserId.isEmpty) {
+      return false;
+    }
+    final User? user = await (_db.select(_db.users)
+          ..where((Users tbl) => tbl.id.equals(safeUserId)))
+        .getSingleOrNull();
+    if (user != null && user.role.trim().toLowerCase() == 'admin') {
+      return true;
+    }
+    final UserRole? role = await (_db.select(_db.userRoles)
+          ..where(
+            (UserRoles tbl) =>
+                tbl.userId.equals(safeUserId) &
+                tbl.roleId.equals(AppRoleIds.admin),
+          ))
+        .getSingleOrNull();
+    return role != null;
+  }
+
+  Future<void> _recalculateIpvTerminalChainFrom({
+    required String terminalId,
+    required DateTime fromOpenedAt,
+  }) async {
+    final List<IpvReport> reports = await (_db.select(_db.ipvReports)
+          ..where((IpvReports tbl) =>
+              tbl.terminalId.equals(terminalId) &
+              tbl.openedAt.isBiggerOrEqualValue(fromOpenedAt))
+          ..orderBy(<OrderingTerm Function(IpvReports)>[
+            (IpvReports tbl) => OrderingTerm.asc(tbl.openedAt),
+          ]))
+        .get();
+    for (final IpvReport report in reports) {
+      final DateTime movementStart = await _resolveMovementStartForReport(
+        terminalId: report.terminalId,
+        openedAt: report.openedAt,
+        currentReportId: report.id,
+      );
+      final DateTime movementEnd = report.closedAt ?? DateTime.now();
+      await _recalculateIpvReportLines(
+        report: report,
+        movementStart: movementStart,
+        movementEnd: movementEnd,
+      );
+    }
   }
 
   Future<DateTime> _resolveMovementStartForReport({
@@ -2603,8 +3120,10 @@ class TpvLocalDataSource {
   }
 
   Future<Map<String, _IpvSalesAggregate>> _loadSessionSalesByProduct(
-    String sessionId,
-  ) async {
+    String sessionId, {
+    required DateTime movementStart,
+    required DateTime movementEnd,
+  }) async {
     final String safeSessionId = sessionId.trim();
     if (safeSessionId.isEmpty) {
       return <String, _IpvSalesAggregate>{};
@@ -2638,10 +3157,14 @@ class TpvLocalDataSource {
       INNER JOIN sales s ON s.id = si.sale_id
       WHERE s.terminal_session_id = ?
         AND s.status = 'posted'
+        AND s.created_at > ?
+        AND s.created_at <= ?
       GROUP BY si.product_id
       ''',
       variables: <Variable<Object>>[
         Variable<String>(safeSessionId),
+        Variable<DateTime>(movementStart),
+        Variable<DateTime>(movementEnd),
       ],
     ).get();
 
@@ -2903,6 +3426,16 @@ class _IpvOpeningSnapshot {
 
   final String source;
   final Map<String, double> startQtyByProduct;
+}
+
+class _TimelineRow {
+  const _TimelineRow({
+    required this.id,
+    required this.createdAt,
+  });
+
+  final String id;
+  final DateTime createdAt;
 }
 
 class _IpvLineAccumulator {

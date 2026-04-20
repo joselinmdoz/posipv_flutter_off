@@ -41,11 +41,13 @@ class _ManualSaleEntryPageState extends ConsumerState<ManualSaleEntryPage> {
 
   String? _selectedWarehouseId;
   String? _selectedTerminalId;
+  String? _selectedTerminalSessionId;
   String? _selectedCustomerId;
 
   List<Product> _products = <Product>[];
   List<Warehouse> _warehouses = <Warehouse>[];
   List<TpvTerminalView> _terminalViews = <TpvTerminalView>[];
+  List<TpvSessionWithUser> _selectedTerminalSessions = <TpvSessionWithUser>[];
   List<ClienteListItem> _customers = <ClienteListItem>[];
   List<_PaymentMethodOption> _paymentMethodOptions =
       const <_PaymentMethodOption>[];
@@ -146,6 +148,20 @@ class _ManualSaleEntryPageState extends ConsumerState<ManualSaleEntryPage> {
           .toList(growable: false);
       _selectedTerminalId =
           openTerminals.isEmpty ? null : openTerminals.first.terminal.id;
+      _selectedTerminalSessions = <TpvSessionWithUser>[];
+      _selectedTerminalSessionId = null;
+      if (_selectedTerminalId != null) {
+        _selectedTerminalSessions = await ref
+            .read(tpvLocalDataSourceProvider)
+            .listSessionHistory(_selectedTerminalId!, limit: 250);
+        _selectedTerminalSessionId = _pickBestSessionForDate(
+              _selectedTerminalSessions,
+              _saleDateTime,
+            )?.session.id ??
+            (_selectedTerminalSessions.isEmpty
+                ? null
+                : _selectedTerminalSessions.first.session.id);
+      }
 
       for (final _EditableSaleLineForm row in _lineForms) {
         row.dispose();
@@ -205,6 +221,104 @@ class _ManualSaleEntryPageState extends ConsumerState<ManualSaleEntryPage> {
       }
     }
     return null;
+  }
+
+  String _sessionCode(String id) {
+    final String clean = id.trim();
+    if (clean.isEmpty) {
+      return '----';
+    }
+    if (clean.length <= 6) {
+      return clean.toUpperCase();
+    }
+    return clean.substring(clean.length - 6).toUpperCase();
+  }
+
+  String _formatSessionDateTime(DateTime value) {
+    final DateTime local = value.toLocal();
+    final String day = local.day.toString().padLeft(2, '0');
+    final String month = local.month.toString().padLeft(2, '0');
+    final String hour = local.hour.toString().padLeft(2, '0');
+    final String minute = local.minute.toString().padLeft(2, '0');
+    return '$day/$month $hour:$minute';
+  }
+
+  String _sessionLabel(TpvSessionWithUser row) {
+    final PosSession session = row.session;
+    final String opened = _formatSessionDateTime(session.openedAt);
+    final String closed = session.closedAt == null
+        ? 'abierto'
+        : _formatSessionDateTime(session.closedAt!);
+    return 'Turno ${_sessionCode(session.id)} • $opened → $closed';
+  }
+
+  bool _sessionCoversDate(PosSession session, DateTime when) {
+    if (when.isBefore(session.openedAt)) {
+      return false;
+    }
+    final DateTime? closedAt = session.closedAt;
+    if (closedAt != null && when.isAfter(closedAt)) {
+      return false;
+    }
+    return true;
+  }
+
+  TpvSessionWithUser? _pickBestSessionForDate(
+    List<TpvSessionWithUser> source,
+    DateTime when,
+  ) {
+    final List<TpvSessionWithUser> matches = source
+        .where(
+            (TpvSessionWithUser row) => _sessionCoversDate(row.session, when))
+        .toList(growable: false);
+    if (matches.isEmpty) {
+      return null;
+    }
+    matches.sort(
+      (TpvSessionWithUser a, TpvSessionWithUser b) =>
+          b.session.openedAt.compareTo(a.session.openedAt),
+    );
+    return matches.first;
+  }
+
+  Future<void> _refreshSelectedTerminalSessions() async {
+    final String terminalId = (_selectedTerminalId ?? '').trim();
+    if (terminalId.isEmpty) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _selectedTerminalSessions = <TpvSessionWithUser>[];
+        _selectedTerminalSessionId = null;
+      });
+      return;
+    }
+
+    final List<TpvSessionWithUser> sessions = await ref
+        .read(tpvLocalDataSourceProvider)
+        .listSessionHistory(terminalId, limit: 250);
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _selectedTerminalSessions = sessions;
+      final String currentSessionId = (_selectedTerminalSessionId ?? '').trim();
+      final bool currentIsValid = currentSessionId.isNotEmpty &&
+          sessions.any(
+              (TpvSessionWithUser row) => row.session.id == currentSessionId);
+      if (!currentIsValid) {
+        _selectedTerminalSessionId = null;
+      }
+      final TpvSessionWithUser? match =
+          _pickBestSessionForDate(sessions, _saleDateTime);
+      if (match != null) {
+        _selectedTerminalSessionId = match.session.id;
+      } else if (!currentIsValid) {
+        _selectedTerminalSessionId =
+            sessions.isEmpty ? null : sessions.first.session.id;
+      }
+    });
   }
 
   Map<String, Product> _productsById() {
@@ -315,6 +429,9 @@ class _ManualSaleEntryPageState extends ConsumerState<ManualSaleEntryPage> {
         _saleDateTime.second,
       );
     });
+    if (_saleOrigin == 'pos') {
+      await _refreshSelectedTerminalSessions();
+    }
   }
 
   Future<void> _pickTime() async {
@@ -337,6 +454,9 @@ class _ManualSaleEntryPageState extends ConsumerState<ManualSaleEntryPage> {
         _saleDateTime = now;
       }
     });
+    if (_saleOrigin == 'pos') {
+      await _refreshSelectedTerminalSessions();
+    }
   }
 
   void _onChangeOrigin(String value) {
@@ -346,6 +466,9 @@ class _ManualSaleEntryPageState extends ConsumerState<ManualSaleEntryPage> {
     setState(() {
       _saleOrigin = value;
     });
+    if (value == 'pos') {
+      _refreshSelectedTerminalSessions();
+    }
   }
 
   void _addLine() {
@@ -510,14 +633,35 @@ class _ManualSaleEntryPageState extends ConsumerState<ManualSaleEntryPage> {
         _show('Selecciona un TPV válido.');
         return;
       }
-      final TpvSessionWithUser? openSession = selectedTerminal.openSession;
-      if (openSession == null || openSession.session.status != 'open') {
-        _show('El TPV seleccionado no tiene turno abierto.');
+      final String selectedSessionId =
+          (_selectedTerminalSessionId ?? '').trim();
+      TpvSessionWithUser? selectedSession;
+      if (selectedSessionId.isNotEmpty) {
+        for (final TpvSessionWithUser row in _selectedTerminalSessions) {
+          if (row.session.id == selectedSessionId) {
+            selectedSession = row;
+            break;
+          }
+        }
+      }
+      selectedSession ??=
+          _pickBestSessionForDate(_selectedTerminalSessions, _saleDateTime);
+      if (selectedSession == null) {
+        _show(
+          'No hay una sesión TPV que cubra la fecha/hora seleccionada para esta venta.',
+        );
         return;
       }
+      if (!_sessionCoversDate(selectedSession.session, _saleDateTime)) {
+        _show(
+          'La fecha/hora de la venta no cae dentro de la sesión TPV elegida.',
+        );
+        return;
+      }
+      _selectedTerminalSessionId = selectedSession.session.id;
       warehouseId = selectedTerminal.warehouse.id;
       terminalId = selectedTerminal.terminal.id;
-      terminalSessionId = openSession.session.id;
+      terminalSessionId = selectedSession.session.id;
     } else {
       warehouseId = (_selectedWarehouseId ?? '').trim();
       if (warehouseId.isEmpty) {
@@ -621,9 +765,8 @@ class _ManualSaleEntryPageState extends ConsumerState<ManualSaleEntryPage> {
     final Color textMuted =
         isDark ? const Color(0xFF94A3B8) : const Color(0xFF5B6472);
 
-    final List<TpvTerminalView> openTerminals = _terminalViews
-        .where((TpvTerminalView row) => row.openSession != null)
-        .toList(growable: false);
+    final List<TpvTerminalView> posTerminals =
+        _terminalViews.toList(growable: false);
 
     return AppScaffold(
       title: 'Venta manual histórica',
@@ -762,10 +905,10 @@ class _ManualSaleEntryPageState extends ConsumerState<ManualSaleEntryPage> {
                                     DropdownButtonFormField<String>(
                                       initialValue: _selectedTerminalId,
                                       decoration: const InputDecoration(
-                                        labelText: 'TPV con turno abierto',
+                                        labelText: 'TPV',
                                         border: OutlineInputBorder(),
                                       ),
-                                      items: openTerminals
+                                      items: posTerminals
                                           .map(
                                             (TpvTerminalView row) =>
                                                 DropdownMenuItem<String>(
@@ -776,16 +919,61 @@ class _ManualSaleEntryPageState extends ConsumerState<ManualSaleEntryPage> {
                                             ),
                                           )
                                           .toList(growable: false),
-                                      onChanged: (String? value) {
-                                        setState(
-                                            () => _selectedTerminalId = value);
+                                      onChanged: (String? value) async {
+                                        setState(() {
+                                          _selectedTerminalId = value;
+                                          _selectedTerminalSessionId = null;
+                                          _selectedTerminalSessions =
+                                              <TpvSessionWithUser>[];
+                                        });
+                                        await _refreshSelectedTerminalSessions();
                                       },
                                     ),
-                                    if (openTerminals.isEmpty)
+                                    const SizedBox(height: 10),
+                                    DropdownButtonFormField<String>(
+                                      initialValue: _selectedTerminalSessionId,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Sesión TPV',
+                                        border: OutlineInputBorder(),
+                                      ),
+                                      items: _selectedTerminalSessions
+                                          .map(
+                                            (TpvSessionWithUser row) =>
+                                                DropdownMenuItem<String>(
+                                              value: row.session.id,
+                                              child: Text(
+                                                _sessionLabel(row),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          )
+                                          .toList(growable: false),
+                                      onChanged:
+                                          _selectedTerminalSessions.isEmpty
+                                              ? null
+                                              : (String? value) {
+                                                  setState(() =>
+                                                      _selectedTerminalSessionId =
+                                                          value);
+                                                },
+                                    ),
+                                    if (posTerminals.isEmpty)
                                       Padding(
                                         padding: const EdgeInsets.only(top: 8),
                                         child: Text(
-                                          'No hay TPV con turno abierto en este momento.',
+                                          'No hay TPV activos disponibles.',
+                                          style: TextStyle(
+                                            color: textMuted,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                    if (posTerminals.isNotEmpty &&
+                                        _selectedTerminalSessions.isEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 8),
+                                        child: Text(
+                                          'No hay sesiones registradas en ese TPV para asociar esta venta.',
                                           style: TextStyle(
                                             color: textMuted,
                                             fontSize: 12,

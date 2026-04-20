@@ -8,6 +8,8 @@ import '../../../auth/presentation/auth_providers.dart';
 import '../../../configuracion/data/configuracion_local_datasource.dart';
 import '../../../configuracion/presentation/configuracion_providers.dart';
 import '../../../productos/presentation/productos_providers.dart';
+import '../../../tpv/data/tpv_local_datasource.dart';
+import '../../../tpv/presentation/tpv_providers.dart';
 import '../../data/reportes_local_datasource.dart';
 import '../../../ventas_pos/presentation/ventas_pos_providers.dart';
 import '../../../ventas_pos/domain/sale_models.dart';
@@ -174,6 +176,15 @@ class _AnalyticsSaleDetailPageState
             _PaymentMethodOption(key: 'cash', label: 'Efectivo'),
           ]
         : paymentOptions;
+    List<TpvSessionWithUser> terminalSessions = <TpvSessionWithUser>[];
+    final String terminalId = (detail!.sale.terminalId ?? '').trim();
+    if (terminalId.isNotEmpty) {
+      try {
+        terminalSessions = await ref
+            .read(tpvLocalDataSourceProvider)
+            .listSessionHistory(terminalId, limit: 250);
+      } catch (_) {}
+    }
 
     if (!mounted) return;
 
@@ -186,6 +197,7 @@ class _AnalyticsSaleDetailPageState
           products: products,
           currencySymbol: widget.currencySymbol,
           paymentMethodOptions: safePaymentOptions,
+          terminalSessions: terminalSessions,
         ),
       ),
     );
@@ -201,6 +213,8 @@ class _AnalyticsSaleDetailPageState
               payments: payload.payments,
               userId: userId,
               isConsignmentSale: payload.isConsignmentSale,
+              createdAt: payload.createdAt,
+              terminalSessionId: payload.terminalSessionId,
             ),
           );
       _hasChanges = true;
@@ -1213,11 +1227,15 @@ class _EditSalePayload {
     required this.items,
     required this.payments,
     required this.isConsignmentSale,
+    required this.createdAt,
+    required this.terminalSessionId,
   });
 
   final List<SaleItemInput> items;
   final List<PaymentInput> payments;
   final bool isConsignmentSale;
+  final DateTime createdAt;
+  final String? terminalSessionId;
 }
 
 class _EditSaleDialog extends StatefulWidget {
@@ -1226,12 +1244,14 @@ class _EditSaleDialog extends StatefulWidget {
     required this.products,
     required this.currencySymbol,
     required this.paymentMethodOptions,
+    required this.terminalSessions,
   });
 
   final SalesAnalyticsSaleDetailStat detail;
   final List<Product> products;
   final String currencySymbol;
   final List<_PaymentMethodOption> paymentMethodOptions;
+  final List<TpvSessionWithUser> terminalSessions;
 
   @override
   State<_EditSaleDialog> createState() => _EditSaleDialogState();
@@ -1242,6 +1262,8 @@ class _EditSaleDialogState extends State<_EditSaleDialog> {
   late final List<_EditableSaleLineForm> _lineForms;
   late final List<_EditableSalePaymentForm> _paymentForms;
   late bool _isConsignmentSale;
+  late DateTime _saleDateTime;
+  String? _selectedTerminalSessionId;
 
   @override
   void initState() {
@@ -1288,6 +1310,19 @@ class _EditSaleDialogState extends State<_EditSaleDialog> {
         _paymentForms.any(
           (_EditableSalePaymentForm row) => row.method == 'consignment',
         );
+    _saleDateTime = widget.detail.sale.createdAt.toLocal();
+    _selectedTerminalSessionId =
+        (widget.detail.sale.terminalSessionId ?? '').trim().isEmpty
+            ? null
+            : widget.detail.sale.terminalSessionId!.trim();
+    final TpvSessionWithUser? bestForDate =
+        _pickBestSessionForDate(widget.terminalSessions, _saleDateTime);
+    if (bestForDate != null &&
+        (_selectedTerminalSessionId == null ||
+            _selectedTerminalSessionId!.isEmpty ||
+            !_sessionExists(_selectedTerminalSessionId!))) {
+      _selectedTerminalSessionId = bestForDate.session.id;
+    }
     if (!_isConsignmentSale && _paymentForms.isEmpty) {
       _paymentForms.add(_EditableSalePaymentForm(method: 'cash'));
     }
@@ -1374,6 +1409,127 @@ class _EditSaleDialogState extends State<_EditSaleDialog> {
 
   String _money(int cents) {
     return '${widget.currencySymbol}${(cents / 100).toStringAsFixed(2)}';
+  }
+
+  bool get _isPosSale =>
+      (widget.detail.sale.terminalId ?? '').trim().isNotEmpty;
+
+  String _sessionCode(String id) {
+    final String clean = id.trim();
+    if (clean.isEmpty) {
+      return '----';
+    }
+    if (clean.length <= 6) {
+      return clean.toUpperCase();
+    }
+    return clean.substring(clean.length - 6).toUpperCase();
+  }
+
+  String _formatSessionDateTime(DateTime value) {
+    final DateTime local = value.toLocal();
+    final String day = local.day.toString().padLeft(2, '0');
+    final String month = local.month.toString().padLeft(2, '0');
+    final String year = local.year.toString();
+    final String hour = local.hour.toString().padLeft(2, '0');
+    final String minute = local.minute.toString().padLeft(2, '0');
+    return '$day/$month/$year $hour:$minute';
+  }
+
+  bool _sessionExists(String sessionId) {
+    return widget.terminalSessions
+        .any((TpvSessionWithUser row) => row.session.id == sessionId);
+  }
+
+  bool _sessionCoversDate(PosSession session, DateTime when) {
+    if (when.isBefore(session.openedAt)) {
+      return false;
+    }
+    final DateTime? closedAt = session.closedAt;
+    if (closedAt != null && when.isAfter(closedAt)) {
+      return false;
+    }
+    return true;
+  }
+
+  TpvSessionWithUser? _pickBestSessionForDate(
+    List<TpvSessionWithUser> source,
+    DateTime when,
+  ) {
+    final List<TpvSessionWithUser> matches = source
+        .where(
+            (TpvSessionWithUser row) => _sessionCoversDate(row.session, when))
+        .toList(growable: false);
+    if (matches.isEmpty) {
+      return null;
+    }
+    matches.sort(
+      (TpvSessionWithUser a, TpvSessionWithUser b) =>
+          b.session.openedAt.compareTo(a.session.openedAt),
+    );
+    return matches.first;
+  }
+
+  String _sessionLabel(TpvSessionWithUser row) {
+    final PosSession session = row.session;
+    final String opened = _formatSessionDateTime(session.openedAt);
+    final String closed = session.closedAt == null
+        ? 'Abierto'
+        : _formatSessionDateTime(session.closedAt!);
+    return 'Turno ${_sessionCode(session.id)} • $opened → $closed';
+  }
+
+  Future<void> _pickDate() async {
+    final DateTime now = DateTime.now();
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _saleDateTime,
+      firstDate: DateTime(now.year - 5, 1, 1),
+      lastDate: now,
+    );
+    if (picked == null) {
+      return;
+    }
+    setState(() {
+      _saleDateTime = DateTime(
+        picked.year,
+        picked.month,
+        picked.day,
+        _saleDateTime.hour,
+        _saleDateTime.minute,
+      );
+      final TpvSessionWithUser? best =
+          _pickBestSessionForDate(widget.terminalSessions, _saleDateTime);
+      if (best != null) {
+        _selectedTerminalSessionId = best.session.id;
+      }
+    });
+  }
+
+  Future<void> _pickTime() async {
+    final TimeOfDay initial = TimeOfDay.fromDateTime(_saleDateTime);
+    final TimeOfDay? picked =
+        await showTimePicker(context: context, initialTime: initial);
+    if (picked == null) {
+      return;
+    }
+    setState(() {
+      _saleDateTime = DateTime(
+        _saleDateTime.year,
+        _saleDateTime.month,
+        _saleDateTime.day,
+        picked.hour,
+        picked.minute,
+      );
+      final DateTime now = DateTime.now();
+      if (_saleDateTime.isAfter(now)) {
+        _saleDateTime = now;
+      }
+      final TpvSessionWithUser? best =
+          _pickBestSessionForDate(widget.terminalSessions, _saleDateTime);
+      if (best != null) {
+        _selectedTerminalSessionId = best.session.id;
+      }
+    });
   }
 
   void _addLine() {
@@ -1499,11 +1655,44 @@ class _EditSaleDialogState extends State<_EditSaleDialog> {
       }
     }
 
+    String? terminalSessionId;
+    if (_isPosSale) {
+      if (widget.terminalSessions.isEmpty) {
+        _show('No hay sesiones TPV disponibles para reasignar la venta.');
+        return;
+      }
+      TpvSessionWithUser? selected;
+      final String rawSessionId = (_selectedTerminalSessionId ?? '').trim();
+      if (rawSessionId.isNotEmpty) {
+        for (final TpvSessionWithUser row in widget.terminalSessions) {
+          if (row.session.id == rawSessionId) {
+            selected = row;
+            break;
+          }
+        }
+      }
+      selected ??=
+          _pickBestSessionForDate(widget.terminalSessions, _saleDateTime);
+      if (selected == null) {
+        _show(
+          'No existe una sesión TPV que cubra la fecha/hora seleccionada.',
+        );
+        return;
+      }
+      if (!_sessionCoversDate(selected.session, _saleDateTime)) {
+        _show('La sesión TPV seleccionada no cubre la fecha/hora de la venta.');
+        return;
+      }
+      terminalSessionId = selected.session.id;
+    }
+
     Navigator.of(context).pop(
       _EditSalePayload(
         items: items,
         payments: payments,
         isConsignmentSale: _isConsignmentSale,
+        createdAt: _saleDateTime,
+        terminalSessionId: terminalSessionId,
       ),
     );
   }
@@ -1588,6 +1777,74 @@ class _EditSaleDialogState extends State<_EditSaleDialog> {
                 fontWeight: FontWeight.w800,
                 letterSpacing: 0.8,
                 color: mutedText,
+              ),
+            );
+          }
+
+          Widget metadataCard() {
+            return Container(
+              padding: const EdgeInsets.all(14),
+              decoration: _cardDecoration(
+                isDark: isDark,
+                cardBg: cardBg,
+                borderColor: borderColor,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  sectionTitle('METADATOS DE LA VENTA'),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: <Widget>[
+                      OutlinedButton.icon(
+                        onPressed: _pickDate,
+                        icon: const Icon(Icons.calendar_today_outlined),
+                        label: Text(
+                          _formatSessionDateTime(_saleDateTime)
+                              .split(' ')
+                              .first,
+                        ),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _pickTime,
+                        icon: const Icon(Icons.schedule_outlined),
+                        label: Text(
+                          _formatSessionDateTime(_saleDateTime).split(' ').last,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_isPosSale) ...<Widget>[
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      initialValue: _selectedTerminalSessionId,
+                      decoration: const InputDecoration(
+                        labelText: 'Sesión TPV',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: widget.terminalSessions
+                          .map(
+                            (TpvSessionWithUser row) =>
+                                DropdownMenuItem<String>(
+                              value: row.session.id,
+                              child: Text(
+                                _sessionLabel(row),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(growable: false),
+                      onChanged: widget.terminalSessions.isEmpty
+                          ? null
+                          : (String? value) {
+                              setState(
+                                  () => _selectedTerminalSessionId = value);
+                            },
+                    ),
+                  ],
+                ],
               ),
             );
           }
@@ -1909,6 +2166,8 @@ class _EditSaleDialogState extends State<_EditSaleDialog> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
+                metadataCard(),
+                const SizedBox(height: 12),
                 productsEditorCard(),
                 const SizedBox(height: 12),
                 if (compact) ...<Widget>[

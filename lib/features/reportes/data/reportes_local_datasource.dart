@@ -124,9 +124,13 @@ class SalesAnalyticsSaleStat {
     required this.saleId,
     required this.folio,
     required this.createdAt,
+    required this.warehouseId,
     required this.warehouseName,
+    required this.cashierId,
     required this.cashierUsername,
     required this.customerName,
+    required this.terminalId,
+    required this.terminalSessionId,
     required this.terminalName,
     required this.totalCents,
     required this.itemsCount,
@@ -136,9 +140,13 @@ class SalesAnalyticsSaleStat {
   final String saleId;
   final String folio;
   final DateTime createdAt;
+  final String warehouseId;
   final String warehouseName;
+  final String cashierId;
   final String cashierUsername;
   final String? customerName;
+  final String? terminalId;
+  final String? terminalSessionId;
   final String? terminalName;
   final int totalCents;
   final int itemsCount;
@@ -1223,7 +1231,10 @@ class ReportesLocalDataSource {
         s.folio AS folio,
         s.created_at AS created_at,
         s.total_cents AS total_cents,
+        s.warehouse_id AS warehouse_id,
+        s.cashier_id AS cashier_id,
         s.terminal_id AS terminal_id,
+        s.terminal_session_id AS terminal_session_id,
         COALESCE(w.name, 'Sin almacén') AS warehouse_name,
         COALESCE(
           NULLIF(TRIM(MIN(e.name)), ''),
@@ -1252,8 +1263,9 @@ class ReportesLocalDataSource {
         AND s.created_at >= ?
         AND s.created_at < ?
       GROUP BY
-        s.id, s.folio, s.created_at, s.total_cents, s.terminal_id,
-        s.cashier_id, w.name, u.username, c.full_name, t.name
+        s.id, s.folio, s.created_at, s.total_cents, s.warehouse_id,
+        s.cashier_id, s.terminal_id, s.terminal_session_id,
+        w.name, u.username, c.full_name, t.name
       ORDER BY s.created_at DESC, s.id DESC
       LIMIT ?
       OFFSET ?
@@ -1272,17 +1284,21 @@ class ReportesLocalDataSource {
         saleId: _readTextCell(row, 'sale_id', fallback: ''),
         folio: _readTextCell(row, 'folio', fallback: '-'),
         createdAt: row.readNullable<DateTime>('created_at') ?? DateTime.now(),
+        warehouseId: _readTextCell(row, 'warehouse_id', fallback: ''),
         warehouseName: _readTextCell(
           row,
           'warehouse_name',
           fallback: 'Sin almacén',
         ),
+        cashierId: _readTextCell(row, 'cashier_id', fallback: ''),
         cashierUsername: _readTextCell(
           row,
           'cashier_username',
           fallback: 'Sin usuario',
         ),
         customerName: _nullableTextCell(row, 'customer_name'),
+        terminalId: _nullableTextCell(row, 'terminal_id'),
+        terminalSessionId: _nullableTextCell(row, 'terminal_session_id'),
         terminalName: _nullableTextCell(row, 'terminal_name'),
         totalCents: (row.data['total_cents'] as num?)?.toInt() ?? 0,
         itemsCount: (row.data['items_count'] as num?)?.toInt() ?? 0,
@@ -1670,7 +1686,10 @@ class ReportesLocalDataSource {
         s.folio AS folio,
         s.created_at AS created_at,
         s.total_cents AS total_cents,
+        s.warehouse_id AS warehouse_id,
+        s.cashier_id AS cashier_id,
         s.terminal_id AS terminal_id,
+        s.terminal_session_id AS terminal_session_id,
         COALESCE(w.name, 'Sin almacén') AS warehouse_name,
         COALESCE(
           NULLIF(TRIM(MIN(e.name)), ''),
@@ -1762,7 +1781,9 @@ class ReportesLocalDataSource {
         s.folio,
         s.created_at,
         s.total_cents,
+        s.warehouse_id,
         s.terminal_id,
+        s.terminal_session_id,
         s.cashier_id,
         w.name,
         u.username,
@@ -1792,17 +1813,21 @@ class ReportesLocalDataSource {
         saleId: _readTextCell(row, 'sale_id', fallback: ''),
         folio: _readTextCell(row, 'folio', fallback: '-'),
         createdAt: row.readNullable<DateTime>('created_at') ?? DateTime.now(),
+        warehouseId: _readTextCell(row, 'warehouse_id', fallback: ''),
         warehouseName: _readTextCell(
           row,
           'warehouse_name',
           fallback: 'Sin almacén',
         ),
+        cashierId: _readTextCell(row, 'cashier_id', fallback: ''),
         cashierUsername: _readTextCell(
           row,
           'cashier_username',
           fallback: 'Sin usuario',
         ),
         customerName: _nullableTextCell(row, 'customer_name'),
+        terminalId: _nullableTextCell(row, 'terminal_id'),
+        terminalSessionId: _nullableTextCell(row, 'terminal_session_id'),
         terminalName: _nullableTextCell(row, 'terminal_name'),
         totalCents: (row.data['total_cents'] as num?)?.toInt() ?? 0,
         itemsCount: (row.data['items_count'] as num?)?.toInt() ?? 0,
@@ -1948,7 +1973,10 @@ class ReportesLocalDataSource {
         s.total_cents AS total_cents,
         s.subtotal_cents AS subtotal_cents,
         s.tax_cents AS tax_cents,
+        s.warehouse_id AS warehouse_id,
+        s.cashier_id AS cashier_id,
         s.terminal_id AS terminal_id,
+        s.terminal_session_id AS terminal_session_id,
         COALESCE(w.name, 'Sin almacén') AS warehouse_name,
         COALESCE(
           NULLIF(TRIM(MIN(e.name)), ''),
@@ -1976,8 +2004,9 @@ class ReportesLocalDataSource {
       WHERE s.id = ?
       GROUP BY
         s.id, s.folio, s.created_at, s.total_cents, s.subtotal_cents,
-        s.tax_cents, s.terminal_id, s.cashier_id, w.name, u.username,
-        c.full_name, t.name
+        s.tax_cents, s.warehouse_id, s.cashier_id,
+        s.terminal_id, s.terminal_session_id,
+        w.name, u.username, c.full_name, t.name
       LIMIT 1
       ''',
       variables: <Variable<Object>>[Variable<String>(id)],
@@ -1992,9 +2021,13 @@ class ReportesLocalDataSource {
       saleId: _readTextCell(header, 'sale_id', fallback: id),
       folio: _readTextCell(header, 'folio', fallback: '-'),
       createdAt: header.readNullable<DateTime>('created_at') ?? DateTime.now(),
+      warehouseId: _readTextCell(header, 'warehouse_id', fallback: ''),
       warehouseName: _readTextCell(header, 'warehouse_name', fallback: '-'),
+      cashierId: _readTextCell(header, 'cashier_id', fallback: ''),
       cashierUsername: _readTextCell(header, 'cashier_username', fallback: '-'),
       customerName: _nullableTextCell(header, 'customer_name'),
+      terminalId: _nullableTextCell(header, 'terminal_id'),
+      terminalSessionId: _nullableTextCell(header, 'terminal_session_id'),
       terminalName: _nullableTextCell(header, 'terminal_name'),
       totalCents: (header.data['total_cents'] as num?)?.toInt() ?? 0,
       itemsCount: (header.data['items_count'] as num?)?.toInt() ?? 0,

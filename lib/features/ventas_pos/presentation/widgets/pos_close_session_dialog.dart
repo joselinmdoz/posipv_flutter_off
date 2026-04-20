@@ -50,17 +50,8 @@ class _PosCloseSessionDialogState extends State<PosCloseSessionDialog> {
       _controllers[cents] = TextEditingController();
     }
     for (final MapEntry<String, int> entry in widget.expectedPayments.entries) {
-      int expected = entry.value;
-      if (entry.key.trim().toLowerCase() == 'cash') {
-        expected += widget.openingFloatCents;
-      }
       _manualMethodControllers[entry.key] = TextEditingController(
-        text: (expected / 100).toStringAsFixed(2),
-      );
-    }
-    if (!_manualMethodControllers.containsKey('cash')) {
-      _manualMethodControllers['cash'] = TextEditingController(
-        text: (widget.openingFloatCents / 100).toStringAsFixed(2),
+        text: (entry.value / 100).toStringAsFixed(2),
       );
     }
   }
@@ -133,21 +124,28 @@ class _PosCloseSessionDialogState extends State<PosCloseSessionDialog> {
 
   int get _expectedCashCents {
     final int cashFromSales = widget.expectedPayments['cash'] ?? 0;
-    return widget.openingFloatCents + cashFromSales;
+    return cashFromSales;
   }
 
   int get _totalExpectedCents {
-    return widget.expectedPayments.values.fold(0, (a, b) => a + b) +
-        widget.openingFloatCents;
+    return widget.expectedPayments.values.fold(0, (a, b) => a + b);
+  }
+
+  Iterable<String> get _expectedSummaryMethods {
+    return _manualMethodControllers.keys;
+  }
+
+  int get _displayExpectedCents {
+    if (widget.useDenominationsOnClose) {
+      return _expectedCashCents;
+    }
+    return _totalExpectedCents;
   }
 
   int _expectedCentsForMethod(String method) {
     final String code = method.trim().toLowerCase();
     final int base =
         widget.expectedPayments[code] ?? widget.expectedPayments[method] ?? 0;
-    if (code == 'cash') {
-      return base + widget.openingFloatCents;
-    }
     return base;
   }
 
@@ -233,7 +231,7 @@ class _PosCloseSessionDialogState extends State<PosCloseSessionDialog> {
                       ),
                       child: Column(
                         children: [
-                          ..._manualMethodControllers.keys.map((String method) {
+                          ..._expectedSummaryMethods.map((String method) {
                             final int amount = _expectedCentsForMethod(method);
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 12),
@@ -250,9 +248,11 @@ class _PosCloseSessionDialogState extends State<PosCloseSessionDialog> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text(
-                                'Total Esperado',
-                                style: TextStyle(
+                              Text(
+                                widget.useDenominationsOnClose
+                                    ? 'Efectivo Esperado'
+                                    : 'Total Esperado',
+                                style: const TextStyle(
                                   color: primaryColor,
                                   fontWeight: FontWeight.w800,
                                   fontSize: 16,
@@ -260,7 +260,9 @@ class _PosCloseSessionDialogState extends State<PosCloseSessionDialog> {
                               ),
                               Text(
                                 widget.formatCents(
-                                    _totalExpectedCents, widget.currencySymbol),
+                                  _displayExpectedCents,
+                                  widget.currencySymbol,
+                                ),
                                 style: const TextStyle(
                                   color: primaryColor,
                                   fontWeight: FontWeight.w900,

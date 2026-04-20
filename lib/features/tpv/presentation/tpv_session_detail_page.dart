@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../auth/presentation/auth_providers.dart';
 import '../../configuracion/data/configuracion_local_datasource.dart';
 import '../../configuracion/presentation/configuracion_providers.dart';
 import '../../reportes/data/reportes_local_datasource.dart';
@@ -48,12 +49,14 @@ class _TpvSessionDetailPageState extends ConsumerState<TpvSessionDetailPage> {
   List<TpvSessionSaleView> _sales = <TpvSessionSaleView>[];
   IpvReportSummaryStat? _ipvReport;
   Map<String, String> _paymentMethodLabelsByCode = <String, String>{};
+  late PosSession _sessionSnapshot;
 
-  PosSession get _session => widget.sessionRow.session;
+  PosSession get _session => _sessionSnapshot;
 
   @override
   void initState() {
     super.initState();
+    _sessionSnapshot = widget.sessionRow.session;
     _cashBreakdown = widget.initialBreakdown;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
@@ -202,6 +205,199 @@ class _TpvSessionDetailPageState extends ConsumerState<TpvSessionDetailPage> {
 
   void _openPos() {
     context.push('/ventas-pos');
+  }
+
+  Future<DateTime?> _pickDateTime({
+    required DateTime initial,
+    required DateTime firstDate,
+    required DateTime lastDate,
+  }) async {
+    final DateTime? date = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: firstDate,
+      lastDate: lastDate,
+    );
+    if (date == null) {
+      return null;
+    }
+    if (!mounted) {
+      return null;
+    }
+    final TimeOfDay? time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(initial),
+    );
+    if (time == null) {
+      return null;
+    }
+    return DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
+  }
+
+  Future<void> _adjustSessionTimeline() async {
+    final session = ref.read(currentSessionProvider);
+    if (session == null || !session.isAdmin) {
+      _show('Solo administrador puede ajustar fecha/hora de turnos.');
+      return;
+    }
+
+    DateTime draftOpenedAt = _session.openedAt.toLocal();
+    DateTime? draftClosedAt = _session.closedAt?.toLocal();
+    final bool isOpen = _session.status.trim().toLowerCase() == 'open';
+    final TextEditingController noteCtrl = TextEditingController();
+    try {
+      final bool? confirm = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext dialogContext) {
+          return StatefulBuilder(
+            builder:
+                (BuildContext context, void Function(void Function()) setD) {
+              Future<void> pickOpenedAt() async {
+                final DateTime now = DateTime.now();
+                final DateTime firstDate = DateTime(now.year - 5, 1, 1);
+                final DateTime? picked = await _pickDateTime(
+                  initial: draftOpenedAt,
+                  firstDate: firstDate,
+                  lastDate: now,
+                );
+                if (picked == null) {
+                  return;
+                }
+                setD(() {
+                  draftOpenedAt = picked;
+                  if (draftClosedAt != null &&
+                      draftClosedAt!.isBefore(draftOpenedAt)) {
+                    draftClosedAt = draftOpenedAt;
+                  }
+                });
+              }
+
+              Future<void> pickClosedAt() async {
+                final DateTime now = DateTime.now();
+                final DateTime firstDate = DateTime(now.year - 5, 1, 1);
+                final DateTime? picked = await _pickDateTime(
+                  initial: draftClosedAt ?? draftOpenedAt,
+                  firstDate: firstDate,
+                  lastDate: now,
+                );
+                if (picked == null) {
+                  return;
+                }
+                setD(() {
+                  draftClosedAt = picked;
+                });
+              }
+
+              return AlertDialog(
+                title: const Text('Ajustar fecha/hora del turno'),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.login_rounded),
+                        title: const Text('Apertura'),
+                        subtitle: Text(_date(draftOpenedAt)),
+                        trailing: TextButton(
+                          onPressed: pickOpenedAt,
+                          child: const Text('Cambiar'),
+                        ),
+                      ),
+                      if (!isOpen)
+                        ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.logout_rounded),
+                          title: const Text('Cierre'),
+                          subtitle: Text(
+                            draftClosedAt == null ? '-' : _date(draftClosedAt!),
+                          ),
+                          trailing: TextButton(
+                            onPressed: pickClosedAt,
+                            child: const Text('Cambiar'),
+                          ),
+                        ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: noteCtrl,
+                        minLines: 1,
+                        maxLines: 2,
+                        decoration: const InputDecoration(
+                          labelText: 'Nota (opcional)',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Se validará que no haya solapamiento con otros turnos y que las ventas queden dentro del rango.',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                actions: <Widget>[
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(false),
+                    child: const Text('Cancelar'),
+                  ),
+                  FilledButton(
+                    onPressed: () {
+                      if (!isOpen &&
+                          draftClosedAt != null &&
+                          draftClosedAt!.isBefore(draftOpenedAt)) {
+                        _show('El cierre no puede ser anterior a la apertura.');
+                        return;
+                      }
+                      Navigator.of(dialogContext).pop(true);
+                    },
+                    child: const Text('Guardar'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+
+      if (confirm != true) {
+        return;
+      }
+
+      final PosSession updated = await ref
+          .read(tpvLocalDataSourceProvider)
+          .updateSessionTimeline(
+            sessionId: _session.id,
+            actorUserId: session.userId,
+            openedAt: draftOpenedAt,
+            closedAt: isOpen ? null : draftClosedAt,
+            note: noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim(),
+          );
+      if (!mounted) {
+        return;
+      }
+      setState(() => _sessionSnapshot = updated);
+      await _loadDetails();
+      if (!mounted) {
+        return;
+      }
+      _show('Fecha/hora del turno actualizada correctamente.');
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      _show('No se pudo ajustar el turno: $e');
+    } finally {
+      noteCtrl.dispose();
+    }
   }
 
   Widget _buildGeneralCard(bool isDark) {
@@ -571,6 +767,7 @@ class _TpvSessionDetailPageState extends ConsumerState<TpvSessionDetailPage> {
     final ThemeData theme = Theme.of(context);
     final bool isDark = theme.brightness == Brightness.dark;
     final bool isOpen = _session.status == 'open';
+    final bool isAdmin = ref.watch(currentSessionProvider)?.isAdmin ?? false;
     return Scaffold(
       backgroundColor:
           isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
@@ -581,6 +778,12 @@ class _TpvSessionDetailPageState extends ConsumerState<TpvSessionDetailPage> {
             onPressed: _loading ? null : _loadDetails,
             icon: const Icon(Icons.refresh_rounded),
           ),
+          if (isAdmin)
+            IconButton(
+              onPressed: _loading ? null : _adjustSessionTimeline,
+              icon: const Icon(Icons.edit_calendar_rounded),
+              tooltip: 'Ajustar fecha/hora',
+            ),
           if (_ipvReport != null)
             IconButton(
               onPressed: _openIpv,

@@ -4,10 +4,12 @@ Aplicacion movil offline-first para ventas, almacenes, stock y puntos de venta.
 
 ## Entorno Flutter instalado en este proyecto
 
-- Flutter SDK: `3.41.4` en `.sdk/flutter`
-- JDK local: `17.0.18` en `.sdk/jdk-17`
-- Android SDK detectado: `/home/mdoz/Android/Sdk`
-- Java usada por el proyecto: `JAVA_HOME=.sdk/jdk-17` (via `scripts/flutter_env.sh`)
+- El script `scripts/flutter_env.sh` ahora detecta automaticamente:
+  - ruta real del repositorio actual
+  - JDK local en `.sdk/jdk-17` (si existe)
+  - JDK del sistema (fallback via `java` en PATH)
+  - Flutter local en `.sdk/flutter` (si existe) o Flutter del sistema
+  - Android SDK en `/home/mdoz/Android/Sdk` (o el valor ya exportado)
 
 Para cargar variables de entorno en tu terminal:
 

@@ -9,6 +9,22 @@ import '../../data/reportes_local_datasource.dart';
 import '../reportes_providers.dart';
 import '../../../tpv/presentation/tpv_providers.dart';
 
+enum _IpvReconcileScope {
+  current,
+  fromDate,
+  all,
+}
+
+class _IpvReconcileRequest {
+  const _IpvReconcileRequest({
+    required this.scope,
+    this.fromDate,
+  });
+
+  final _IpvReconcileScope scope;
+  final DateTime? fromDate;
+}
+
 class IpvReporteDetailPage extends ConsumerStatefulWidget {
   final IpvReportSummaryStat summary;
 
@@ -156,6 +172,76 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
     return (_tableTotalRealProfitCents(detail) / totalSalesQty).round();
   }
 
+  Future<_IpvReconcileRequest?> _pickReconcileRequest() async {
+    final _IpvReconcileScope? scope =
+        await showModalBottomSheet<_IpvReconcileScope>(
+      context: context,
+      showDragHandle: true,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.sync_rounded),
+                title: const Text('Reconciliar este IPV'),
+                subtitle: const Text('Solo el reporte actual'),
+                onTap: () =>
+                    Navigator.of(context).pop(_IpvReconcileScope.current),
+              ),
+              ListTile(
+                leading: const Icon(Icons.date_range_rounded),
+                title: const Text('Reconciliar desde fecha'),
+                subtitle: const Text('Desde un día hasta hoy'),
+                onTap: () =>
+                    Navigator.of(context).pop(_IpvReconcileScope.fromDate),
+              ),
+              ListTile(
+                leading: const Icon(Icons.select_all_rounded),
+                title: const Text('Reconciliar todos los IPV'),
+                subtitle: const Text('Recalcula todo el historial'),
+                onTap: () => Navigator.of(context).pop(_IpvReconcileScope.all),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (scope == null) {
+      return null;
+    }
+    if (!mounted) {
+      return null;
+    }
+    if (scope != _IpvReconcileScope.fromDate) {
+      return _IpvReconcileRequest(scope: scope);
+    }
+    final DateTime now = DateTime.now();
+    final DateTime initial =
+        widget.summary.openedAt.isAfter(now) ? now : widget.summary.openedAt;
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2000, 1, 1),
+      lastDate: now,
+    );
+    if (picked == null) {
+      return null;
+    }
+    return _IpvReconcileRequest(
+      scope: _IpvReconcileScope.fromDate,
+      fromDate: DateTime(picked.year, picked.month, picked.day),
+    );
+  }
+
+  String _shortDate(DateTime value) {
+    final DateTime local = value.toLocal();
+    final String d = local.day.toString().padLeft(2, '0');
+    final String m = local.month.toString().padLeft(2, '0');
+    final String y = local.year.toString();
+    return '$d/$m/$y';
+  }
+
   Future<void> _reconcileIpv() async {
     final session = ref.read(currentSessionProvider);
     if (session == null || !session.isAdmin) {
@@ -166,15 +252,31 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
       );
       return;
     }
+    final _IpvReconcileRequest? request = await _pickReconcileRequest();
+    if (request == null || !mounted) {
+      return;
+    }
+    final String confirmMessage;
+    switch (request.scope) {
+      case _IpvReconcileScope.current:
+        confirmMessage =
+            'Se recalcularán las líneas del IPV actual con ventas y movimientos existentes.';
+        break;
+      case _IpvReconcileScope.fromDate:
+        confirmMessage =
+            'Se recalcularán todos los IPV desde ${_shortDate(request.fromDate!)} hasta hoy.';
+        break;
+      case _IpvReconcileScope.all:
+        confirmMessage =
+            'Se recalcularán todos los IPV históricos. Puede tardar unos segundos.';
+        break;
+    }
     final bool? confirm = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
           title: const Text('Reconciliar IPV'),
-          content: const Text(
-            'Se recalcularán las líneas del IPV con ventas y movimientos actuales. '
-            'Úsalo para corregir conciliaciones administrativas.',
-          ),
+          content: Text(confirmMessage),
           actions: <Widget>[
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
@@ -194,10 +296,28 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
 
     setState(() => _reconciling = true);
     try {
-      await ref.read(tpvLocalDataSourceProvider).reconcileIpvReport(
+      int reconciledCount = 0;
+      final tpvDs = ref.read(tpvLocalDataSourceProvider);
+      switch (request.scope) {
+        case _IpvReconcileScope.current:
+          await tpvDs.reconcileIpvReport(
             reportId: widget.summary.reportId,
             userId: session.userId,
           );
+          reconciledCount = 1;
+          break;
+        case _IpvReconcileScope.fromDate:
+          reconciledCount = await tpvDs.reconcileIpvReportsFromDate(
+            fromDate: request.fromDate!,
+            userId: session.userId,
+          );
+          break;
+        case _IpvReconcileScope.all:
+          reconciledCount = await tpvDs.reconcileAllIpvReports(
+            userId: session.userId,
+          );
+          break;
+      }
       if (!mounted) {
         return;
       }
@@ -206,7 +326,13 @@ class _IpvReporteDetailPageState extends ConsumerState<IpvReporteDetailPage> {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('IPV reconciliado correctamente.')),
+        SnackBar(
+          content: Text(
+            reconciledCount <= 0
+                ? 'No hay reportes IPV para reconciliar con ese criterio.'
+                : 'IPV reconciliado correctamente ($reconciledCount).',
+          ),
+        ),
       );
     } catch (e) {
       if (!mounted) {

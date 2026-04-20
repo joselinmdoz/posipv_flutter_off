@@ -65,6 +65,8 @@ class UpdateSaleInput {
     required this.payments,
     required this.userId,
     this.customerId,
+    this.createdAt,
+    this.terminalSessionId,
     this.allowNegativeStock = false,
     this.isConsignmentSale = false,
   });
@@ -74,6 +76,8 @@ class UpdateSaleInput {
   final List<PaymentInput> payments;
   final String userId;
   final String? customerId;
+  final DateTime? createdAt;
+  final String? terminalSessionId;
   final bool allowNegativeStock;
   final bool isConsignmentSale;
 }
