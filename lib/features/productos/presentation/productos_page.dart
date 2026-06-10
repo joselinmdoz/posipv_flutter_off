@@ -16,6 +16,7 @@ import '../../../shared/widgets/code_scanner_page.dart';
 import '../../configuracion/data/configuracion_local_datasource.dart';
 import '../../configuracion/presentation/configuracion_providers.dart';
 import '../data/productos_local_datasource.dart';
+import '../domain/product_order_costing_mode.dart';
 import '../domain/product_qr_codec.dart';
 import 'productos_providers.dart';
 import 'widgets/product_card.dart';
@@ -275,6 +276,7 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
   late String _selectedType;
   late String _selectedCategory;
   late String _selectedUnit;
+  late String _selectedOrderCostingMode;
   late String _selectedCurrency;
 
   String? _selectedImagePath;
@@ -316,6 +318,9 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
     _selectedType = product?.productType ?? _typeOptions.first;
     _selectedCategory = product?.category ?? _categoryOptions.first;
     _selectedUnit = product?.unitMeasure ?? _unitOptions.first;
+    _selectedOrderCostingMode = ProductOrderCostingModeCatalog.normalize(
+      product?.orderCostingMode,
+    );
     _selectedCurrency = product?.currencyCode ?? _kFallbackCurrencies.first;
     _selectedImagePath = product?.imagePath;
 
@@ -570,6 +575,7 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
     final String barcode = _barcodeCtrl.text.trim();
     final String name = _nameCtrl.text.trim();
 
+    final bool isServiceType = _selectedType.trim().toLowerCase() == 'servicio';
     final int? costCents = _moneyTextToCents(_costCtrl.text);
     final int? saleCents = _moneyTextToCents(_saleCtrl.text);
 
@@ -577,7 +583,10 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
       _show('Codigo y nombre son obligatorios.');
       return;
     }
-    if (costCents == null || saleCents == null) {
+    final int resolvedCostCents =
+        isServiceType && costCents == null ? 0 : (costCents ?? -1);
+
+    if (resolvedCostCents < 0 || saleCents == null) {
       _show('Precios invalidos.');
       return;
     }
@@ -591,7 +600,7 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
             await ds.checkPriceEditionAllowed(
           productId: widget.product!.id,
           nextSalePriceCents: saleCents,
-          nextCostPriceCents: costCents,
+          nextCostPriceCents: resolvedCostCents,
         );
         if (!check.allowed) {
           if (mounted) {
@@ -636,11 +645,12 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
         barcode: barcode.isEmpty ? null : barcode,
         name: name,
         imagePath: _selectedImagePath,
-        costPriceCents: costCents,
+        costPriceCents: resolvedCostCents,
         salePriceCents: saleCents,
         category: _selectedCategory,
         productType: _selectedType,
         unitMeasure: _selectedUnit,
+        orderCostingMode: _selectedOrderCostingMode,
         currencyCode: _selectedCurrency,
       );
 
@@ -747,7 +757,9 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
       return;
     }
 
-    final int? nextCost = _moneyTextToCents(_costCtrl.text);
+    final bool isServiceType = _selectedType.trim().toLowerCase() == 'servicio';
+    final int? parsedCost = _moneyTextToCents(_costCtrl.text);
+    final int? nextCost = isServiceType && parsedCost == null ? 0 : parsedCost;
     final int? nextSale = _moneyTextToCents(_saleCtrl.text);
     if (nextCost == null || nextSale == null) {
       _priceCheckDebounce?.cancel();
@@ -800,6 +812,9 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
     if (cost == null) {
       return;
     }
+    if (cost <= 0 && _selectedType.trim().toLowerCase() == 'servicio') {
+      return;
+    }
 
     final double margin = _parseDecimal(_profitCtrl.text) ?? 30;
     final double sale = cost * (1 + (margin / 100));
@@ -816,7 +831,22 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
 
     final double? cost = _parseDecimal(_costCtrl.text);
     final double? sale = _parseDecimal(_saleCtrl.text);
-    if (cost == null || sale == null || cost <= 0) {
+    if (sale == null) {
+      return;
+    }
+    if ((cost == null || cost <= 0) &&
+        _selectedType.trim().toLowerCase() == 'servicio') {
+      _syncingPriceFields = true;
+      _setControllerText(_profitCtrl, '0');
+      _syncingPriceFields = false;
+      return;
+    }
+    if (cost == null || cost <= 0) {
+      if (_selectedType.trim().toLowerCase() == 'servicio') {
+        _syncingPriceFields = true;
+        _setControllerText(_profitCtrl, '0');
+        _syncingPriceFields = false;
+      }
       return;
     }
 
@@ -1163,6 +1193,7 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
     required ValueChanged<String> onChanged,
     VoidCallback? onAddPressed,
     String addTooltip = 'Añadir',
+    String Function(String option)? itemLabelBuilder,
   }) {
     final ThemeData theme = Theme.of(context);
     final bool isDark = theme.brightness == Brightness.dark;
@@ -1190,7 +1221,7 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
               .map(
                 (String option) => DropdownMenuItem<String>(
                   value: option,
-                  child: Text(option),
+                  child: Text(itemLabelBuilder?.call(option) ?? option),
                 ),
               )
               .toList(),
@@ -1379,6 +1410,22 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
           },
         ),
         const SizedBox(height: 12),
+        _catalogDropdownField(
+          label: 'Costo del pedido',
+          options: ProductOrderCostingModeCatalog.all,
+          selected: _selectedOrderCostingMode,
+          itemLabelBuilder: ProductOrderCostingModeCatalog.label,
+          onChanged: (String value) {
+            setState(() => _selectedOrderCostingMode = value);
+          },
+        ),
+        const SizedBox(height: 8),
+        _buildHelperText(
+          ProductOrderCostingModeCatalog.description(
+            _selectedOrderCostingMode,
+          ),
+        ),
+        const SizedBox(height: 12),
         _buildFieldLabel('Precio Coste'),
         TextField(
           controller: _costCtrl,
@@ -1389,6 +1436,12 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
             prefixText: '$symbol ',
           ),
         ),
+        if (_selectedType.trim().toLowerCase() == 'servicio') ...<Widget>[
+          const SizedBox(height: 8),
+          _buildHelperText(
+            'En productos de tipo servicio puedes dejar el costo en 0 y calcularlo despues segun materiales o trabajos realizados.',
+          ),
+        ],
         const SizedBox(height: 12),
         _buildFieldLabel('Margen (%)'),
         TextField(
@@ -1417,6 +1470,21 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
           _buildPriceEditionNotice(),
         ],
       ],
+    );
+  }
+
+  Widget _buildHelperText(String text) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: Color(0xFF64748B),
+          height: 1.35,
+        ),
+      ),
     );
   }
 

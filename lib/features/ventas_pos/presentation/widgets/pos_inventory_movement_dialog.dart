@@ -22,6 +22,8 @@ class PosInventoryMovementDialog extends StatefulWidget {
   final List<InventoryView> adjustRows;
   final List<InventoryMovementReason> entryReasons;
   final List<InventoryMovementReason> outputReasons;
+  final bool allowEntry;
+  final bool allowOutput;
   final bool allowTransfer;
   final String? transferFixedDestinationWarehouseId;
   final String currencySymbol;
@@ -36,6 +38,8 @@ class PosInventoryMovementDialog extends StatefulWidget {
   final String? initialReasonCode;
   final double? initialQty;
   final String? initialNote;
+  final bool allowCustomTimestamp;
+  final DateTime? initialMovementDateTime;
   final String title;
   final String confirmLabel;
 
@@ -44,6 +48,8 @@ class PosInventoryMovementDialog extends StatefulWidget {
     required this.adjustRows,
     required this.entryReasons,
     required this.outputReasons,
+    this.allowEntry = true,
+    this.allowOutput = true,
     this.allowTransfer = false,
     this.transferFixedDestinationWarehouseId,
     required this.currencySymbol,
@@ -57,6 +63,8 @@ class PosInventoryMovementDialog extends StatefulWidget {
     this.initialReasonCode,
     this.initialQty,
     this.initialNote,
+    this.allowCustomTimestamp = false,
+    this.initialMovementDateTime,
     this.title = 'Movimiento de Inventario',
     this.confirmLabel = 'Aplicar',
   });
@@ -76,6 +84,7 @@ class _PosInventoryMovementDialogState
   String? _selectedDestinationWarehouseId;
   final TextEditingController _qtyCtrl = TextEditingController();
   final TextEditingController _noteCtrl = TextEditingController();
+  DateTime? _movementDateTime;
   bool _loadingRows = false;
 
   final Map<String, InventoryView> _rowByProductId = {};
@@ -85,6 +94,10 @@ class _PosInventoryMovementDialogState
 
   String get _resolvedFixedTransferDestinationId =>
       (widget.transferFixedDestinationWarehouseId ?? '').trim();
+
+  bool get _canEntry => widget.allowEntry;
+  bool get _canOutput => widget.allowOutput;
+  bool get _canTransfer => widget.allowTransfer;
 
   @override
   void initState() {
@@ -111,15 +124,21 @@ class _PosInventoryMovementDialogState
 
     final String initialReasonCode = (widget.initialReasonCode ?? '').trim();
     final bool initialTransfer =
-        widget.allowTransfer && initialReasonCode == 'transfer';
+        _canTransfer && initialReasonCode == 'transfer';
     if (initialTransfer) {
       _movementKind = PosInventoryMovementDialog.kindTransfer;
     } else {
-      final bool startsAsEntry = widget.initialIsEntry ??
-          (widget.entryReasons.isNotEmpty || widget.outputReasons.isEmpty);
-      _movementKind = startsAsEntry
-          ? PosInventoryMovementDialog.kindEntry
-          : PosInventoryMovementDialog.kindOutput;
+      final bool startsAsEntry =
+          widget.initialIsEntry ?? (_canEntry && (!_canOutput));
+      if (startsAsEntry && _canEntry) {
+        _movementKind = PosInventoryMovementDialog.kindEntry;
+      } else if (_canOutput) {
+        _movementKind = PosInventoryMovementDialog.kindOutput;
+      } else if (_canTransfer) {
+        _movementKind = PosInventoryMovementDialog.kindTransfer;
+      } else {
+        _movementKind = PosInventoryMovementDialog.kindEntry;
+      }
     }
     _selectedReasonCode = null;
     _ensureReasonForCurrentMode();
@@ -139,6 +158,9 @@ class _PosInventoryMovementDialogState
     if (initialNote.isNotEmpty) {
       _noteCtrl.text = initialNote;
     }
+    _movementDateTime = widget.allowCustomTimestamp
+        ? (widget.initialMovementDateTime?.toLocal() ?? DateTime.now())
+        : null;
   }
 
   @override
@@ -455,32 +477,34 @@ class _PosInventoryMovementDialogState
                       ),
                       child: Row(
                         children: [
-                          Expanded(
-                            child: _MovementTypeBtn(
-                              label: 'Entrada',
-                              icon: Icons.add_circle_rounded,
-                              isSelected: isEntryMovement,
-                              color: const Color(0xFF10B981),
-                              onTap: () => _updateMovementKind(
-                                PosInventoryMovementDialog.kindEntry,
+                          if (_canEntry)
+                            Expanded(
+                              child: _MovementTypeBtn(
+                                label: 'Entrada',
+                                icon: Icons.add_circle_rounded,
+                                isSelected: isEntryMovement,
+                                color: const Color(0xFF10B981),
+                                onTap: () => _updateMovementKind(
+                                  PosInventoryMovementDialog.kindEntry,
+                                ),
+                                isDark: isDark,
                               ),
-                              isDark: isDark,
                             ),
-                          ),
-                          Expanded(
-                            child: _MovementTypeBtn(
-                              label: 'Salida',
-                              icon: Icons.remove_circle_rounded,
-                              isSelected: _movementKind ==
+                          if (_canOutput)
+                            Expanded(
+                              child: _MovementTypeBtn(
+                                label: 'Salida',
+                                icon: Icons.remove_circle_rounded,
+                                isSelected: _movementKind ==
+                                    PosInventoryMovementDialog.kindOutput,
+                                color: const Color(0xFFF43F5E),
+                                onTap: () => _updateMovementKind(
                                   PosInventoryMovementDialog.kindOutput,
-                              color: const Color(0xFFF43F5E),
-                              onTap: () => _updateMovementKind(
-                                PosInventoryMovementDialog.kindOutput,
+                                ),
+                                isDark: isDark,
                               ),
-                              isDark: isDark,
                             ),
-                          ),
-                          if (widget.allowTransfer)
+                          if (_canTransfer)
                             Expanded(
                               child: _MovementTypeBtn(
                                 label: 'Transferir',
@@ -704,6 +728,71 @@ class _PosInventoryMovementDialogState
                     ],
                     const SizedBox(height: 24),
 
+                    if (widget.allowCustomTimestamp) ...[
+                      const Text(
+                        'Fecha y Hora del Movimiento',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.grey,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: _pickMovementDateTime,
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? const Color(0xFF1E293B)
+                                : const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isDark
+                                  ? const Color(0xFF334155)
+                                  : const Color(0xFFE2E8F0),
+                            ),
+                          ),
+                          child: Row(
+                            children: <Widget>[
+                              const Icon(
+                                Icons.event_rounded,
+                                size: 20,
+                                color: Color(0xFF1152D4),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  _movementDateTime == null
+                                      ? 'Seleccionar fecha y hora'
+                                      : _formatDateTimeLabel(
+                                          _movementDateTime!,
+                                        ),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _movementDateTime = DateTime.now();
+                                  });
+                                },
+                                child: const Text('Ahora'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                    ],
+
                     // Notes
                     const Text(
                       'Notas (Opcional)',
@@ -805,6 +894,15 @@ class _PosInventoryMovementDialogState
   }
 
   void _updateMovementKind(String kind) {
+    if (kind == PosInventoryMovementDialog.kindEntry && !_canEntry) {
+      return;
+    }
+    if (kind == PosInventoryMovementDialog.kindOutput && !_canOutput) {
+      return;
+    }
+    if (kind == PosInventoryMovementDialog.kindTransfer && !_canTransfer) {
+      return;
+    }
     if (_movementKind == kind) {
       return;
     }
@@ -890,6 +988,45 @@ class _PosInventoryMovementDialogState
     }
   }
 
+  Future<void> _pickMovementDateTime() async {
+    final DateTime base = _movementDateTime ?? DateTime.now();
+    final DateTime? pickedDate = await showDatePicker(
+      context: context,
+      initialDate: base,
+      firstDate: DateTime(2000, 1, 1),
+      lastDate: DateTime.now(),
+    );
+    if (pickedDate == null || !mounted) {
+      return;
+    }
+    final TimeOfDay? pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(base),
+    );
+    if (pickedTime == null || !mounted) {
+      return;
+    }
+    setState(() {
+      _movementDateTime = DateTime(
+        pickedDate.year,
+        pickedDate.month,
+        pickedDate.day,
+        pickedTime.hour,
+        pickedTime.minute,
+      );
+    });
+  }
+
+  String _formatDateTimeLabel(DateTime value) {
+    final DateTime local = value.toLocal();
+    final String day = local.day.toString().padLeft(2, '0');
+    final String month = local.month.toString().padLeft(2, '0');
+    final String year = local.year.toString();
+    final String hour = local.hour.toString().padLeft(2, '0');
+    final String minute = local.minute.toString().padLeft(2, '0');
+    return '$day/$month/$year $hour:$minute';
+  }
+
   void _handleApply() {
     if (widget.warehouseOptions.isNotEmpty &&
         (_selectedWarehouseId == null ||
@@ -955,6 +1092,8 @@ class _PosInventoryMovementDialogState
       'currentStock': currentStock,
       'reasonCode': isTransferMovement ? 'transfer' : _selectedReasonCode,
       'note': _noteCtrl.text.trim(),
+      'movementDateTime':
+          widget.allowCustomTimestamp ? _movementDateTime : null,
     });
   }
 
@@ -1021,6 +1160,28 @@ class _PosInventoryMovementDialogState
   }
 
   void _ensureReasonForCurrentMode() {
+    if (_movementKind == PosInventoryMovementDialog.kindEntry && !_canEntry) {
+      if (_canOutput) {
+        _movementKind = PosInventoryMovementDialog.kindOutput;
+      } else if (_canTransfer) {
+        _movementKind = PosInventoryMovementDialog.kindTransfer;
+      }
+    }
+    if (_movementKind == PosInventoryMovementDialog.kindOutput && !_canOutput) {
+      if (_canEntry) {
+        _movementKind = PosInventoryMovementDialog.kindEntry;
+      } else if (_canTransfer) {
+        _movementKind = PosInventoryMovementDialog.kindTransfer;
+      }
+    }
+    if (_movementKind == PosInventoryMovementDialog.kindTransfer &&
+        !_canTransfer) {
+      if (_canEntry) {
+        _movementKind = PosInventoryMovementDialog.kindEntry;
+      } else if (_canOutput) {
+        _movementKind = PosInventoryMovementDialog.kindOutput;
+      }
+    }
     if (_movementKind == PosInventoryMovementDialog.kindTransfer) {
       _selectedReasonCode = 'transfer';
       return;

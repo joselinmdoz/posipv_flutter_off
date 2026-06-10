@@ -1691,6 +1691,14 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
       type: DriftSqlType.string,
       requiredDuringInsert: false,
       defaultValue: const Constant('Unidad'));
+  static const VerificationMeta _orderCostingModeMeta =
+      const VerificationMeta('orderCostingMode');
+  @override
+  late final GeneratedColumn<String> orderCostingMode = GeneratedColumn<String>(
+      'order_costing_mode', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('ordered_qty'));
   static const VerificationMeta _currencyCodeMeta =
       const VerificationMeta('currencyCode');
   @override
@@ -1736,6 +1744,7 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
         category,
         productType,
         unitMeasure,
+        orderCostingMode,
         currencyCode,
         isActive,
         createdAt,
@@ -1810,6 +1819,12 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
           unitMeasure.isAcceptableOrUnknown(
               data['unit_measure']!, _unitMeasureMeta));
     }
+    if (data.containsKey('order_costing_mode')) {
+      context.handle(
+          _orderCostingModeMeta,
+          orderCostingMode.isAcceptableOrUnknown(
+              data['order_costing_mode']!, _orderCostingModeMeta));
+    }
     if (data.containsKey('currency_code')) {
       context.handle(
           _currencyCodeMeta,
@@ -1859,6 +1874,8 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
           .read(DriftSqlType.string, data['${effectivePrefix}product_type'])!,
       unitMeasure: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}unit_measure'])!,
+      orderCostingMode: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}order_costing_mode'])!,
       currencyCode: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}currency_code'])!,
       isActive: attachedDatabase.typeMapping
@@ -1888,6 +1905,7 @@ class Product extends DataClass implements Insertable<Product> {
   final String category;
   final String productType;
   final String unitMeasure;
+  final String orderCostingMode;
   final String currencyCode;
   final bool isActive;
   final DateTime createdAt;
@@ -1904,6 +1922,7 @@ class Product extends DataClass implements Insertable<Product> {
       required this.category,
       required this.productType,
       required this.unitMeasure,
+      required this.orderCostingMode,
       required this.currencyCode,
       required this.isActive,
       required this.createdAt,
@@ -1926,6 +1945,7 @@ class Product extends DataClass implements Insertable<Product> {
     map['category'] = Variable<String>(category);
     map['product_type'] = Variable<String>(productType);
     map['unit_measure'] = Variable<String>(unitMeasure);
+    map['order_costing_mode'] = Variable<String>(orderCostingMode);
     map['currency_code'] = Variable<String>(currencyCode);
     map['is_active'] = Variable<bool>(isActive);
     map['created_at'] = Variable<DateTime>(createdAt);
@@ -1952,6 +1972,7 @@ class Product extends DataClass implements Insertable<Product> {
       category: Value(category),
       productType: Value(productType),
       unitMeasure: Value(unitMeasure),
+      orderCostingMode: Value(orderCostingMode),
       currencyCode: Value(currencyCode),
       isActive: Value(isActive),
       createdAt: Value(createdAt),
@@ -1976,6 +1997,7 @@ class Product extends DataClass implements Insertable<Product> {
       category: serializer.fromJson<String>(json['category']),
       productType: serializer.fromJson<String>(json['productType']),
       unitMeasure: serializer.fromJson<String>(json['unitMeasure']),
+      orderCostingMode: serializer.fromJson<String>(json['orderCostingMode']),
       currencyCode: serializer.fromJson<String>(json['currencyCode']),
       isActive: serializer.fromJson<bool>(json['isActive']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
@@ -1997,6 +2019,7 @@ class Product extends DataClass implements Insertable<Product> {
       'category': serializer.toJson<String>(category),
       'productType': serializer.toJson<String>(productType),
       'unitMeasure': serializer.toJson<String>(unitMeasure),
+      'orderCostingMode': serializer.toJson<String>(orderCostingMode),
       'currencyCode': serializer.toJson<String>(currencyCode),
       'isActive': serializer.toJson<bool>(isActive),
       'createdAt': serializer.toJson<DateTime>(createdAt),
@@ -2016,6 +2039,7 @@ class Product extends DataClass implements Insertable<Product> {
           String? category,
           String? productType,
           String? unitMeasure,
+          String? orderCostingMode,
           String? currencyCode,
           bool? isActive,
           DateTime? createdAt,
@@ -2032,6 +2056,7 @@ class Product extends DataClass implements Insertable<Product> {
         category: category ?? this.category,
         productType: productType ?? this.productType,
         unitMeasure: unitMeasure ?? this.unitMeasure,
+        orderCostingMode: orderCostingMode ?? this.orderCostingMode,
         currencyCode: currencyCode ?? this.currencyCode,
         isActive: isActive ?? this.isActive,
         createdAt: createdAt ?? this.createdAt,
@@ -2056,6 +2081,9 @@ class Product extends DataClass implements Insertable<Product> {
           data.productType.present ? data.productType.value : this.productType,
       unitMeasure:
           data.unitMeasure.present ? data.unitMeasure.value : this.unitMeasure,
+      orderCostingMode: data.orderCostingMode.present
+          ? data.orderCostingMode.value
+          : this.orderCostingMode,
       currencyCode: data.currencyCode.present
           ? data.currencyCode.value
           : this.currencyCode,
@@ -2079,6 +2107,7 @@ class Product extends DataClass implements Insertable<Product> {
           ..write('category: $category, ')
           ..write('productType: $productType, ')
           ..write('unitMeasure: $unitMeasure, ')
+          ..write('orderCostingMode: $orderCostingMode, ')
           ..write('currencyCode: $currencyCode, ')
           ..write('isActive: $isActive, ')
           ..write('createdAt: $createdAt, ')
@@ -2100,6 +2129,7 @@ class Product extends DataClass implements Insertable<Product> {
       category,
       productType,
       unitMeasure,
+      orderCostingMode,
       currencyCode,
       isActive,
       createdAt,
@@ -2119,6 +2149,7 @@ class Product extends DataClass implements Insertable<Product> {
           other.category == this.category &&
           other.productType == this.productType &&
           other.unitMeasure == this.unitMeasure &&
+          other.orderCostingMode == this.orderCostingMode &&
           other.currencyCode == this.currencyCode &&
           other.isActive == this.isActive &&
           other.createdAt == this.createdAt &&
@@ -2137,6 +2168,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
   final Value<String> category;
   final Value<String> productType;
   final Value<String> unitMeasure;
+  final Value<String> orderCostingMode;
   final Value<String> currencyCode;
   final Value<bool> isActive;
   final Value<DateTime> createdAt;
@@ -2154,6 +2186,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     this.category = const Value.absent(),
     this.productType = const Value.absent(),
     this.unitMeasure = const Value.absent(),
+    this.orderCostingMode = const Value.absent(),
     this.currencyCode = const Value.absent(),
     this.isActive = const Value.absent(),
     this.createdAt = const Value.absent(),
@@ -2172,6 +2205,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     this.category = const Value.absent(),
     this.productType = const Value.absent(),
     this.unitMeasure = const Value.absent(),
+    this.orderCostingMode = const Value.absent(),
     this.currencyCode = const Value.absent(),
     this.isActive = const Value.absent(),
     this.createdAt = const Value.absent(),
@@ -2192,6 +2226,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     Expression<String>? category,
     Expression<String>? productType,
     Expression<String>? unitMeasure,
+    Expression<String>? orderCostingMode,
     Expression<String>? currencyCode,
     Expression<bool>? isActive,
     Expression<DateTime>? createdAt,
@@ -2210,6 +2245,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
       if (category != null) 'category': category,
       if (productType != null) 'product_type': productType,
       if (unitMeasure != null) 'unit_measure': unitMeasure,
+      if (orderCostingMode != null) 'order_costing_mode': orderCostingMode,
       if (currencyCode != null) 'currency_code': currencyCode,
       if (isActive != null) 'is_active': isActive,
       if (createdAt != null) 'created_at': createdAt,
@@ -2230,6 +2266,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
       Value<String>? category,
       Value<String>? productType,
       Value<String>? unitMeasure,
+      Value<String>? orderCostingMode,
       Value<String>? currencyCode,
       Value<bool>? isActive,
       Value<DateTime>? createdAt,
@@ -2247,6 +2284,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
       category: category ?? this.category,
       productType: productType ?? this.productType,
       unitMeasure: unitMeasure ?? this.unitMeasure,
+      orderCostingMode: orderCostingMode ?? this.orderCostingMode,
       currencyCode: currencyCode ?? this.currencyCode,
       isActive: isActive ?? this.isActive,
       createdAt: createdAt ?? this.createdAt,
@@ -2291,6 +2329,9 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     if (unitMeasure.present) {
       map['unit_measure'] = Variable<String>(unitMeasure.value);
     }
+    if (orderCostingMode.present) {
+      map['order_costing_mode'] = Variable<String>(orderCostingMode.value);
+    }
     if (currencyCode.present) {
       map['currency_code'] = Variable<String>(currencyCode.value);
     }
@@ -2323,6 +2364,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
           ..write('category: $category, ')
           ..write('productType: $productType, ')
           ..write('unitMeasure: $unitMeasure, ')
+          ..write('orderCostingMode: $orderCostingMode, ')
           ..write('currencyCode: $currencyCode, ')
           ..write('isActive: $isActive, ')
           ..write('createdAt: $createdAt, ')
@@ -13650,6 +13692,1440 @@ class SaleItemLotAllocationsCompanion
   }
 }
 
+class $WorkOrdersTable extends WorkOrders
+    with TableInfo<$WorkOrdersTable, WorkOrder> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $WorkOrdersTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+      'id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _folioMeta = const VerificationMeta('folio');
+  @override
+  late final GeneratedColumn<String> folio = GeneratedColumn<String>(
+      'folio', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'));
+  static const VerificationMeta _customerIdMeta =
+      const VerificationMeta('customerId');
+  @override
+  late final GeneratedColumn<String> customerId = GeneratedColumn<String>(
+      'customer_id', aliasedName, true,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('REFERENCES customers (id)'));
+  static const VerificationMeta _customerNameSnapshotMeta =
+      const VerificationMeta('customerNameSnapshot');
+  @override
+  late final GeneratedColumn<String> customerNameSnapshot =
+      GeneratedColumn<String>('customer_name_snapshot', aliasedName, true,
+          type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _assignedEmployeeIdMeta =
+      const VerificationMeta('assignedEmployeeId');
+  @override
+  late final GeneratedColumn<String> assignedEmployeeId =
+      GeneratedColumn<String>('assigned_employee_id', aliasedName, true,
+          type: DriftSqlType.string,
+          requiredDuringInsert: false,
+          defaultConstraints:
+              GeneratedColumn.constraintIsAlways('REFERENCES employees (id)'));
+  static const VerificationMeta _assignedEmployeeNameSnapshotMeta =
+      const VerificationMeta('assignedEmployeeNameSnapshot');
+  @override
+  late final GeneratedColumn<String> assignedEmployeeNameSnapshot =
+      GeneratedColumn<String>(
+          'assigned_employee_name_snapshot', aliasedName, true,
+          type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _workTypeMeta =
+      const VerificationMeta('workType');
+  @override
+  late final GeneratedColumn<String> workType = GeneratedColumn<String>(
+      'work_type', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('General'));
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+      'title', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _descriptionMeta =
+      const VerificationMeta('description');
+  @override
+  late final GeneratedColumn<String> description = GeneratedColumn<String>(
+      'description', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _itemsJsonMeta =
+      const VerificationMeta('itemsJson');
+  @override
+  late final GeneratedColumn<String> itemsJson = GeneratedColumn<String>(
+      'items_json', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('[]'));
+  static const VerificationMeta _assignmentsJsonMeta =
+      const VerificationMeta('assignmentsJson');
+  @override
+  late final GeneratedColumn<String> assignmentsJson = GeneratedColumn<String>(
+      'assignments_json', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('[]'));
+  static const VerificationMeta _tasksJsonMeta =
+      const VerificationMeta('tasksJson');
+  @override
+  late final GeneratedColumn<String> tasksJson = GeneratedColumn<String>(
+      'tasks_json', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('[]'));
+  static const VerificationMeta _qtyMeta = const VerificationMeta('qty');
+  @override
+  late final GeneratedColumn<double> qty = GeneratedColumn<double>(
+      'qty', aliasedName, false,
+      type: DriftSqlType.double,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(1));
+  static const VerificationMeta _unitLabelMeta =
+      const VerificationMeta('unitLabel');
+  @override
+  late final GeneratedColumn<String> unitLabel = GeneratedColumn<String>(
+      'unit_label', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('ud'));
+  static const VerificationMeta _statusMeta = const VerificationMeta('status');
+  @override
+  late final GeneratedColumn<String> status = GeneratedColumn<String>(
+      'status', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('pending'));
+  static const VerificationMeta _paymentStatusMeta =
+      const VerificationMeta('paymentStatus');
+  @override
+  late final GeneratedColumn<String> paymentStatus = GeneratedColumn<String>(
+      'payment_status', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('unpaid'));
+  static const VerificationMeta _priorityMeta =
+      const VerificationMeta('priority');
+  @override
+  late final GeneratedColumn<String> priority = GeneratedColumn<String>(
+      'priority', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('normal'));
+  static const VerificationMeta _dueAtMeta = const VerificationMeta('dueAt');
+  @override
+  late final GeneratedColumn<DateTime> dueAt = GeneratedColumn<DateTime>(
+      'due_at', aliasedName, true,
+      type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  static const VerificationMeta _noteMeta = const VerificationMeta('note');
+  @override
+  late final GeneratedColumn<String> note = GeneratedColumn<String>(
+      'note', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _quotedTotalsJsonMeta =
+      const VerificationMeta('quotedTotalsJson');
+  @override
+  late final GeneratedColumn<String> quotedTotalsJson = GeneratedColumn<String>(
+      'quoted_totals_json', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('[]'));
+  static const VerificationMeta _quotedRequestedLinesJsonMeta =
+      const VerificationMeta('quotedRequestedLinesJson');
+  @override
+  late final GeneratedColumn<String> quotedRequestedLinesJson =
+      GeneratedColumn<String>('quoted_requested_lines_json', aliasedName, false,
+          type: DriftSqlType.string,
+          requiredDuringInsert: false,
+          defaultValue: const Constant('[]'));
+  static const VerificationMeta _quotedPaymentVariantsJsonMeta =
+      const VerificationMeta('quotedPaymentVariantsJson');
+  @override
+  late final GeneratedColumn<String> quotedPaymentVariantsJson =
+      GeneratedColumn<String>(
+          'quoted_payment_variants_json', aliasedName, false,
+          type: DriftSqlType.string,
+          requiredDuringInsert: false,
+          defaultValue: const Constant('[]'));
+  static const VerificationMeta _pricingSnapshotJsonMeta =
+      const VerificationMeta('pricingSnapshotJson');
+  @override
+  late final GeneratedColumn<String> pricingSnapshotJson =
+      GeneratedColumn<String>('pricing_snapshot_json', aliasedName, false,
+          type: DriftSqlType.string,
+          requiredDuringInsert: false,
+          defaultValue: const Constant('{}'));
+  static const VerificationMeta _paymentLinesJsonMeta =
+      const VerificationMeta('paymentLinesJson');
+  @override
+  late final GeneratedColumn<String> paymentLinesJson = GeneratedColumn<String>(
+      'payment_lines_json', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('[]'));
+  static const VerificationMeta _createdByMeta =
+      const VerificationMeta('createdBy');
+  @override
+  late final GeneratedColumn<String> createdBy = GeneratedColumn<String>(
+      'created_by', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('REFERENCES users (id)'));
+  static const VerificationMeta _updatedByMeta =
+      const VerificationMeta('updatedBy');
+  @override
+  late final GeneratedColumn<String> updatedBy = GeneratedColumn<String>(
+      'updated_by', aliasedName, true,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('REFERENCES users (id)'));
+  static const VerificationMeta _createdAtMeta =
+      const VerificationMeta('createdAt');
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+      'created_at', aliasedName, false,
+      type: DriftSqlType.dateTime,
+      requiredDuringInsert: false,
+      defaultValue: currentDateAndTime);
+  static const VerificationMeta _updatedAtMeta =
+      const VerificationMeta('updatedAt');
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+      'updated_at', aliasedName, true,
+      type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  static const VerificationMeta _completedAtMeta =
+      const VerificationMeta('completedAt');
+  @override
+  late final GeneratedColumn<DateTime> completedAt = GeneratedColumn<DateTime>(
+      'completed_at', aliasedName, true,
+      type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  static const VerificationMeta _paidAtMeta = const VerificationMeta('paidAt');
+  @override
+  late final GeneratedColumn<DateTime> paidAt = GeneratedColumn<DateTime>(
+      'paid_at', aliasedName, true,
+      type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  static const VerificationMeta _deliveredAtMeta =
+      const VerificationMeta('deliveredAt');
+  @override
+  late final GeneratedColumn<DateTime> deliveredAt = GeneratedColumn<DateTime>(
+      'delivered_at', aliasedName, true,
+      type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        folio,
+        customerId,
+        customerNameSnapshot,
+        assignedEmployeeId,
+        assignedEmployeeNameSnapshot,
+        workType,
+        title,
+        description,
+        itemsJson,
+        assignmentsJson,
+        tasksJson,
+        qty,
+        unitLabel,
+        status,
+        paymentStatus,
+        priority,
+        dueAt,
+        note,
+        quotedTotalsJson,
+        quotedRequestedLinesJson,
+        quotedPaymentVariantsJson,
+        pricingSnapshotJson,
+        paymentLinesJson,
+        createdBy,
+        updatedBy,
+        createdAt,
+        updatedAt,
+        completedAt,
+        paidAt,
+        deliveredAt
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'work_orders';
+  @override
+  VerificationContext validateIntegrity(Insertable<WorkOrder> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('folio')) {
+      context.handle(
+          _folioMeta, folio.isAcceptableOrUnknown(data['folio']!, _folioMeta));
+    } else if (isInserting) {
+      context.missing(_folioMeta);
+    }
+    if (data.containsKey('customer_id')) {
+      context.handle(
+          _customerIdMeta,
+          customerId.isAcceptableOrUnknown(
+              data['customer_id']!, _customerIdMeta));
+    }
+    if (data.containsKey('customer_name_snapshot')) {
+      context.handle(
+          _customerNameSnapshotMeta,
+          customerNameSnapshot.isAcceptableOrUnknown(
+              data['customer_name_snapshot']!, _customerNameSnapshotMeta));
+    }
+    if (data.containsKey('assigned_employee_id')) {
+      context.handle(
+          _assignedEmployeeIdMeta,
+          assignedEmployeeId.isAcceptableOrUnknown(
+              data['assigned_employee_id']!, _assignedEmployeeIdMeta));
+    }
+    if (data.containsKey('assigned_employee_name_snapshot')) {
+      context.handle(
+          _assignedEmployeeNameSnapshotMeta,
+          assignedEmployeeNameSnapshot.isAcceptableOrUnknown(
+              data['assigned_employee_name_snapshot']!,
+              _assignedEmployeeNameSnapshotMeta));
+    }
+    if (data.containsKey('work_type')) {
+      context.handle(_workTypeMeta,
+          workType.isAcceptableOrUnknown(data['work_type']!, _workTypeMeta));
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+          _titleMeta, title.isAcceptableOrUnknown(data['title']!, _titleMeta));
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('description')) {
+      context.handle(
+          _descriptionMeta,
+          description.isAcceptableOrUnknown(
+              data['description']!, _descriptionMeta));
+    }
+    if (data.containsKey('items_json')) {
+      context.handle(_itemsJsonMeta,
+          itemsJson.isAcceptableOrUnknown(data['items_json']!, _itemsJsonMeta));
+    }
+    if (data.containsKey('assignments_json')) {
+      context.handle(
+          _assignmentsJsonMeta,
+          assignmentsJson.isAcceptableOrUnknown(
+              data['assignments_json']!, _assignmentsJsonMeta));
+    }
+    if (data.containsKey('tasks_json')) {
+      context.handle(_tasksJsonMeta,
+          tasksJson.isAcceptableOrUnknown(data['tasks_json']!, _tasksJsonMeta));
+    }
+    if (data.containsKey('qty')) {
+      context.handle(
+          _qtyMeta, qty.isAcceptableOrUnknown(data['qty']!, _qtyMeta));
+    }
+    if (data.containsKey('unit_label')) {
+      context.handle(_unitLabelMeta,
+          unitLabel.isAcceptableOrUnknown(data['unit_label']!, _unitLabelMeta));
+    }
+    if (data.containsKey('status')) {
+      context.handle(_statusMeta,
+          status.isAcceptableOrUnknown(data['status']!, _statusMeta));
+    }
+    if (data.containsKey('payment_status')) {
+      context.handle(
+          _paymentStatusMeta,
+          paymentStatus.isAcceptableOrUnknown(
+              data['payment_status']!, _paymentStatusMeta));
+    }
+    if (data.containsKey('priority')) {
+      context.handle(_priorityMeta,
+          priority.isAcceptableOrUnknown(data['priority']!, _priorityMeta));
+    }
+    if (data.containsKey('due_at')) {
+      context.handle(
+          _dueAtMeta, dueAt.isAcceptableOrUnknown(data['due_at']!, _dueAtMeta));
+    }
+    if (data.containsKey('note')) {
+      context.handle(
+          _noteMeta, note.isAcceptableOrUnknown(data['note']!, _noteMeta));
+    }
+    if (data.containsKey('quoted_totals_json')) {
+      context.handle(
+          _quotedTotalsJsonMeta,
+          quotedTotalsJson.isAcceptableOrUnknown(
+              data['quoted_totals_json']!, _quotedTotalsJsonMeta));
+    }
+    if (data.containsKey('quoted_requested_lines_json')) {
+      context.handle(
+          _quotedRequestedLinesJsonMeta,
+          quotedRequestedLinesJson.isAcceptableOrUnknown(
+              data['quoted_requested_lines_json']!,
+              _quotedRequestedLinesJsonMeta));
+    }
+    if (data.containsKey('quoted_payment_variants_json')) {
+      context.handle(
+          _quotedPaymentVariantsJsonMeta,
+          quotedPaymentVariantsJson.isAcceptableOrUnknown(
+              data['quoted_payment_variants_json']!,
+              _quotedPaymentVariantsJsonMeta));
+    }
+    if (data.containsKey('pricing_snapshot_json')) {
+      context.handle(
+          _pricingSnapshotJsonMeta,
+          pricingSnapshotJson.isAcceptableOrUnknown(
+              data['pricing_snapshot_json']!, _pricingSnapshotJsonMeta));
+    }
+    if (data.containsKey('payment_lines_json')) {
+      context.handle(
+          _paymentLinesJsonMeta,
+          paymentLinesJson.isAcceptableOrUnknown(
+              data['payment_lines_json']!, _paymentLinesJsonMeta));
+    }
+    if (data.containsKey('created_by')) {
+      context.handle(_createdByMeta,
+          createdBy.isAcceptableOrUnknown(data['created_by']!, _createdByMeta));
+    } else if (isInserting) {
+      context.missing(_createdByMeta);
+    }
+    if (data.containsKey('updated_by')) {
+      context.handle(_updatedByMeta,
+          updatedBy.isAcceptableOrUnknown(data['updated_by']!, _updatedByMeta));
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(_createdAtMeta,
+          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(_updatedAtMeta,
+          updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta));
+    }
+    if (data.containsKey('completed_at')) {
+      context.handle(
+          _completedAtMeta,
+          completedAt.isAcceptableOrUnknown(
+              data['completed_at']!, _completedAtMeta));
+    }
+    if (data.containsKey('paid_at')) {
+      context.handle(_paidAtMeta,
+          paidAt.isAcceptableOrUnknown(data['paid_at']!, _paidAtMeta));
+    }
+    if (data.containsKey('delivered_at')) {
+      context.handle(
+          _deliveredAtMeta,
+          deliveredAt.isAcceptableOrUnknown(
+              data['delivered_at']!, _deliveredAtMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  WorkOrder map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return WorkOrder(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
+      folio: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}folio'])!,
+      customerId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}customer_id']),
+      customerNameSnapshot: attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}customer_name_snapshot']),
+      assignedEmployeeId: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}assigned_employee_id']),
+      assignedEmployeeNameSnapshot: attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}assigned_employee_name_snapshot']),
+      workType: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}work_type'])!,
+      title: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}title'])!,
+      description: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}description']),
+      itemsJson: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}items_json'])!,
+      assignmentsJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}assignments_json'])!,
+      tasksJson: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}tasks_json'])!,
+      qty: attachedDatabase.typeMapping
+          .read(DriftSqlType.double, data['${effectivePrefix}qty'])!,
+      unitLabel: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}unit_label'])!,
+      status: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}status'])!,
+      paymentStatus: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}payment_status'])!,
+      priority: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}priority'])!,
+      dueAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}due_at']),
+      note: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}note']),
+      quotedTotalsJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}quoted_totals_json'])!,
+      quotedRequestedLinesJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}quoted_requested_lines_json'])!,
+      quotedPaymentVariantsJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}quoted_payment_variants_json'])!,
+      pricingSnapshotJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}pricing_snapshot_json'])!,
+      paymentLinesJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}payment_lines_json'])!,
+      createdBy: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}created_by'])!,
+      updatedBy: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}updated_by']),
+      createdAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
+      updatedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}updated_at']),
+      completedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}completed_at']),
+      paidAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}paid_at']),
+      deliveredAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}delivered_at']),
+    );
+  }
+
+  @override
+  $WorkOrdersTable createAlias(String alias) {
+    return $WorkOrdersTable(attachedDatabase, alias);
+  }
+}
+
+class WorkOrder extends DataClass implements Insertable<WorkOrder> {
+  final String id;
+  final String folio;
+  final String? customerId;
+  final String? customerNameSnapshot;
+  final String? assignedEmployeeId;
+  final String? assignedEmployeeNameSnapshot;
+  final String workType;
+  final String title;
+  final String? description;
+  final String itemsJson;
+  final String assignmentsJson;
+  final String tasksJson;
+  final double qty;
+  final String unitLabel;
+  final String status;
+  final String paymentStatus;
+  final String priority;
+  final DateTime? dueAt;
+  final String? note;
+  final String quotedTotalsJson;
+  final String quotedRequestedLinesJson;
+  final String quotedPaymentVariantsJson;
+  final String pricingSnapshotJson;
+  final String paymentLinesJson;
+  final String createdBy;
+  final String? updatedBy;
+  final DateTime createdAt;
+  final DateTime? updatedAt;
+  final DateTime? completedAt;
+  final DateTime? paidAt;
+  final DateTime? deliveredAt;
+  const WorkOrder(
+      {required this.id,
+      required this.folio,
+      this.customerId,
+      this.customerNameSnapshot,
+      this.assignedEmployeeId,
+      this.assignedEmployeeNameSnapshot,
+      required this.workType,
+      required this.title,
+      this.description,
+      required this.itemsJson,
+      required this.assignmentsJson,
+      required this.tasksJson,
+      required this.qty,
+      required this.unitLabel,
+      required this.status,
+      required this.paymentStatus,
+      required this.priority,
+      this.dueAt,
+      this.note,
+      required this.quotedTotalsJson,
+      required this.quotedRequestedLinesJson,
+      required this.quotedPaymentVariantsJson,
+      required this.pricingSnapshotJson,
+      required this.paymentLinesJson,
+      required this.createdBy,
+      this.updatedBy,
+      required this.createdAt,
+      this.updatedAt,
+      this.completedAt,
+      this.paidAt,
+      this.deliveredAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['folio'] = Variable<String>(folio);
+    if (!nullToAbsent || customerId != null) {
+      map['customer_id'] = Variable<String>(customerId);
+    }
+    if (!nullToAbsent || customerNameSnapshot != null) {
+      map['customer_name_snapshot'] = Variable<String>(customerNameSnapshot);
+    }
+    if (!nullToAbsent || assignedEmployeeId != null) {
+      map['assigned_employee_id'] = Variable<String>(assignedEmployeeId);
+    }
+    if (!nullToAbsent || assignedEmployeeNameSnapshot != null) {
+      map['assigned_employee_name_snapshot'] =
+          Variable<String>(assignedEmployeeNameSnapshot);
+    }
+    map['work_type'] = Variable<String>(workType);
+    map['title'] = Variable<String>(title);
+    if (!nullToAbsent || description != null) {
+      map['description'] = Variable<String>(description);
+    }
+    map['items_json'] = Variable<String>(itemsJson);
+    map['assignments_json'] = Variable<String>(assignmentsJson);
+    map['tasks_json'] = Variable<String>(tasksJson);
+    map['qty'] = Variable<double>(qty);
+    map['unit_label'] = Variable<String>(unitLabel);
+    map['status'] = Variable<String>(status);
+    map['payment_status'] = Variable<String>(paymentStatus);
+    map['priority'] = Variable<String>(priority);
+    if (!nullToAbsent || dueAt != null) {
+      map['due_at'] = Variable<DateTime>(dueAt);
+    }
+    if (!nullToAbsent || note != null) {
+      map['note'] = Variable<String>(note);
+    }
+    map['quoted_totals_json'] = Variable<String>(quotedTotalsJson);
+    map['quoted_requested_lines_json'] =
+        Variable<String>(quotedRequestedLinesJson);
+    map['quoted_payment_variants_json'] =
+        Variable<String>(quotedPaymentVariantsJson);
+    map['pricing_snapshot_json'] = Variable<String>(pricingSnapshotJson);
+    map['payment_lines_json'] = Variable<String>(paymentLinesJson);
+    map['created_by'] = Variable<String>(createdBy);
+    if (!nullToAbsent || updatedBy != null) {
+      map['updated_by'] = Variable<String>(updatedBy);
+    }
+    map['created_at'] = Variable<DateTime>(createdAt);
+    if (!nullToAbsent || updatedAt != null) {
+      map['updated_at'] = Variable<DateTime>(updatedAt);
+    }
+    if (!nullToAbsent || completedAt != null) {
+      map['completed_at'] = Variable<DateTime>(completedAt);
+    }
+    if (!nullToAbsent || paidAt != null) {
+      map['paid_at'] = Variable<DateTime>(paidAt);
+    }
+    if (!nullToAbsent || deliveredAt != null) {
+      map['delivered_at'] = Variable<DateTime>(deliveredAt);
+    }
+    return map;
+  }
+
+  WorkOrdersCompanion toCompanion(bool nullToAbsent) {
+    return WorkOrdersCompanion(
+      id: Value(id),
+      folio: Value(folio),
+      customerId: customerId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(customerId),
+      customerNameSnapshot: customerNameSnapshot == null && nullToAbsent
+          ? const Value.absent()
+          : Value(customerNameSnapshot),
+      assignedEmployeeId: assignedEmployeeId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(assignedEmployeeId),
+      assignedEmployeeNameSnapshot:
+          assignedEmployeeNameSnapshot == null && nullToAbsent
+              ? const Value.absent()
+              : Value(assignedEmployeeNameSnapshot),
+      workType: Value(workType),
+      title: Value(title),
+      description: description == null && nullToAbsent
+          ? const Value.absent()
+          : Value(description),
+      itemsJson: Value(itemsJson),
+      assignmentsJson: Value(assignmentsJson),
+      tasksJson: Value(tasksJson),
+      qty: Value(qty),
+      unitLabel: Value(unitLabel),
+      status: Value(status),
+      paymentStatus: Value(paymentStatus),
+      priority: Value(priority),
+      dueAt:
+          dueAt == null && nullToAbsent ? const Value.absent() : Value(dueAt),
+      note: note == null && nullToAbsent ? const Value.absent() : Value(note),
+      quotedTotalsJson: Value(quotedTotalsJson),
+      quotedRequestedLinesJson: Value(quotedRequestedLinesJson),
+      quotedPaymentVariantsJson: Value(quotedPaymentVariantsJson),
+      pricingSnapshotJson: Value(pricingSnapshotJson),
+      paymentLinesJson: Value(paymentLinesJson),
+      createdBy: Value(createdBy),
+      updatedBy: updatedBy == null && nullToAbsent
+          ? const Value.absent()
+          : Value(updatedBy),
+      createdAt: Value(createdAt),
+      updatedAt: updatedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(updatedAt),
+      completedAt: completedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(completedAt),
+      paidAt:
+          paidAt == null && nullToAbsent ? const Value.absent() : Value(paidAt),
+      deliveredAt: deliveredAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deliveredAt),
+    );
+  }
+
+  factory WorkOrder.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return WorkOrder(
+      id: serializer.fromJson<String>(json['id']),
+      folio: serializer.fromJson<String>(json['folio']),
+      customerId: serializer.fromJson<String?>(json['customerId']),
+      customerNameSnapshot:
+          serializer.fromJson<String?>(json['customerNameSnapshot']),
+      assignedEmployeeId:
+          serializer.fromJson<String?>(json['assignedEmployeeId']),
+      assignedEmployeeNameSnapshot:
+          serializer.fromJson<String?>(json['assignedEmployeeNameSnapshot']),
+      workType: serializer.fromJson<String>(json['workType']),
+      title: serializer.fromJson<String>(json['title']),
+      description: serializer.fromJson<String?>(json['description']),
+      itemsJson: serializer.fromJson<String>(json['itemsJson']),
+      assignmentsJson: serializer.fromJson<String>(json['assignmentsJson']),
+      tasksJson: serializer.fromJson<String>(json['tasksJson']),
+      qty: serializer.fromJson<double>(json['qty']),
+      unitLabel: serializer.fromJson<String>(json['unitLabel']),
+      status: serializer.fromJson<String>(json['status']),
+      paymentStatus: serializer.fromJson<String>(json['paymentStatus']),
+      priority: serializer.fromJson<String>(json['priority']),
+      dueAt: serializer.fromJson<DateTime?>(json['dueAt']),
+      note: serializer.fromJson<String?>(json['note']),
+      quotedTotalsJson: serializer.fromJson<String>(json['quotedTotalsJson']),
+      quotedRequestedLinesJson:
+          serializer.fromJson<String>(json['quotedRequestedLinesJson']),
+      quotedPaymentVariantsJson:
+          serializer.fromJson<String>(json['quotedPaymentVariantsJson']),
+      pricingSnapshotJson:
+          serializer.fromJson<String>(json['pricingSnapshotJson']),
+      paymentLinesJson: serializer.fromJson<String>(json['paymentLinesJson']),
+      createdBy: serializer.fromJson<String>(json['createdBy']),
+      updatedBy: serializer.fromJson<String?>(json['updatedBy']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime?>(json['updatedAt']),
+      completedAt: serializer.fromJson<DateTime?>(json['completedAt']),
+      paidAt: serializer.fromJson<DateTime?>(json['paidAt']),
+      deliveredAt: serializer.fromJson<DateTime?>(json['deliveredAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'folio': serializer.toJson<String>(folio),
+      'customerId': serializer.toJson<String?>(customerId),
+      'customerNameSnapshot': serializer.toJson<String?>(customerNameSnapshot),
+      'assignedEmployeeId': serializer.toJson<String?>(assignedEmployeeId),
+      'assignedEmployeeNameSnapshot':
+          serializer.toJson<String?>(assignedEmployeeNameSnapshot),
+      'workType': serializer.toJson<String>(workType),
+      'title': serializer.toJson<String>(title),
+      'description': serializer.toJson<String?>(description),
+      'itemsJson': serializer.toJson<String>(itemsJson),
+      'assignmentsJson': serializer.toJson<String>(assignmentsJson),
+      'tasksJson': serializer.toJson<String>(tasksJson),
+      'qty': serializer.toJson<double>(qty),
+      'unitLabel': serializer.toJson<String>(unitLabel),
+      'status': serializer.toJson<String>(status),
+      'paymentStatus': serializer.toJson<String>(paymentStatus),
+      'priority': serializer.toJson<String>(priority),
+      'dueAt': serializer.toJson<DateTime?>(dueAt),
+      'note': serializer.toJson<String?>(note),
+      'quotedTotalsJson': serializer.toJson<String>(quotedTotalsJson),
+      'quotedRequestedLinesJson':
+          serializer.toJson<String>(quotedRequestedLinesJson),
+      'quotedPaymentVariantsJson':
+          serializer.toJson<String>(quotedPaymentVariantsJson),
+      'pricingSnapshotJson': serializer.toJson<String>(pricingSnapshotJson),
+      'paymentLinesJson': serializer.toJson<String>(paymentLinesJson),
+      'createdBy': serializer.toJson<String>(createdBy),
+      'updatedBy': serializer.toJson<String?>(updatedBy),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime?>(updatedAt),
+      'completedAt': serializer.toJson<DateTime?>(completedAt),
+      'paidAt': serializer.toJson<DateTime?>(paidAt),
+      'deliveredAt': serializer.toJson<DateTime?>(deliveredAt),
+    };
+  }
+
+  WorkOrder copyWith(
+          {String? id,
+          String? folio,
+          Value<String?> customerId = const Value.absent(),
+          Value<String?> customerNameSnapshot = const Value.absent(),
+          Value<String?> assignedEmployeeId = const Value.absent(),
+          Value<String?> assignedEmployeeNameSnapshot = const Value.absent(),
+          String? workType,
+          String? title,
+          Value<String?> description = const Value.absent(),
+          String? itemsJson,
+          String? assignmentsJson,
+          String? tasksJson,
+          double? qty,
+          String? unitLabel,
+          String? status,
+          String? paymentStatus,
+          String? priority,
+          Value<DateTime?> dueAt = const Value.absent(),
+          Value<String?> note = const Value.absent(),
+          String? quotedTotalsJson,
+          String? quotedRequestedLinesJson,
+          String? quotedPaymentVariantsJson,
+          String? pricingSnapshotJson,
+          String? paymentLinesJson,
+          String? createdBy,
+          Value<String?> updatedBy = const Value.absent(),
+          DateTime? createdAt,
+          Value<DateTime?> updatedAt = const Value.absent(),
+          Value<DateTime?> completedAt = const Value.absent(),
+          Value<DateTime?> paidAt = const Value.absent(),
+          Value<DateTime?> deliveredAt = const Value.absent()}) =>
+      WorkOrder(
+        id: id ?? this.id,
+        folio: folio ?? this.folio,
+        customerId: customerId.present ? customerId.value : this.customerId,
+        customerNameSnapshot: customerNameSnapshot.present
+            ? customerNameSnapshot.value
+            : this.customerNameSnapshot,
+        assignedEmployeeId: assignedEmployeeId.present
+            ? assignedEmployeeId.value
+            : this.assignedEmployeeId,
+        assignedEmployeeNameSnapshot: assignedEmployeeNameSnapshot.present
+            ? assignedEmployeeNameSnapshot.value
+            : this.assignedEmployeeNameSnapshot,
+        workType: workType ?? this.workType,
+        title: title ?? this.title,
+        description: description.present ? description.value : this.description,
+        itemsJson: itemsJson ?? this.itemsJson,
+        assignmentsJson: assignmentsJson ?? this.assignmentsJson,
+        tasksJson: tasksJson ?? this.tasksJson,
+        qty: qty ?? this.qty,
+        unitLabel: unitLabel ?? this.unitLabel,
+        status: status ?? this.status,
+        paymentStatus: paymentStatus ?? this.paymentStatus,
+        priority: priority ?? this.priority,
+        dueAt: dueAt.present ? dueAt.value : this.dueAt,
+        note: note.present ? note.value : this.note,
+        quotedTotalsJson: quotedTotalsJson ?? this.quotedTotalsJson,
+        quotedRequestedLinesJson:
+            quotedRequestedLinesJson ?? this.quotedRequestedLinesJson,
+        quotedPaymentVariantsJson:
+            quotedPaymentVariantsJson ?? this.quotedPaymentVariantsJson,
+        pricingSnapshotJson: pricingSnapshotJson ?? this.pricingSnapshotJson,
+        paymentLinesJson: paymentLinesJson ?? this.paymentLinesJson,
+        createdBy: createdBy ?? this.createdBy,
+        updatedBy: updatedBy.present ? updatedBy.value : this.updatedBy,
+        createdAt: createdAt ?? this.createdAt,
+        updatedAt: updatedAt.present ? updatedAt.value : this.updatedAt,
+        completedAt: completedAt.present ? completedAt.value : this.completedAt,
+        paidAt: paidAt.present ? paidAt.value : this.paidAt,
+        deliveredAt: deliveredAt.present ? deliveredAt.value : this.deliveredAt,
+      );
+  WorkOrder copyWithCompanion(WorkOrdersCompanion data) {
+    return WorkOrder(
+      id: data.id.present ? data.id.value : this.id,
+      folio: data.folio.present ? data.folio.value : this.folio,
+      customerId:
+          data.customerId.present ? data.customerId.value : this.customerId,
+      customerNameSnapshot: data.customerNameSnapshot.present
+          ? data.customerNameSnapshot.value
+          : this.customerNameSnapshot,
+      assignedEmployeeId: data.assignedEmployeeId.present
+          ? data.assignedEmployeeId.value
+          : this.assignedEmployeeId,
+      assignedEmployeeNameSnapshot: data.assignedEmployeeNameSnapshot.present
+          ? data.assignedEmployeeNameSnapshot.value
+          : this.assignedEmployeeNameSnapshot,
+      workType: data.workType.present ? data.workType.value : this.workType,
+      title: data.title.present ? data.title.value : this.title,
+      description:
+          data.description.present ? data.description.value : this.description,
+      itemsJson: data.itemsJson.present ? data.itemsJson.value : this.itemsJson,
+      assignmentsJson: data.assignmentsJson.present
+          ? data.assignmentsJson.value
+          : this.assignmentsJson,
+      tasksJson: data.tasksJson.present ? data.tasksJson.value : this.tasksJson,
+      qty: data.qty.present ? data.qty.value : this.qty,
+      unitLabel: data.unitLabel.present ? data.unitLabel.value : this.unitLabel,
+      status: data.status.present ? data.status.value : this.status,
+      paymentStatus: data.paymentStatus.present
+          ? data.paymentStatus.value
+          : this.paymentStatus,
+      priority: data.priority.present ? data.priority.value : this.priority,
+      dueAt: data.dueAt.present ? data.dueAt.value : this.dueAt,
+      note: data.note.present ? data.note.value : this.note,
+      quotedTotalsJson: data.quotedTotalsJson.present
+          ? data.quotedTotalsJson.value
+          : this.quotedTotalsJson,
+      quotedRequestedLinesJson: data.quotedRequestedLinesJson.present
+          ? data.quotedRequestedLinesJson.value
+          : this.quotedRequestedLinesJson,
+      quotedPaymentVariantsJson: data.quotedPaymentVariantsJson.present
+          ? data.quotedPaymentVariantsJson.value
+          : this.quotedPaymentVariantsJson,
+      pricingSnapshotJson: data.pricingSnapshotJson.present
+          ? data.pricingSnapshotJson.value
+          : this.pricingSnapshotJson,
+      paymentLinesJson: data.paymentLinesJson.present
+          ? data.paymentLinesJson.value
+          : this.paymentLinesJson,
+      createdBy: data.createdBy.present ? data.createdBy.value : this.createdBy,
+      updatedBy: data.updatedBy.present ? data.updatedBy.value : this.updatedBy,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      completedAt:
+          data.completedAt.present ? data.completedAt.value : this.completedAt,
+      paidAt: data.paidAt.present ? data.paidAt.value : this.paidAt,
+      deliveredAt:
+          data.deliveredAt.present ? data.deliveredAt.value : this.deliveredAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('WorkOrder(')
+          ..write('id: $id, ')
+          ..write('folio: $folio, ')
+          ..write('customerId: $customerId, ')
+          ..write('customerNameSnapshot: $customerNameSnapshot, ')
+          ..write('assignedEmployeeId: $assignedEmployeeId, ')
+          ..write(
+              'assignedEmployeeNameSnapshot: $assignedEmployeeNameSnapshot, ')
+          ..write('workType: $workType, ')
+          ..write('title: $title, ')
+          ..write('description: $description, ')
+          ..write('itemsJson: $itemsJson, ')
+          ..write('assignmentsJson: $assignmentsJson, ')
+          ..write('tasksJson: $tasksJson, ')
+          ..write('qty: $qty, ')
+          ..write('unitLabel: $unitLabel, ')
+          ..write('status: $status, ')
+          ..write('paymentStatus: $paymentStatus, ')
+          ..write('priority: $priority, ')
+          ..write('dueAt: $dueAt, ')
+          ..write('note: $note, ')
+          ..write('quotedTotalsJson: $quotedTotalsJson, ')
+          ..write('quotedRequestedLinesJson: $quotedRequestedLinesJson, ')
+          ..write('quotedPaymentVariantsJson: $quotedPaymentVariantsJson, ')
+          ..write('pricingSnapshotJson: $pricingSnapshotJson, ')
+          ..write('paymentLinesJson: $paymentLinesJson, ')
+          ..write('createdBy: $createdBy, ')
+          ..write('updatedBy: $updatedBy, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('completedAt: $completedAt, ')
+          ..write('paidAt: $paidAt, ')
+          ..write('deliveredAt: $deliveredAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hashAll([
+        id,
+        folio,
+        customerId,
+        customerNameSnapshot,
+        assignedEmployeeId,
+        assignedEmployeeNameSnapshot,
+        workType,
+        title,
+        description,
+        itemsJson,
+        assignmentsJson,
+        tasksJson,
+        qty,
+        unitLabel,
+        status,
+        paymentStatus,
+        priority,
+        dueAt,
+        note,
+        quotedTotalsJson,
+        quotedRequestedLinesJson,
+        quotedPaymentVariantsJson,
+        pricingSnapshotJson,
+        paymentLinesJson,
+        createdBy,
+        updatedBy,
+        createdAt,
+        updatedAt,
+        completedAt,
+        paidAt,
+        deliveredAt
+      ]);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is WorkOrder &&
+          other.id == this.id &&
+          other.folio == this.folio &&
+          other.customerId == this.customerId &&
+          other.customerNameSnapshot == this.customerNameSnapshot &&
+          other.assignedEmployeeId == this.assignedEmployeeId &&
+          other.assignedEmployeeNameSnapshot ==
+              this.assignedEmployeeNameSnapshot &&
+          other.workType == this.workType &&
+          other.title == this.title &&
+          other.description == this.description &&
+          other.itemsJson == this.itemsJson &&
+          other.assignmentsJson == this.assignmentsJson &&
+          other.tasksJson == this.tasksJson &&
+          other.qty == this.qty &&
+          other.unitLabel == this.unitLabel &&
+          other.status == this.status &&
+          other.paymentStatus == this.paymentStatus &&
+          other.priority == this.priority &&
+          other.dueAt == this.dueAt &&
+          other.note == this.note &&
+          other.quotedTotalsJson == this.quotedTotalsJson &&
+          other.quotedRequestedLinesJson == this.quotedRequestedLinesJson &&
+          other.quotedPaymentVariantsJson == this.quotedPaymentVariantsJson &&
+          other.pricingSnapshotJson == this.pricingSnapshotJson &&
+          other.paymentLinesJson == this.paymentLinesJson &&
+          other.createdBy == this.createdBy &&
+          other.updatedBy == this.updatedBy &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt &&
+          other.completedAt == this.completedAt &&
+          other.paidAt == this.paidAt &&
+          other.deliveredAt == this.deliveredAt);
+}
+
+class WorkOrdersCompanion extends UpdateCompanion<WorkOrder> {
+  final Value<String> id;
+  final Value<String> folio;
+  final Value<String?> customerId;
+  final Value<String?> customerNameSnapshot;
+  final Value<String?> assignedEmployeeId;
+  final Value<String?> assignedEmployeeNameSnapshot;
+  final Value<String> workType;
+  final Value<String> title;
+  final Value<String?> description;
+  final Value<String> itemsJson;
+  final Value<String> assignmentsJson;
+  final Value<String> tasksJson;
+  final Value<double> qty;
+  final Value<String> unitLabel;
+  final Value<String> status;
+  final Value<String> paymentStatus;
+  final Value<String> priority;
+  final Value<DateTime?> dueAt;
+  final Value<String?> note;
+  final Value<String> quotedTotalsJson;
+  final Value<String> quotedRequestedLinesJson;
+  final Value<String> quotedPaymentVariantsJson;
+  final Value<String> pricingSnapshotJson;
+  final Value<String> paymentLinesJson;
+  final Value<String> createdBy;
+  final Value<String?> updatedBy;
+  final Value<DateTime> createdAt;
+  final Value<DateTime?> updatedAt;
+  final Value<DateTime?> completedAt;
+  final Value<DateTime?> paidAt;
+  final Value<DateTime?> deliveredAt;
+  final Value<int> rowid;
+  const WorkOrdersCompanion({
+    this.id = const Value.absent(),
+    this.folio = const Value.absent(),
+    this.customerId = const Value.absent(),
+    this.customerNameSnapshot = const Value.absent(),
+    this.assignedEmployeeId = const Value.absent(),
+    this.assignedEmployeeNameSnapshot = const Value.absent(),
+    this.workType = const Value.absent(),
+    this.title = const Value.absent(),
+    this.description = const Value.absent(),
+    this.itemsJson = const Value.absent(),
+    this.assignmentsJson = const Value.absent(),
+    this.tasksJson = const Value.absent(),
+    this.qty = const Value.absent(),
+    this.unitLabel = const Value.absent(),
+    this.status = const Value.absent(),
+    this.paymentStatus = const Value.absent(),
+    this.priority = const Value.absent(),
+    this.dueAt = const Value.absent(),
+    this.note = const Value.absent(),
+    this.quotedTotalsJson = const Value.absent(),
+    this.quotedRequestedLinesJson = const Value.absent(),
+    this.quotedPaymentVariantsJson = const Value.absent(),
+    this.pricingSnapshotJson = const Value.absent(),
+    this.paymentLinesJson = const Value.absent(),
+    this.createdBy = const Value.absent(),
+    this.updatedBy = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.completedAt = const Value.absent(),
+    this.paidAt = const Value.absent(),
+    this.deliveredAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  WorkOrdersCompanion.insert({
+    required String id,
+    required String folio,
+    this.customerId = const Value.absent(),
+    this.customerNameSnapshot = const Value.absent(),
+    this.assignedEmployeeId = const Value.absent(),
+    this.assignedEmployeeNameSnapshot = const Value.absent(),
+    this.workType = const Value.absent(),
+    required String title,
+    this.description = const Value.absent(),
+    this.itemsJson = const Value.absent(),
+    this.assignmentsJson = const Value.absent(),
+    this.tasksJson = const Value.absent(),
+    this.qty = const Value.absent(),
+    this.unitLabel = const Value.absent(),
+    this.status = const Value.absent(),
+    this.paymentStatus = const Value.absent(),
+    this.priority = const Value.absent(),
+    this.dueAt = const Value.absent(),
+    this.note = const Value.absent(),
+    this.quotedTotalsJson = const Value.absent(),
+    this.quotedRequestedLinesJson = const Value.absent(),
+    this.quotedPaymentVariantsJson = const Value.absent(),
+    this.pricingSnapshotJson = const Value.absent(),
+    this.paymentLinesJson = const Value.absent(),
+    required String createdBy,
+    this.updatedBy = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.completedAt = const Value.absent(),
+    this.paidAt = const Value.absent(),
+    this.deliveredAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  })  : id = Value(id),
+        folio = Value(folio),
+        title = Value(title),
+        createdBy = Value(createdBy);
+  static Insertable<WorkOrder> custom({
+    Expression<String>? id,
+    Expression<String>? folio,
+    Expression<String>? customerId,
+    Expression<String>? customerNameSnapshot,
+    Expression<String>? assignedEmployeeId,
+    Expression<String>? assignedEmployeeNameSnapshot,
+    Expression<String>? workType,
+    Expression<String>? title,
+    Expression<String>? description,
+    Expression<String>? itemsJson,
+    Expression<String>? assignmentsJson,
+    Expression<String>? tasksJson,
+    Expression<double>? qty,
+    Expression<String>? unitLabel,
+    Expression<String>? status,
+    Expression<String>? paymentStatus,
+    Expression<String>? priority,
+    Expression<DateTime>? dueAt,
+    Expression<String>? note,
+    Expression<String>? quotedTotalsJson,
+    Expression<String>? quotedRequestedLinesJson,
+    Expression<String>? quotedPaymentVariantsJson,
+    Expression<String>? pricingSnapshotJson,
+    Expression<String>? paymentLinesJson,
+    Expression<String>? createdBy,
+    Expression<String>? updatedBy,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? updatedAt,
+    Expression<DateTime>? completedAt,
+    Expression<DateTime>? paidAt,
+    Expression<DateTime>? deliveredAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (folio != null) 'folio': folio,
+      if (customerId != null) 'customer_id': customerId,
+      if (customerNameSnapshot != null)
+        'customer_name_snapshot': customerNameSnapshot,
+      if (assignedEmployeeId != null)
+        'assigned_employee_id': assignedEmployeeId,
+      if (assignedEmployeeNameSnapshot != null)
+        'assigned_employee_name_snapshot': assignedEmployeeNameSnapshot,
+      if (workType != null) 'work_type': workType,
+      if (title != null) 'title': title,
+      if (description != null) 'description': description,
+      if (itemsJson != null) 'items_json': itemsJson,
+      if (assignmentsJson != null) 'assignments_json': assignmentsJson,
+      if (tasksJson != null) 'tasks_json': tasksJson,
+      if (qty != null) 'qty': qty,
+      if (unitLabel != null) 'unit_label': unitLabel,
+      if (status != null) 'status': status,
+      if (paymentStatus != null) 'payment_status': paymentStatus,
+      if (priority != null) 'priority': priority,
+      if (dueAt != null) 'due_at': dueAt,
+      if (note != null) 'note': note,
+      if (quotedTotalsJson != null) 'quoted_totals_json': quotedTotalsJson,
+      if (quotedRequestedLinesJson != null)
+        'quoted_requested_lines_json': quotedRequestedLinesJson,
+      if (quotedPaymentVariantsJson != null)
+        'quoted_payment_variants_json': quotedPaymentVariantsJson,
+      if (pricingSnapshotJson != null)
+        'pricing_snapshot_json': pricingSnapshotJson,
+      if (paymentLinesJson != null) 'payment_lines_json': paymentLinesJson,
+      if (createdBy != null) 'created_by': createdBy,
+      if (updatedBy != null) 'updated_by': updatedBy,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (completedAt != null) 'completed_at': completedAt,
+      if (paidAt != null) 'paid_at': paidAt,
+      if (deliveredAt != null) 'delivered_at': deliveredAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  WorkOrdersCompanion copyWith(
+      {Value<String>? id,
+      Value<String>? folio,
+      Value<String?>? customerId,
+      Value<String?>? customerNameSnapshot,
+      Value<String?>? assignedEmployeeId,
+      Value<String?>? assignedEmployeeNameSnapshot,
+      Value<String>? workType,
+      Value<String>? title,
+      Value<String?>? description,
+      Value<String>? itemsJson,
+      Value<String>? assignmentsJson,
+      Value<String>? tasksJson,
+      Value<double>? qty,
+      Value<String>? unitLabel,
+      Value<String>? status,
+      Value<String>? paymentStatus,
+      Value<String>? priority,
+      Value<DateTime?>? dueAt,
+      Value<String?>? note,
+      Value<String>? quotedTotalsJson,
+      Value<String>? quotedRequestedLinesJson,
+      Value<String>? quotedPaymentVariantsJson,
+      Value<String>? pricingSnapshotJson,
+      Value<String>? paymentLinesJson,
+      Value<String>? createdBy,
+      Value<String?>? updatedBy,
+      Value<DateTime>? createdAt,
+      Value<DateTime?>? updatedAt,
+      Value<DateTime?>? completedAt,
+      Value<DateTime?>? paidAt,
+      Value<DateTime?>? deliveredAt,
+      Value<int>? rowid}) {
+    return WorkOrdersCompanion(
+      id: id ?? this.id,
+      folio: folio ?? this.folio,
+      customerId: customerId ?? this.customerId,
+      customerNameSnapshot: customerNameSnapshot ?? this.customerNameSnapshot,
+      assignedEmployeeId: assignedEmployeeId ?? this.assignedEmployeeId,
+      assignedEmployeeNameSnapshot:
+          assignedEmployeeNameSnapshot ?? this.assignedEmployeeNameSnapshot,
+      workType: workType ?? this.workType,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      itemsJson: itemsJson ?? this.itemsJson,
+      assignmentsJson: assignmentsJson ?? this.assignmentsJson,
+      tasksJson: tasksJson ?? this.tasksJson,
+      qty: qty ?? this.qty,
+      unitLabel: unitLabel ?? this.unitLabel,
+      status: status ?? this.status,
+      paymentStatus: paymentStatus ?? this.paymentStatus,
+      priority: priority ?? this.priority,
+      dueAt: dueAt ?? this.dueAt,
+      note: note ?? this.note,
+      quotedTotalsJson: quotedTotalsJson ?? this.quotedTotalsJson,
+      quotedRequestedLinesJson:
+          quotedRequestedLinesJson ?? this.quotedRequestedLinesJson,
+      quotedPaymentVariantsJson:
+          quotedPaymentVariantsJson ?? this.quotedPaymentVariantsJson,
+      pricingSnapshotJson: pricingSnapshotJson ?? this.pricingSnapshotJson,
+      paymentLinesJson: paymentLinesJson ?? this.paymentLinesJson,
+      createdBy: createdBy ?? this.createdBy,
+      updatedBy: updatedBy ?? this.updatedBy,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      completedAt: completedAt ?? this.completedAt,
+      paidAt: paidAt ?? this.paidAt,
+      deliveredAt: deliveredAt ?? this.deliveredAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (folio.present) {
+      map['folio'] = Variable<String>(folio.value);
+    }
+    if (customerId.present) {
+      map['customer_id'] = Variable<String>(customerId.value);
+    }
+    if (customerNameSnapshot.present) {
+      map['customer_name_snapshot'] =
+          Variable<String>(customerNameSnapshot.value);
+    }
+    if (assignedEmployeeId.present) {
+      map['assigned_employee_id'] = Variable<String>(assignedEmployeeId.value);
+    }
+    if (assignedEmployeeNameSnapshot.present) {
+      map['assigned_employee_name_snapshot'] =
+          Variable<String>(assignedEmployeeNameSnapshot.value);
+    }
+    if (workType.present) {
+      map['work_type'] = Variable<String>(workType.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (description.present) {
+      map['description'] = Variable<String>(description.value);
+    }
+    if (itemsJson.present) {
+      map['items_json'] = Variable<String>(itemsJson.value);
+    }
+    if (assignmentsJson.present) {
+      map['assignments_json'] = Variable<String>(assignmentsJson.value);
+    }
+    if (tasksJson.present) {
+      map['tasks_json'] = Variable<String>(tasksJson.value);
+    }
+    if (qty.present) {
+      map['qty'] = Variable<double>(qty.value);
+    }
+    if (unitLabel.present) {
+      map['unit_label'] = Variable<String>(unitLabel.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<String>(status.value);
+    }
+    if (paymentStatus.present) {
+      map['payment_status'] = Variable<String>(paymentStatus.value);
+    }
+    if (priority.present) {
+      map['priority'] = Variable<String>(priority.value);
+    }
+    if (dueAt.present) {
+      map['due_at'] = Variable<DateTime>(dueAt.value);
+    }
+    if (note.present) {
+      map['note'] = Variable<String>(note.value);
+    }
+    if (quotedTotalsJson.present) {
+      map['quoted_totals_json'] = Variable<String>(quotedTotalsJson.value);
+    }
+    if (quotedRequestedLinesJson.present) {
+      map['quoted_requested_lines_json'] =
+          Variable<String>(quotedRequestedLinesJson.value);
+    }
+    if (quotedPaymentVariantsJson.present) {
+      map['quoted_payment_variants_json'] =
+          Variable<String>(quotedPaymentVariantsJson.value);
+    }
+    if (pricingSnapshotJson.present) {
+      map['pricing_snapshot_json'] =
+          Variable<String>(pricingSnapshotJson.value);
+    }
+    if (paymentLinesJson.present) {
+      map['payment_lines_json'] = Variable<String>(paymentLinesJson.value);
+    }
+    if (createdBy.present) {
+      map['created_by'] = Variable<String>(createdBy.value);
+    }
+    if (updatedBy.present) {
+      map['updated_by'] = Variable<String>(updatedBy.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (completedAt.present) {
+      map['completed_at'] = Variable<DateTime>(completedAt.value);
+    }
+    if (paidAt.present) {
+      map['paid_at'] = Variable<DateTime>(paidAt.value);
+    }
+    if (deliveredAt.present) {
+      map['delivered_at'] = Variable<DateTime>(deliveredAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('WorkOrdersCompanion(')
+          ..write('id: $id, ')
+          ..write('folio: $folio, ')
+          ..write('customerId: $customerId, ')
+          ..write('customerNameSnapshot: $customerNameSnapshot, ')
+          ..write('assignedEmployeeId: $assignedEmployeeId, ')
+          ..write(
+              'assignedEmployeeNameSnapshot: $assignedEmployeeNameSnapshot, ')
+          ..write('workType: $workType, ')
+          ..write('title: $title, ')
+          ..write('description: $description, ')
+          ..write('itemsJson: $itemsJson, ')
+          ..write('assignmentsJson: $assignmentsJson, ')
+          ..write('tasksJson: $tasksJson, ')
+          ..write('qty: $qty, ')
+          ..write('unitLabel: $unitLabel, ')
+          ..write('status: $status, ')
+          ..write('paymentStatus: $paymentStatus, ')
+          ..write('priority: $priority, ')
+          ..write('dueAt: $dueAt, ')
+          ..write('note: $note, ')
+          ..write('quotedTotalsJson: $quotedTotalsJson, ')
+          ..write('quotedRequestedLinesJson: $quotedRequestedLinesJson, ')
+          ..write('quotedPaymentVariantsJson: $quotedPaymentVariantsJson, ')
+          ..write('pricingSnapshotJson: $pricingSnapshotJson, ')
+          ..write('paymentLinesJson: $paymentLinesJson, ')
+          ..write('createdBy: $createdBy, ')
+          ..write('updatedBy: $updatedBy, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('completedAt: $completedAt, ')
+          ..write('paidAt: $paidAt, ')
+          ..write('deliveredAt: $deliveredAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $AppSettingsTable extends AppSettings
     with TableInfo<$AppSettingsTable, AppSetting> {
   @override
@@ -14303,6 +15779,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $StockLotsTable stockLots = $StockLotsTable(this);
   late final $SaleItemLotAllocationsTable saleItemLotAllocations =
       $SaleItemLotAllocationsTable(this);
+  late final $WorkOrdersTable workOrders = $WorkOrdersTable(this);
   late final $AppSettingsTable appSettings = $AppSettingsTable(this);
   late final $AuditLogsTable auditLogs = $AuditLogsTable(this);
   @override
@@ -14338,6 +15815,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         purchaseItems,
         stockLots,
         saleItemLotAllocations,
+        workOrders,
         appSettings,
         auditLogs
       ];
@@ -14514,6 +15992,36 @@ final class $$UsersTableReferences
         .filter((f) => f.createdBy.id.sqlEquals($_itemColumn<String>('id')!));
 
     final cache = $_typedResult.readTableOrNull(_createdPurchasesTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
+
+  static MultiTypedResultKey<$WorkOrdersTable, List<WorkOrder>>
+      _createdWorkOrdersTable(_$AppDatabase db) =>
+          MultiTypedResultKey.fromTable(db.workOrders,
+              aliasName:
+                  $_aliasNameGenerator(db.users.id, db.workOrders.createdBy));
+
+  $$WorkOrdersTableProcessedTableManager get createdWorkOrders {
+    final manager = $$WorkOrdersTableTableManager($_db, $_db.workOrders)
+        .filter((f) => f.createdBy.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_createdWorkOrdersTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
+
+  static MultiTypedResultKey<$WorkOrdersTable, List<WorkOrder>>
+      _updatedWorkOrdersTable(_$AppDatabase db) =>
+          MultiTypedResultKey.fromTable(db.workOrders,
+              aliasName:
+                  $_aliasNameGenerator(db.users.id, db.workOrders.updatedBy));
+
+  $$WorkOrdersTableProcessedTableManager get updatedWorkOrders {
+    final manager = $$WorkOrdersTableTableManager($_db, $_db.workOrders)
+        .filter((f) => f.updatedBy.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_updatedWorkOrdersTable($_db));
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
@@ -14767,6 +16275,48 @@ class $$UsersTableFilterComposer extends Composer<_$AppDatabase, $UsersTable> {
             $$PurchasesTableFilterComposer(
               $db: $db,
               $table: $db.purchases,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<bool> createdWorkOrders(
+      Expression<bool> Function($$WorkOrdersTableFilterComposer f) f) {
+    final $$WorkOrdersTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.workOrders,
+        getReferencedColumn: (t) => t.createdBy,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$WorkOrdersTableFilterComposer(
+              $db: $db,
+              $table: $db.workOrders,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<bool> updatedWorkOrders(
+      Expression<bool> Function($$WorkOrdersTableFilterComposer f) f) {
+    final $$WorkOrdersTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.workOrders,
+        getReferencedColumn: (t) => t.updatedBy,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$WorkOrdersTableFilterComposer(
+              $db: $db,
+              $table: $db.workOrders,
               $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
               joinBuilder: joinBuilder,
               $removeJoinBuilderFromRootComposer:
@@ -15075,6 +16625,48 @@ class $$UsersTableAnnotationComposer
     return f(composer);
   }
 
+  Expression<T> createdWorkOrders<T extends Object>(
+      Expression<T> Function($$WorkOrdersTableAnnotationComposer a) f) {
+    final $$WorkOrdersTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.workOrders,
+        getReferencedColumn: (t) => t.createdBy,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$WorkOrdersTableAnnotationComposer(
+              $db: $db,
+              $table: $db.workOrders,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<T> updatedWorkOrders<T extends Object>(
+      Expression<T> Function($$WorkOrdersTableAnnotationComposer a) f) {
+    final $$WorkOrdersTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.workOrders,
+        getReferencedColumn: (t) => t.updatedBy,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$WorkOrdersTableAnnotationComposer(
+              $db: $db,
+              $table: $db.workOrders,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
   Expression<T> auditLogsRefs<T extends Object>(
       Expression<T> Function($$AuditLogsTableAnnotationComposer a) f) {
     final $$AuditLogsTableAnnotationComposer composer = $composerBuilder(
@@ -15119,6 +16711,8 @@ class $$UsersTableTableManager extends RootTableManager<
         bool closedIpvReports,
         bool manualIpvReportsRefs,
         bool createdPurchases,
+        bool createdWorkOrders,
+        bool updatedWorkOrders,
         bool auditLogsRefs})> {
   $$UsersTableTableManager(_$AppDatabase db, $UsersTable table)
       : super(TableManagerState(
@@ -15189,6 +16783,8 @@ class $$UsersTableTableManager extends RootTableManager<
               closedIpvReports = false,
               manualIpvReportsRefs = false,
               createdPurchases = false,
+              createdWorkOrders = false,
+              updatedWorkOrders = false,
               auditLogsRefs = false}) {
             return PrefetchHooks(
               db: db,
@@ -15203,6 +16799,8 @@ class $$UsersTableTableManager extends RootTableManager<
                 if (closedIpvReports) db.ipvReports,
                 if (manualIpvReportsRefs) db.manualIpvReports,
                 if (createdPurchases) db.purchases,
+                if (createdWorkOrders) db.workOrders,
+                if (updatedWorkOrders) db.workOrders,
                 if (auditLogsRefs) db.auditLogs
               ],
               addJoins: null,
@@ -15326,6 +16924,30 @@ class $$UsersTableTableManager extends RootTableManager<
                             (item, referencedItems) => referencedItems
                                 .where((e) => e.createdBy == item.id),
                         typedResults: items),
+                  if (createdWorkOrders)
+                    await $_getPrefetchedData<User, $UsersTable, WorkOrder>(
+                        currentTable: table,
+                        referencedTable:
+                            $$UsersTableReferences._createdWorkOrdersTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$UsersTableReferences(db, table, p0)
+                                .createdWorkOrders,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.createdBy == item.id),
+                        typedResults: items),
+                  if (updatedWorkOrders)
+                    await $_getPrefetchedData<User, $UsersTable, WorkOrder>(
+                        currentTable: table,
+                        referencedTable:
+                            $$UsersTableReferences._updatedWorkOrdersTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$UsersTableReferences(db, table, p0)
+                                .updatedWorkOrders,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.updatedBy == item.id),
+                        typedResults: items),
                   if (auditLogsRefs)
                     await $_getPrefetchedData<User, $UsersTable, AuditLog>(
                         currentTable: table,
@@ -15366,6 +16988,8 @@ typedef $$UsersTableProcessedTableManager = ProcessedTableManager<
         bool closedIpvReports,
         bool manualIpvReportsRefs,
         bool createdPurchases,
+        bool createdWorkOrders,
+        bool updatedWorkOrders,
         bool auditLogsRefs})>;
 typedef $$RolesTableCreateCompanionBuilder = RolesCompanion Function({
   required String id,
@@ -16631,6 +18255,7 @@ typedef $$ProductsTableCreateCompanionBuilder = ProductsCompanion Function({
   Value<String> category,
   Value<String> productType,
   Value<String> unitMeasure,
+  Value<String> orderCostingMode,
   Value<String> currencyCode,
   Value<bool> isActive,
   Value<DateTime> createdAt,
@@ -16649,6 +18274,7 @@ typedef $$ProductsTableUpdateCompanionBuilder = ProductsCompanion Function({
   Value<String> category,
   Value<String> productType,
   Value<String> unitMeasure,
+  Value<String> orderCostingMode,
   Value<String> currencyCode,
   Value<bool> isActive,
   Value<DateTime> createdAt,
@@ -16831,6 +18457,10 @@ class $$ProductsTableFilterComposer
 
   ColumnFilters<String> get unitMeasure => $composableBuilder(
       column: $table.unitMeasure, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get orderCostingMode => $composableBuilder(
+      column: $table.orderCostingMode,
+      builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get currencyCode => $composableBuilder(
       column: $table.currencyCode, builder: (column) => ColumnFilters(column));
@@ -17059,6 +18689,10 @@ class $$ProductsTableOrderingComposer
   ColumnOrderings<String> get unitMeasure => $composableBuilder(
       column: $table.unitMeasure, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get orderCostingMode => $composableBuilder(
+      column: $table.orderCostingMode,
+      builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<String> get currencyCode => $composableBuilder(
       column: $table.currencyCode,
       builder: (column) => ColumnOrderings(column));
@@ -17114,6 +18748,9 @@ class $$ProductsTableAnnotationComposer
 
   GeneratedColumn<String> get unitMeasure => $composableBuilder(
       column: $table.unitMeasure, builder: (column) => column);
+
+  GeneratedColumn<String> get orderCostingMode => $composableBuilder(
+      column: $table.orderCostingMode, builder: (column) => column);
 
   GeneratedColumn<String> get currencyCode => $composableBuilder(
       column: $table.currencyCode, builder: (column) => column);
@@ -17342,6 +18979,7 @@ class $$ProductsTableTableManager extends RootTableManager<
             Value<String> category = const Value.absent(),
             Value<String> productType = const Value.absent(),
             Value<String> unitMeasure = const Value.absent(),
+            Value<String> orderCostingMode = const Value.absent(),
             Value<String> currencyCode = const Value.absent(),
             Value<bool> isActive = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
@@ -17360,6 +18998,7 @@ class $$ProductsTableTableManager extends RootTableManager<
             category: category,
             productType: productType,
             unitMeasure: unitMeasure,
+            orderCostingMode: orderCostingMode,
             currencyCode: currencyCode,
             isActive: isActive,
             createdAt: createdAt,
@@ -17378,6 +19017,7 @@ class $$ProductsTableTableManager extends RootTableManager<
             Value<String> category = const Value.absent(),
             Value<String> productType = const Value.absent(),
             Value<String> unitMeasure = const Value.absent(),
+            Value<String> orderCostingMode = const Value.absent(),
             Value<String> currencyCode = const Value.absent(),
             Value<bool> isActive = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
@@ -17396,6 +19036,7 @@ class $$ProductsTableTableManager extends RootTableManager<
             category: category,
             productType: productType,
             unitMeasure: unitMeasure,
+            orderCostingMode: orderCostingMode,
             currencyCode: currencyCode,
             isActive: isActive,
             createdAt: createdAt,
@@ -20319,6 +21960,21 @@ final class $$EmployeesTableReferences
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
+
+  static MultiTypedResultKey<$WorkOrdersTable, List<WorkOrder>>
+      _workOrdersRefsTable(_$AppDatabase db) =>
+          MultiTypedResultKey.fromTable(db.workOrders,
+              aliasName: $_aliasNameGenerator(
+                  db.employees.id, db.workOrders.assignedEmployeeId));
+
+  $$WorkOrdersTableProcessedTableManager get workOrdersRefs {
+    final manager = $$WorkOrdersTableTableManager($_db, $_db.workOrders).filter(
+        (f) => f.assignedEmployeeId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_workOrdersRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
 }
 
 class $$EmployeesTableFilterComposer
@@ -20416,6 +22072,27 @@ class $$EmployeesTableFilterComposer
             $$PosTerminalEmployeesTableFilterComposer(
               $db: $db,
               $table: $db.posTerminalEmployees,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<bool> workOrdersRefs(
+      Expression<bool> Function($$WorkOrdersTableFilterComposer f) f) {
+    final $$WorkOrdersTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.workOrders,
+        getReferencedColumn: (t) => t.assignedEmployeeId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$WorkOrdersTableFilterComposer(
+              $db: $db,
+              $table: $db.workOrders,
               $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
               joinBuilder: joinBuilder,
               $removeJoinBuilderFromRootComposer:
@@ -20590,6 +22267,27 @@ class $$EmployeesTableAnnotationComposer
                 ));
     return f(composer);
   }
+
+  Expression<T> workOrdersRefs<T extends Object>(
+      Expression<T> Function($$WorkOrdersTableAnnotationComposer a) f) {
+    final $$WorkOrdersTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.workOrders,
+        getReferencedColumn: (t) => t.assignedEmployeeId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$WorkOrdersTableAnnotationComposer(
+              $db: $db,
+              $table: $db.workOrders,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
 }
 
 class $$EmployeesTableTableManager extends RootTableManager<
@@ -20606,7 +22304,8 @@ class $$EmployeesTableTableManager extends RootTableManager<
     PrefetchHooks Function(
         {bool associatedUserId,
         bool posSessionEmployeesRefs,
-        bool posTerminalEmployeesRefs})> {
+        bool posTerminalEmployeesRefs,
+        bool workOrdersRefs})> {
   $$EmployeesTableTableManager(_$AppDatabase db, $EmployeesTable table)
       : super(TableManagerState(
           db: db,
@@ -20682,12 +22381,14 @@ class $$EmployeesTableTableManager extends RootTableManager<
           prefetchHooksCallback: (
               {associatedUserId = false,
               posSessionEmployeesRefs = false,
-              posTerminalEmployeesRefs = false}) {
+              posTerminalEmployeesRefs = false,
+              workOrdersRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
                 if (posSessionEmployeesRefs) db.posSessionEmployees,
-                if (posTerminalEmployeesRefs) db.posTerminalEmployees
+                if (posTerminalEmployeesRefs) db.posTerminalEmployees,
+                if (workOrdersRefs) db.workOrders
               ],
               addJoins: <
                   T extends TableManagerState<
@@ -20743,6 +22444,19 @@ class $$EmployeesTableTableManager extends RootTableManager<
                         referencedItemsForCurrentItem:
                             (item, referencedItems) => referencedItems
                                 .where((e) => e.employeeId == item.id),
+                        typedResults: items),
+                  if (workOrdersRefs)
+                    await $_getPrefetchedData<Employee, $EmployeesTable,
+                            WorkOrder>(
+                        currentTable: table,
+                        referencedTable:
+                            $$EmployeesTableReferences._workOrdersRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$EmployeesTableReferences(db, table, p0)
+                                .workOrdersRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.assignedEmployeeId == item.id),
                         typedResults: items)
                 ];
               },
@@ -20765,7 +22479,8 @@ typedef $$EmployeesTableProcessedTableManager = ProcessedTableManager<
     PrefetchHooks Function(
         {bool associatedUserId,
         bool posSessionEmployeesRefs,
-        bool posTerminalEmployeesRefs})>;
+        bool posTerminalEmployeesRefs,
+        bool workOrdersRefs})>;
 typedef $$PosSessionEmployeesTableCreateCompanionBuilder
     = PosSessionEmployeesCompanion Function({
   required String sessionId,
@@ -22494,6 +24209,21 @@ final class $$CustomersTableReferences
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
+
+  static MultiTypedResultKey<$WorkOrdersTable, List<WorkOrder>>
+      _workOrdersRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+          db.workOrders,
+          aliasName:
+              $_aliasNameGenerator(db.customers.id, db.workOrders.customerId));
+
+  $$WorkOrdersTableProcessedTableManager get workOrdersRefs {
+    final manager = $$WorkOrdersTableTableManager($_db, $_db.workOrders)
+        .filter((f) => f.customerId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_workOrdersRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
 }
 
 class $$CustomersTableFilterComposer
@@ -22571,6 +24301,27 @@ class $$CustomersTableFilterComposer
             $$SalesTableFilterComposer(
               $db: $db,
               $table: $db.sales,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<bool> workOrdersRefs(
+      Expression<bool> Function($$WorkOrdersTableFilterComposer f) f) {
+    final $$WorkOrdersTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.workOrders,
+        getReferencedColumn: (t) => t.customerId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$WorkOrdersTableFilterComposer(
+              $db: $db,
+              $table: $db.workOrders,
               $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
               joinBuilder: joinBuilder,
               $removeJoinBuilderFromRootComposer:
@@ -22724,6 +24475,27 @@ class $$CustomersTableAnnotationComposer
             ));
     return f(composer);
   }
+
+  Expression<T> workOrdersRefs<T extends Object>(
+      Expression<T> Function($$WorkOrdersTableAnnotationComposer a) f) {
+    final $$WorkOrdersTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.workOrders,
+        getReferencedColumn: (t) => t.customerId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$WorkOrdersTableAnnotationComposer(
+              $db: $db,
+              $table: $db.workOrders,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
 }
 
 class $$CustomersTableTableManager extends RootTableManager<
@@ -22737,7 +24509,7 @@ class $$CustomersTableTableManager extends RootTableManager<
     $$CustomersTableUpdateCompanionBuilder,
     (Customer, $$CustomersTableReferences),
     Customer,
-    PrefetchHooks Function({bool salesRefs})> {
+    PrefetchHooks Function({bool salesRefs, bool workOrdersRefs})> {
   $$CustomersTableTableManager(_$AppDatabase db, $CustomersTable table)
       : super(TableManagerState(
           db: db,
@@ -22834,10 +24606,13 @@ class $$CustomersTableTableManager extends RootTableManager<
                     $$CustomersTableReferences(db, table, e)
                   ))
               .toList(),
-          prefetchHooksCallback: ({salesRefs = false}) {
+          prefetchHooksCallback: ({salesRefs = false, workOrdersRefs = false}) {
             return PrefetchHooks(
               db: db,
-              explicitlyWatchedTables: [if (salesRefs) db.sales],
+              explicitlyWatchedTables: [
+                if (salesRefs) db.sales,
+                if (workOrdersRefs) db.workOrders
+              ],
               addJoins: null,
               getPrefetchedDataCallback: (items) async {
                 return [
@@ -22848,6 +24623,19 @@ class $$CustomersTableTableManager extends RootTableManager<
                             $$CustomersTableReferences._salesRefsTable(db),
                         managerFromTypedResult: (p0) =>
                             $$CustomersTableReferences(db, table, p0).salesRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.customerId == item.id),
+                        typedResults: items),
+                  if (workOrdersRefs)
+                    await $_getPrefetchedData<Customer, $CustomersTable,
+                            WorkOrder>(
+                        currentTable: table,
+                        referencedTable:
+                            $$CustomersTableReferences._workOrdersRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$CustomersTableReferences(db, table, p0)
+                                .workOrdersRefs,
                         referencedItemsForCurrentItem:
                             (item, referencedItems) => referencedItems
                                 .where((e) => e.customerId == item.id),
@@ -22870,7 +24658,7 @@ typedef $$CustomersTableProcessedTableManager = ProcessedTableManager<
     $$CustomersTableUpdateCompanionBuilder,
     (Customer, $$CustomersTableReferences),
     Customer,
-    PrefetchHooks Function({bool salesRefs})>;
+    PrefetchHooks Function({bool salesRefs, bool workOrdersRefs})>;
 typedef $$SalesTableCreateCompanionBuilder = SalesCompanion Function({
   required String id,
   required String folio,
@@ -29140,6 +30928,928 @@ typedef $$SaleItemLotAllocationsTableProcessedTableManager
             bool productId,
             bool warehouseId,
             bool lotId})>;
+typedef $$WorkOrdersTableCreateCompanionBuilder = WorkOrdersCompanion Function({
+  required String id,
+  required String folio,
+  Value<String?> customerId,
+  Value<String?> customerNameSnapshot,
+  Value<String?> assignedEmployeeId,
+  Value<String?> assignedEmployeeNameSnapshot,
+  Value<String> workType,
+  required String title,
+  Value<String?> description,
+  Value<String> itemsJson,
+  Value<String> assignmentsJson,
+  Value<String> tasksJson,
+  Value<double> qty,
+  Value<String> unitLabel,
+  Value<String> status,
+  Value<String> paymentStatus,
+  Value<String> priority,
+  Value<DateTime?> dueAt,
+  Value<String?> note,
+  Value<String> quotedTotalsJson,
+  Value<String> quotedRequestedLinesJson,
+  Value<String> quotedPaymentVariantsJson,
+  Value<String> pricingSnapshotJson,
+  Value<String> paymentLinesJson,
+  required String createdBy,
+  Value<String?> updatedBy,
+  Value<DateTime> createdAt,
+  Value<DateTime?> updatedAt,
+  Value<DateTime?> completedAt,
+  Value<DateTime?> paidAt,
+  Value<DateTime?> deliveredAt,
+  Value<int> rowid,
+});
+typedef $$WorkOrdersTableUpdateCompanionBuilder = WorkOrdersCompanion Function({
+  Value<String> id,
+  Value<String> folio,
+  Value<String?> customerId,
+  Value<String?> customerNameSnapshot,
+  Value<String?> assignedEmployeeId,
+  Value<String?> assignedEmployeeNameSnapshot,
+  Value<String> workType,
+  Value<String> title,
+  Value<String?> description,
+  Value<String> itemsJson,
+  Value<String> assignmentsJson,
+  Value<String> tasksJson,
+  Value<double> qty,
+  Value<String> unitLabel,
+  Value<String> status,
+  Value<String> paymentStatus,
+  Value<String> priority,
+  Value<DateTime?> dueAt,
+  Value<String?> note,
+  Value<String> quotedTotalsJson,
+  Value<String> quotedRequestedLinesJson,
+  Value<String> quotedPaymentVariantsJson,
+  Value<String> pricingSnapshotJson,
+  Value<String> paymentLinesJson,
+  Value<String> createdBy,
+  Value<String?> updatedBy,
+  Value<DateTime> createdAt,
+  Value<DateTime?> updatedAt,
+  Value<DateTime?> completedAt,
+  Value<DateTime?> paidAt,
+  Value<DateTime?> deliveredAt,
+  Value<int> rowid,
+});
+
+final class $$WorkOrdersTableReferences
+    extends BaseReferences<_$AppDatabase, $WorkOrdersTable, WorkOrder> {
+  $$WorkOrdersTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $CustomersTable _customerIdTable(_$AppDatabase db) =>
+      db.customers.createAlias(
+          $_aliasNameGenerator(db.workOrders.customerId, db.customers.id));
+
+  $$CustomersTableProcessedTableManager? get customerId {
+    final $_column = $_itemColumn<String>('customer_id');
+    if ($_column == null) return null;
+    final manager = $$CustomersTableTableManager($_db, $_db.customers)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_customerIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static $EmployeesTable _assignedEmployeeIdTable(_$AppDatabase db) =>
+      db.employees.createAlias($_aliasNameGenerator(
+          db.workOrders.assignedEmployeeId, db.employees.id));
+
+  $$EmployeesTableProcessedTableManager? get assignedEmployeeId {
+    final $_column = $_itemColumn<String>('assigned_employee_id');
+    if ($_column == null) return null;
+    final manager = $$EmployeesTableTableManager($_db, $_db.employees)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_assignedEmployeeIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static $UsersTable _createdByTable(_$AppDatabase db) => db.users
+      .createAlias($_aliasNameGenerator(db.workOrders.createdBy, db.users.id));
+
+  $$UsersTableProcessedTableManager get createdBy {
+    final $_column = $_itemColumn<String>('created_by')!;
+
+    final manager = $$UsersTableTableManager($_db, $_db.users)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_createdByTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static $UsersTable _updatedByTable(_$AppDatabase db) => db.users
+      .createAlias($_aliasNameGenerator(db.workOrders.updatedBy, db.users.id));
+
+  $$UsersTableProcessedTableManager? get updatedBy {
+    final $_column = $_itemColumn<String>('updated_by');
+    if ($_column == null) return null;
+    final manager = $$UsersTableTableManager($_db, $_db.users)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_updatedByTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+}
+
+class $$WorkOrdersTableFilterComposer
+    extends Composer<_$AppDatabase, $WorkOrdersTable> {
+  $$WorkOrdersTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get folio => $composableBuilder(
+      column: $table.folio, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get customerNameSnapshot => $composableBuilder(
+      column: $table.customerNameSnapshot,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get assignedEmployeeNameSnapshot => $composableBuilder(
+      column: $table.assignedEmployeeNameSnapshot,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get workType => $composableBuilder(
+      column: $table.workType, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get description => $composableBuilder(
+      column: $table.description, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get itemsJson => $composableBuilder(
+      column: $table.itemsJson, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get assignmentsJson => $composableBuilder(
+      column: $table.assignmentsJson,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get tasksJson => $composableBuilder(
+      column: $table.tasksJson, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get qty => $composableBuilder(
+      column: $table.qty, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get unitLabel => $composableBuilder(
+      column: $table.unitLabel, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get status => $composableBuilder(
+      column: $table.status, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get paymentStatus => $composableBuilder(
+      column: $table.paymentStatus, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get priority => $composableBuilder(
+      column: $table.priority, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get dueAt => $composableBuilder(
+      column: $table.dueAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get note => $composableBuilder(
+      column: $table.note, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get quotedTotalsJson => $composableBuilder(
+      column: $table.quotedTotalsJson,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get quotedRequestedLinesJson => $composableBuilder(
+      column: $table.quotedRequestedLinesJson,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get quotedPaymentVariantsJson => $composableBuilder(
+      column: $table.quotedPaymentVariantsJson,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get pricingSnapshotJson => $composableBuilder(
+      column: $table.pricingSnapshotJson,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get paymentLinesJson => $composableBuilder(
+      column: $table.paymentLinesJson,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get completedAt => $composableBuilder(
+      column: $table.completedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get paidAt => $composableBuilder(
+      column: $table.paidAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get deliveredAt => $composableBuilder(
+      column: $table.deliveredAt, builder: (column) => ColumnFilters(column));
+
+  $$CustomersTableFilterComposer get customerId {
+    final $$CustomersTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.customerId,
+        referencedTable: $db.customers,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$CustomersTableFilterComposer(
+              $db: $db,
+              $table: $db.customers,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$EmployeesTableFilterComposer get assignedEmployeeId {
+    final $$EmployeesTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.assignedEmployeeId,
+        referencedTable: $db.employees,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$EmployeesTableFilterComposer(
+              $db: $db,
+              $table: $db.employees,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$UsersTableFilterComposer get createdBy {
+    final $$UsersTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.createdBy,
+        referencedTable: $db.users,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$UsersTableFilterComposer(
+              $db: $db,
+              $table: $db.users,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$UsersTableFilterComposer get updatedBy {
+    final $$UsersTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.updatedBy,
+        referencedTable: $db.users,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$UsersTableFilterComposer(
+              $db: $db,
+              $table: $db.users,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$WorkOrdersTableOrderingComposer
+    extends Composer<_$AppDatabase, $WorkOrdersTable> {
+  $$WorkOrdersTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get folio => $composableBuilder(
+      column: $table.folio, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get customerNameSnapshot => $composableBuilder(
+      column: $table.customerNameSnapshot,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get assignedEmployeeNameSnapshot =>
+      $composableBuilder(
+          column: $table.assignedEmployeeNameSnapshot,
+          builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get workType => $composableBuilder(
+      column: $table.workType, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get description => $composableBuilder(
+      column: $table.description, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get itemsJson => $composableBuilder(
+      column: $table.itemsJson, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get assignmentsJson => $composableBuilder(
+      column: $table.assignmentsJson,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get tasksJson => $composableBuilder(
+      column: $table.tasksJson, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get qty => $composableBuilder(
+      column: $table.qty, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get unitLabel => $composableBuilder(
+      column: $table.unitLabel, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get status => $composableBuilder(
+      column: $table.status, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get paymentStatus => $composableBuilder(
+      column: $table.paymentStatus,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get priority => $composableBuilder(
+      column: $table.priority, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get dueAt => $composableBuilder(
+      column: $table.dueAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get note => $composableBuilder(
+      column: $table.note, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get quotedTotalsJson => $composableBuilder(
+      column: $table.quotedTotalsJson,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get quotedRequestedLinesJson => $composableBuilder(
+      column: $table.quotedRequestedLinesJson,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get quotedPaymentVariantsJson => $composableBuilder(
+      column: $table.quotedPaymentVariantsJson,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get pricingSnapshotJson => $composableBuilder(
+      column: $table.pricingSnapshotJson,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get paymentLinesJson => $composableBuilder(
+      column: $table.paymentLinesJson,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get completedAt => $composableBuilder(
+      column: $table.completedAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get paidAt => $composableBuilder(
+      column: $table.paidAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get deliveredAt => $composableBuilder(
+      column: $table.deliveredAt, builder: (column) => ColumnOrderings(column));
+
+  $$CustomersTableOrderingComposer get customerId {
+    final $$CustomersTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.customerId,
+        referencedTable: $db.customers,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$CustomersTableOrderingComposer(
+              $db: $db,
+              $table: $db.customers,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$EmployeesTableOrderingComposer get assignedEmployeeId {
+    final $$EmployeesTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.assignedEmployeeId,
+        referencedTable: $db.employees,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$EmployeesTableOrderingComposer(
+              $db: $db,
+              $table: $db.employees,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$UsersTableOrderingComposer get createdBy {
+    final $$UsersTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.createdBy,
+        referencedTable: $db.users,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$UsersTableOrderingComposer(
+              $db: $db,
+              $table: $db.users,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$UsersTableOrderingComposer get updatedBy {
+    final $$UsersTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.updatedBy,
+        referencedTable: $db.users,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$UsersTableOrderingComposer(
+              $db: $db,
+              $table: $db.users,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$WorkOrdersTableAnnotationComposer
+    extends Composer<_$AppDatabase, $WorkOrdersTable> {
+  $$WorkOrdersTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get folio =>
+      $composableBuilder(column: $table.folio, builder: (column) => column);
+
+  GeneratedColumn<String> get customerNameSnapshot => $composableBuilder(
+      column: $table.customerNameSnapshot, builder: (column) => column);
+
+  GeneratedColumn<String> get assignedEmployeeNameSnapshot =>
+      $composableBuilder(
+          column: $table.assignedEmployeeNameSnapshot,
+          builder: (column) => column);
+
+  GeneratedColumn<String> get workType =>
+      $composableBuilder(column: $table.workType, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get description => $composableBuilder(
+      column: $table.description, builder: (column) => column);
+
+  GeneratedColumn<String> get itemsJson =>
+      $composableBuilder(column: $table.itemsJson, builder: (column) => column);
+
+  GeneratedColumn<String> get assignmentsJson => $composableBuilder(
+      column: $table.assignmentsJson, builder: (column) => column);
+
+  GeneratedColumn<String> get tasksJson =>
+      $composableBuilder(column: $table.tasksJson, builder: (column) => column);
+
+  GeneratedColumn<double> get qty =>
+      $composableBuilder(column: $table.qty, builder: (column) => column);
+
+  GeneratedColumn<String> get unitLabel =>
+      $composableBuilder(column: $table.unitLabel, builder: (column) => column);
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<String> get paymentStatus => $composableBuilder(
+      column: $table.paymentStatus, builder: (column) => column);
+
+  GeneratedColumn<String> get priority =>
+      $composableBuilder(column: $table.priority, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get dueAt =>
+      $composableBuilder(column: $table.dueAt, builder: (column) => column);
+
+  GeneratedColumn<String> get note =>
+      $composableBuilder(column: $table.note, builder: (column) => column);
+
+  GeneratedColumn<String> get quotedTotalsJson => $composableBuilder(
+      column: $table.quotedTotalsJson, builder: (column) => column);
+
+  GeneratedColumn<String> get quotedRequestedLinesJson => $composableBuilder(
+      column: $table.quotedRequestedLinesJson, builder: (column) => column);
+
+  GeneratedColumn<String> get quotedPaymentVariantsJson => $composableBuilder(
+      column: $table.quotedPaymentVariantsJson, builder: (column) => column);
+
+  GeneratedColumn<String> get pricingSnapshotJson => $composableBuilder(
+      column: $table.pricingSnapshotJson, builder: (column) => column);
+
+  GeneratedColumn<String> get paymentLinesJson => $composableBuilder(
+      column: $table.paymentLinesJson, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get completedAt => $composableBuilder(
+      column: $table.completedAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get paidAt =>
+      $composableBuilder(column: $table.paidAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get deliveredAt => $composableBuilder(
+      column: $table.deliveredAt, builder: (column) => column);
+
+  $$CustomersTableAnnotationComposer get customerId {
+    final $$CustomersTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.customerId,
+        referencedTable: $db.customers,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$CustomersTableAnnotationComposer(
+              $db: $db,
+              $table: $db.customers,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$EmployeesTableAnnotationComposer get assignedEmployeeId {
+    final $$EmployeesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.assignedEmployeeId,
+        referencedTable: $db.employees,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$EmployeesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.employees,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$UsersTableAnnotationComposer get createdBy {
+    final $$UsersTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.createdBy,
+        referencedTable: $db.users,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$UsersTableAnnotationComposer(
+              $db: $db,
+              $table: $db.users,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$UsersTableAnnotationComposer get updatedBy {
+    final $$UsersTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.updatedBy,
+        referencedTable: $db.users,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$UsersTableAnnotationComposer(
+              $db: $db,
+              $table: $db.users,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$WorkOrdersTableTableManager extends RootTableManager<
+    _$AppDatabase,
+    $WorkOrdersTable,
+    WorkOrder,
+    $$WorkOrdersTableFilterComposer,
+    $$WorkOrdersTableOrderingComposer,
+    $$WorkOrdersTableAnnotationComposer,
+    $$WorkOrdersTableCreateCompanionBuilder,
+    $$WorkOrdersTableUpdateCompanionBuilder,
+    (WorkOrder, $$WorkOrdersTableReferences),
+    WorkOrder,
+    PrefetchHooks Function(
+        {bool customerId,
+        bool assignedEmployeeId,
+        bool createdBy,
+        bool updatedBy})> {
+  $$WorkOrdersTableTableManager(_$AppDatabase db, $WorkOrdersTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$WorkOrdersTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$WorkOrdersTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$WorkOrdersTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> id = const Value.absent(),
+            Value<String> folio = const Value.absent(),
+            Value<String?> customerId = const Value.absent(),
+            Value<String?> customerNameSnapshot = const Value.absent(),
+            Value<String?> assignedEmployeeId = const Value.absent(),
+            Value<String?> assignedEmployeeNameSnapshot = const Value.absent(),
+            Value<String> workType = const Value.absent(),
+            Value<String> title = const Value.absent(),
+            Value<String?> description = const Value.absent(),
+            Value<String> itemsJson = const Value.absent(),
+            Value<String> assignmentsJson = const Value.absent(),
+            Value<String> tasksJson = const Value.absent(),
+            Value<double> qty = const Value.absent(),
+            Value<String> unitLabel = const Value.absent(),
+            Value<String> status = const Value.absent(),
+            Value<String> paymentStatus = const Value.absent(),
+            Value<String> priority = const Value.absent(),
+            Value<DateTime?> dueAt = const Value.absent(),
+            Value<String?> note = const Value.absent(),
+            Value<String> quotedTotalsJson = const Value.absent(),
+            Value<String> quotedRequestedLinesJson = const Value.absent(),
+            Value<String> quotedPaymentVariantsJson = const Value.absent(),
+            Value<String> pricingSnapshotJson = const Value.absent(),
+            Value<String> paymentLinesJson = const Value.absent(),
+            Value<String> createdBy = const Value.absent(),
+            Value<String?> updatedBy = const Value.absent(),
+            Value<DateTime> createdAt = const Value.absent(),
+            Value<DateTime?> updatedAt = const Value.absent(),
+            Value<DateTime?> completedAt = const Value.absent(),
+            Value<DateTime?> paidAt = const Value.absent(),
+            Value<DateTime?> deliveredAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              WorkOrdersCompanion(
+            id: id,
+            folio: folio,
+            customerId: customerId,
+            customerNameSnapshot: customerNameSnapshot,
+            assignedEmployeeId: assignedEmployeeId,
+            assignedEmployeeNameSnapshot: assignedEmployeeNameSnapshot,
+            workType: workType,
+            title: title,
+            description: description,
+            itemsJson: itemsJson,
+            assignmentsJson: assignmentsJson,
+            tasksJson: tasksJson,
+            qty: qty,
+            unitLabel: unitLabel,
+            status: status,
+            paymentStatus: paymentStatus,
+            priority: priority,
+            dueAt: dueAt,
+            note: note,
+            quotedTotalsJson: quotedTotalsJson,
+            quotedRequestedLinesJson: quotedRequestedLinesJson,
+            quotedPaymentVariantsJson: quotedPaymentVariantsJson,
+            pricingSnapshotJson: pricingSnapshotJson,
+            paymentLinesJson: paymentLinesJson,
+            createdBy: createdBy,
+            updatedBy: updatedBy,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            completedAt: completedAt,
+            paidAt: paidAt,
+            deliveredAt: deliveredAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String id,
+            required String folio,
+            Value<String?> customerId = const Value.absent(),
+            Value<String?> customerNameSnapshot = const Value.absent(),
+            Value<String?> assignedEmployeeId = const Value.absent(),
+            Value<String?> assignedEmployeeNameSnapshot = const Value.absent(),
+            Value<String> workType = const Value.absent(),
+            required String title,
+            Value<String?> description = const Value.absent(),
+            Value<String> itemsJson = const Value.absent(),
+            Value<String> assignmentsJson = const Value.absent(),
+            Value<String> tasksJson = const Value.absent(),
+            Value<double> qty = const Value.absent(),
+            Value<String> unitLabel = const Value.absent(),
+            Value<String> status = const Value.absent(),
+            Value<String> paymentStatus = const Value.absent(),
+            Value<String> priority = const Value.absent(),
+            Value<DateTime?> dueAt = const Value.absent(),
+            Value<String?> note = const Value.absent(),
+            Value<String> quotedTotalsJson = const Value.absent(),
+            Value<String> quotedRequestedLinesJson = const Value.absent(),
+            Value<String> quotedPaymentVariantsJson = const Value.absent(),
+            Value<String> pricingSnapshotJson = const Value.absent(),
+            Value<String> paymentLinesJson = const Value.absent(),
+            required String createdBy,
+            Value<String?> updatedBy = const Value.absent(),
+            Value<DateTime> createdAt = const Value.absent(),
+            Value<DateTime?> updatedAt = const Value.absent(),
+            Value<DateTime?> completedAt = const Value.absent(),
+            Value<DateTime?> paidAt = const Value.absent(),
+            Value<DateTime?> deliveredAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              WorkOrdersCompanion.insert(
+            id: id,
+            folio: folio,
+            customerId: customerId,
+            customerNameSnapshot: customerNameSnapshot,
+            assignedEmployeeId: assignedEmployeeId,
+            assignedEmployeeNameSnapshot: assignedEmployeeNameSnapshot,
+            workType: workType,
+            title: title,
+            description: description,
+            itemsJson: itemsJson,
+            assignmentsJson: assignmentsJson,
+            tasksJson: tasksJson,
+            qty: qty,
+            unitLabel: unitLabel,
+            status: status,
+            paymentStatus: paymentStatus,
+            priority: priority,
+            dueAt: dueAt,
+            note: note,
+            quotedTotalsJson: quotedTotalsJson,
+            quotedRequestedLinesJson: quotedRequestedLinesJson,
+            quotedPaymentVariantsJson: quotedPaymentVariantsJson,
+            pricingSnapshotJson: pricingSnapshotJson,
+            paymentLinesJson: paymentLinesJson,
+            createdBy: createdBy,
+            updatedBy: updatedBy,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            completedAt: completedAt,
+            paidAt: paidAt,
+            deliveredAt: deliveredAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$WorkOrdersTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: (
+              {customerId = false,
+              assignedEmployeeId = false,
+              createdBy = false,
+              updatedBy = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (customerId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.customerId,
+                    referencedTable:
+                        $$WorkOrdersTableReferences._customerIdTable(db),
+                    referencedColumn:
+                        $$WorkOrdersTableReferences._customerIdTable(db).id,
+                  ) as T;
+                }
+                if (assignedEmployeeId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.assignedEmployeeId,
+                    referencedTable: $$WorkOrdersTableReferences
+                        ._assignedEmployeeIdTable(db),
+                    referencedColumn: $$WorkOrdersTableReferences
+                        ._assignedEmployeeIdTable(db)
+                        .id,
+                  ) as T;
+                }
+                if (createdBy) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.createdBy,
+                    referencedTable:
+                        $$WorkOrdersTableReferences._createdByTable(db),
+                    referencedColumn:
+                        $$WorkOrdersTableReferences._createdByTable(db).id,
+                  ) as T;
+                }
+                if (updatedBy) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.updatedBy,
+                    referencedTable:
+                        $$WorkOrdersTableReferences._updatedByTable(db),
+                    referencedColumn:
+                        $$WorkOrdersTableReferences._updatedByTable(db).id,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$WorkOrdersTableProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    $WorkOrdersTable,
+    WorkOrder,
+    $$WorkOrdersTableFilterComposer,
+    $$WorkOrdersTableOrderingComposer,
+    $$WorkOrdersTableAnnotationComposer,
+    $$WorkOrdersTableCreateCompanionBuilder,
+    $$WorkOrdersTableUpdateCompanionBuilder,
+    (WorkOrder, $$WorkOrdersTableReferences),
+    WorkOrder,
+    PrefetchHooks Function(
+        {bool customerId,
+        bool assignedEmployeeId,
+        bool createdBy,
+        bool updatedBy})>;
 typedef $$AppSettingsTableCreateCompanionBuilder = AppSettingsCompanion
     Function({
   required String key,
@@ -29641,6 +32351,8 @@ class $AppDatabaseManager {
   $$SaleItemLotAllocationsTableTableManager get saleItemLotAllocations =>
       $$SaleItemLotAllocationsTableTableManager(
           _db, _db.saleItemLotAllocations);
+  $$WorkOrdersTableTableManager get workOrders =>
+      $$WorkOrdersTableTableManager(_db, _db.workOrders);
   $$AppSettingsTableTableManager get appSettings =>
       $$AppSettingsTableTableManager(_db, _db.appSettings);
   $$AuditLogsTableTableManager get auditLogs =>

@@ -319,6 +319,27 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     _selectedCustomer = null;
   }
 
+  bool _canDoTpvEntry(UserSession session) {
+    return session.isAdmin ||
+        session.hasPermission(AppPermissionKeys.tpvMovementEntry);
+  }
+
+  bool _canDoTpvOutput(UserSession session) {
+    return session.isAdmin ||
+        session.hasPermission(AppPermissionKeys.tpvMovementOutput);
+  }
+
+  bool _canDoTpvTransfer(UserSession session) {
+    return session.isAdmin ||
+        session.hasPermission(AppPermissionKeys.tpvMovementTransfer);
+  }
+
+  bool _canUseAnyTpvMovement(UserSession session) {
+    return _canDoTpvEntry(session) ||
+        _canDoTpvOutput(session) ||
+        _canDoTpvTransfer(session);
+  }
+
   void _applyStockedProducts({
     required List<Product> products,
     required Set<String> warehouseProductIds,
@@ -1014,6 +1035,13 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       _show('Debes iniciar sesion.');
       return;
     }
+    final bool canEntry = _canDoTpvEntry(session);
+    final bool canOutput = _canDoTpvOutput(session);
+    final bool canTransfer = _canDoTpvTransfer(session);
+    if (!canEntry && !canOutput && !canTransfer) {
+      _show('No tienes permisos para registrar movimientos desde el TPV.');
+      return;
+    }
     final InventarioLocalDataSource inventarioDs =
         ref.read(inventarioLocalDataSourceProvider);
     final List<Warehouse> activeWarehouses =
@@ -1033,8 +1061,10 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
         await inventarioDs.listManualMovementReasons(movementType: 'in');
     final List<InventoryMovementReason> outputReasons =
         await inventarioDs.listManualMovementReasons(movementType: 'out');
-    final bool allowTransfer = activeWarehouses.length > 1;
-    if (entryReasons.isEmpty && outputReasons.isEmpty && !allowTransfer) {
+    final bool allowTransfer = activeWarehouses.length > 1 && canTransfer;
+    final bool hasAnyAllowedReason = (canEntry && entryReasons.isNotEmpty) ||
+        (canOutput && outputReasons.isNotEmpty);
+    if (!hasAnyAllowedReason && !allowTransfer) {
       _show('No hay motivos disponibles para registrar movimientos.');
       return;
     }
@@ -1053,7 +1083,11 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
           adjustRows: adjustRows,
           entryReasons: entryReasons,
           outputReasons: outputReasons,
+          allowEntry: canEntry,
+          allowOutput: canOutput,
           allowTransfer: allowTransfer,
+          allowCustomTimestamp: session.isAdmin,
+          initialMovementDateTime: DateTime.now(),
           currencySymbol: _currencySymbol,
           warehouseOptions: activeWarehouses
               .map(
@@ -1091,6 +1125,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     final String safeReasonCode =
         ((result['reasonCode'] as String?) ?? '').trim();
     final String note = (result['note'] as String).trim();
+    final DateTime? movementAt = result['movementDateTime'] as DateTime?;
     final String currentWarehouseId = (_warehouseId ?? '').trim();
     final String safeWarehouseId =
         ((result['warehouseId'] as String?) ?? currentWarehouseId).trim();
@@ -1099,6 +1134,10 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
             .trim();
 
     if (isTransfer) {
+      if (!canTransfer) {
+        _show('No tienes permiso para registrar transferencias desde el TPV.');
+        return;
+      }
       if (safeWarehouseId.isEmpty || safeDestinationWarehouseId.isEmpty) {
         _show('Selecciona origen y destino para la transferencia.');
         return;
@@ -1121,6 +1160,7 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
           destinationWarehouseId: safeDestinationWarehouseId,
           qty: qty,
           userId: session.userId,
+          movementAt: movementAt,
           note: note.isEmpty ? 'Transferencia rápida desde TPV' : note,
         );
         await _reloadPosInventory();
@@ -1131,10 +1171,12 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
       return;
     }
 
-    if (isEntry) {
-      _show(
-        'Para mantener la trazabilidad FIFO, usa el tipo "Transferir" y selecciona el almacén de origen.',
-      );
+    if (isEntry && !canEntry) {
+      _show('No tienes permiso para registrar entradas desde el TPV.');
+      return;
+    }
+    if (!isEntry && !canOutput) {
+      _show('No tienes permiso para registrar salidas desde el TPV.');
       return;
     }
     if (safeWarehouseId != currentWarehouseId) {
@@ -1173,6 +1215,8 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
         qty: qty,
         reasonCode: safeReasonCode,
         userId: session.userId,
+        movementAt: movementAt,
+        linkedPosSessionId: _openSessionId,
         note: note.isEmpty
             ? (isEntry ? 'Entrada rapida TPV' : 'Salida rapida TPV')
             : note,
@@ -1416,6 +1460,9 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
     });
 
     final license = ref.watch(currentLicenseStatusProvider);
+    final UserSession? session = ref.watch(currentSessionProvider);
+    final bool canOpenMovements =
+        session != null && _canUseAnyTpvMovement(session);
     final ThemeData theme = Theme.of(context);
     final bool isDark = theme.brightness == Brightness.dark;
 
@@ -1433,12 +1480,13 @@ class _VentasPosPageState extends ConsumerState<VentasPosPage> {
         icon: const Icon(Icons.arrow_back_rounded),
       ),
       appBarActions: <Widget>[
-        _appBarActionButton(
-          icon: Icons.swap_horiz_rounded,
-          tooltip: 'Movimientos',
-          onPressed: _openQuickStockDialog,
-          isDark: isDark,
-        ),
+        if (canOpenMovements)
+          _appBarActionButton(
+            icon: Icons.swap_horiz_rounded,
+            tooltip: 'Movimientos',
+            onPressed: _openQuickStockDialog,
+            isDark: isDark,
+          ),
         _appBarActionButton(
           icon: Icons.ios_share_rounded,
           tooltip: 'Exportar IPV',

@@ -5,6 +5,10 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/db/app_database.dart';
 import '../../../../shared/widgets/app_scaffold.dart';
 import '../../../auth/presentation/auth_providers.dart';
+import '../../../clientes/data/clientes_local_datasource.dart';
+import '../../../clientes/presentation/clientes_providers.dart';
+import '../../../clientes/presentation/widgets/sale_customer_picker_dialog.dart';
+import '../../../clientes/presentation/widgets/sale_customer_selector_tile.dart';
 import '../../../configuracion/data/configuracion_local_datasource.dart';
 import '../../../configuracion/presentation/configuracion_providers.dart';
 import '../../../productos/presentation/productos_providers.dart';
@@ -158,6 +162,15 @@ class _AnalyticsSaleDetailPageState
     final List<AppPaymentMethodSetting> paymentSettings = await ref
         .read(configuracionLocalDataSourceProvider)
         .loadPaymentMethodSettings();
+    List<ClienteListItem> customers = const <ClienteListItem>[];
+    try {
+      customers = await ref
+          .read(clientesLocalDataSourceProvider)
+          .listClients(limit: 500);
+    } catch (e) {
+      _show('No se pudo cargar la lista de clientes: $e');
+      return;
+    }
     final Map<String, String> paymentLabels =
         buildPaymentMethodLabelMap(paymentSettings);
     if (mounted) {
@@ -195,6 +208,7 @@ class _AnalyticsSaleDetailPageState
         builder: (BuildContext ctx) => _EditSaleDialog(
           detail: detail!,
           products: products,
+          customers: customers,
           currencySymbol: widget.currencySymbol,
           paymentMethodOptions: safePaymentOptions,
           terminalSessions: terminalSessions,
@@ -213,6 +227,7 @@ class _AnalyticsSaleDetailPageState
               payments: payload.payments,
               userId: userId,
               isConsignmentSale: payload.isConsignmentSale,
+              customerId: payload.customerId,
               createdAt: payload.createdAt,
               terminalSessionId: payload.terminalSessionId,
             ),
@@ -1227,6 +1242,7 @@ class _EditSalePayload {
     required this.items,
     required this.payments,
     required this.isConsignmentSale,
+    required this.customerId,
     required this.createdAt,
     required this.terminalSessionId,
   });
@@ -1234,6 +1250,7 @@ class _EditSalePayload {
   final List<SaleItemInput> items;
   final List<PaymentInput> payments;
   final bool isConsignmentSale;
+  final String? customerId;
   final DateTime createdAt;
   final String? terminalSessionId;
 }
@@ -1242,6 +1259,7 @@ class _EditSaleDialog extends StatefulWidget {
   const _EditSaleDialog({
     required this.detail,
     required this.products,
+    required this.customers,
     required this.currencySymbol,
     required this.paymentMethodOptions,
     required this.terminalSessions,
@@ -1249,6 +1267,7 @@ class _EditSaleDialog extends StatefulWidget {
 
   final SalesAnalyticsSaleDetailStat detail;
   final List<Product> products;
+  final List<ClienteListItem> customers;
   final String currencySymbol;
   final List<_PaymentMethodOption> paymentMethodOptions;
   final List<TpvSessionWithUser> terminalSessions;
@@ -1259,17 +1278,24 @@ class _EditSaleDialog extends StatefulWidget {
 
 class _EditSaleDialogState extends State<_EditSaleDialog> {
   late final Map<String, Product> _productsById;
+  late final Map<String, ClienteListItem> _customersById;
+  late final String? _initialCustomerId;
   late final List<_EditableSaleLineForm> _lineForms;
   late final List<_EditableSalePaymentForm> _paymentForms;
   late bool _isConsignmentSale;
   late DateTime _saleDateTime;
   String? _selectedTerminalSessionId;
+  ClienteListItem? _selectedCustomer;
+  bool _customerExplicitlyCleared = false;
 
   @override
   void initState() {
     super.initState();
     _productsById = <String, Product>{
       for (final Product row in widget.products) row.id: row,
+    };
+    _customersById = <String, ClienteListItem>{
+      for (final ClienteListItem row in widget.customers) row.id: row,
     };
     _lineForms = widget.detail.lines.map((SalesAnalyticsSaleLineStat row) {
       return _EditableSaleLineForm(
@@ -1315,6 +1341,31 @@ class _EditSaleDialogState extends State<_EditSaleDialog> {
         (widget.detail.sale.terminalSessionId ?? '').trim().isEmpty
             ? null
             : widget.detail.sale.terminalSessionId!.trim();
+    final String initialCustomerId =
+        (widget.detail.sale.customerId ?? '').trim();
+    _initialCustomerId = initialCustomerId.isEmpty ? null : initialCustomerId;
+    if (initialCustomerId.isNotEmpty) {
+      _selectedCustomer = _customersById[initialCustomerId] ??
+          ClienteListItem(
+            id: initialCustomerId,
+            code: '-',
+            fullName: (widget.detail.sale.customerName ?? '').trim().isEmpty
+                ? 'Cliente'
+                : widget.detail.sale.customerName!.trim(),
+            identityNumber: null,
+            phone: null,
+            email: null,
+            avatarPath: null,
+            customerType: 'general',
+            isVip: false,
+            creditAvailableCents: 0,
+            discountBps: 0,
+            lifetimeSpentCents: 0,
+            lastPurchaseAt: null,
+            lastPurchaseCents: null,
+            createdAt: DateTime.now(),
+          );
+    }
     final TpvSessionWithUser? bestForDate =
         _pickBestSessionForDate(widget.terminalSessions, _saleDateTime);
     if (bestForDate != null &&
@@ -1596,6 +1647,27 @@ class _EditSaleDialogState extends State<_EditSaleDialog> {
     });
   }
 
+  Future<void> _selectCustomer() async {
+    if (widget.customers.isEmpty) {
+      _show('No hay clientes registrados.');
+      return;
+    }
+    final ClienteListItem? picked = await showDialog<ClienteListItem>(
+      context: context,
+      builder: (BuildContext context) => SaleCustomerPickerDialog(
+        customers: widget.customers,
+        initialSelectedId: _selectedCustomer?.id,
+      ),
+    );
+    if (picked == null || !mounted) {
+      return;
+    }
+    setState(() {
+      _selectedCustomer = picked;
+      _customerExplicitlyCleared = false;
+    });
+  }
+
   Future<void> _submit() async {
     final List<SaleItemInput> items = <SaleItemInput>[];
     for (final _EditableSaleLineForm row in _lineForms) {
@@ -1686,11 +1758,24 @@ class _EditSaleDialogState extends State<_EditSaleDialog> {
       terminalSessionId = selected.session.id;
     }
 
+    String? selectedCustomerId;
+    if (_customerExplicitlyCleared) {
+      selectedCustomerId = null;
+    } else {
+      final String selectedId = (_selectedCustomer?.id ?? '').trim();
+      selectedCustomerId = selectedId.isEmpty ? _initialCustomerId : selectedId;
+    }
+    if (_isConsignmentSale && selectedCustomerId == null) {
+      _show('La venta en consignación requiere seleccionar un cliente.');
+      return;
+    }
+
     Navigator.of(context).pop(
       _EditSalePayload(
         items: items,
         payments: payments,
         isConsignmentSale: _isConsignmentSale,
+        customerId: selectedCustomerId,
         createdAt: _saleDateTime,
         terminalSessionId: terminalSessionId,
       ),
@@ -1793,6 +1878,15 @@ class _EditSaleDialogState extends State<_EditSaleDialog> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   sectionTitle('METADATOS DE LA VENTA'),
+                  const SizedBox(height: 10),
+                  SaleCustomerSelectorTile(
+                    selectedCustomer: _selectedCustomer,
+                    onSelect: _selectCustomer,
+                    onClear: () => setState(() {
+                      _selectedCustomer = null;
+                      _customerExplicitlyCleared = true;
+                    }),
+                  ),
                   const SizedBox(height: 10),
                   Wrap(
                     spacing: 8,

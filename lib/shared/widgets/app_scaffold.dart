@@ -76,6 +76,12 @@ class AppScaffold extends ConsumerWidget {
       AppPermissionKeys.consignmentsView,
     ),
     _NavItem(
+      'Pedidos',
+      '/pedidos',
+      Icons.local_printshop_outlined,
+      AppPermissionKeys.ordersView,
+    ),
+    _NavItem(
       'Clientes',
       '/clientes',
       Icons.groups_rounded,
@@ -663,6 +669,14 @@ class AppScaffold extends ConsumerWidget {
         context.go('/configuracion');
         return;
       }
+      if (_isManualIpvRoute(route) && !licenseStatus.canSell) {
+        _showSoon(
+          context,
+          'Modo demo: el IPV manual requiere licencia activa.',
+        );
+        context.go('/configuracion');
+        return;
+      }
       if (_isGeneralReportsRoute(route) &&
           !licenseStatus.canAccessGeneralReports) {
         _showSoon(
@@ -743,6 +757,10 @@ class AppScaffold extends ConsumerWidget {
     return route == '/reportes';
   }
 
+  bool _isManualIpvRoute(String route) {
+    return route == '/ipv-manual';
+  }
+
   Future<void> _handleSystemBack(
     BuildContext context,
     String activeRoute,
@@ -775,6 +793,8 @@ class AppScaffold extends ConsumerWidget {
       case '/configuracion-unidades-medida':
       case '/configuracion-tipos-unidad':
       case '/configuracion-dashboard-widgets':
+      case '/configuracion-tipos-trabajo-pedidos':
+      case '/configuracion-roles-trabajo-pedidos':
       case '/configuracion-usuarios':
       case '/configuracion-roles':
       case '/configuracion-archivados':

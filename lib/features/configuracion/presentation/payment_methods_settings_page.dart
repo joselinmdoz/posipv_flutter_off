@@ -18,6 +18,9 @@ class PaymentMethodsSettingsPage extends ConsumerStatefulWidget {
 class _PaymentMethodsSettingsPageState
     extends ConsumerState<PaymentMethodsSettingsPage> {
   List<AppPaymentMethodSetting> _methods = <AppPaymentMethodSetting>[];
+  AppCurrencyConfig _currencyConfig = AppCurrencyConfig.defaults;
+  WorkOrderPaymentDisplayConfig _workOrderPaymentConfig =
+      WorkOrderPaymentDisplayConfig.defaults;
   bool _loading = true;
   bool _saving = false;
 
@@ -42,13 +45,24 @@ class _PaymentMethodsSettingsPageState
     try {
       final ConfiguracionLocalDataSource ds =
           ref.read(configuracionLocalDataSourceProvider);
+      final List<dynamic> results =
+          await Future.wait<dynamic>(<Future<dynamic>>[
+        ds.loadPaymentMethodSettings(),
+        ds.loadCurrencyConfig(),
+        ds.loadWorkOrderPaymentDisplayConfig(),
+      ]);
       final List<AppPaymentMethodSetting> rows =
-          await ds.loadPaymentMethodSettings();
+          results[0] as List<AppPaymentMethodSetting>;
+      final AppCurrencyConfig currencyConfig = results[1] as AppCurrencyConfig;
+      final WorkOrderPaymentDisplayConfig paymentConfig =
+          results[2] as WorkOrderPaymentDisplayConfig;
       if (!mounted) {
         return;
       }
       setState(() {
         _methods = rows;
+        _currencyConfig = currencyConfig;
+        _workOrderPaymentConfig = paymentConfig;
         _loading = false;
       });
     } catch (e) {
@@ -84,6 +98,34 @@ class _PaymentMethodsSettingsPageState
         return;
       }
       _show('No se pudo guardar metodos de pago: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
+  }
+
+  Future<void> _saveWorkOrderPaymentConfig(
+    WorkOrderPaymentDisplayConfig config,
+  ) async {
+    if (!_canManage || _saving) {
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      final ConfiguracionLocalDataSource ds =
+          ref.read(configuracionLocalDataSourceProvider);
+      await ds.saveWorkOrderPaymentDisplayConfig(config);
+      if (!mounted) {
+        return;
+      }
+      setState(() => _workOrderPaymentConfig = config.normalized());
+      _show('Reglas de cobro para pedidos actualizadas.');
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      _show('No se pudo guardar la configuración de pedidos: $e');
     } finally {
       if (mounted) {
         setState(() => _saving = false);
@@ -236,6 +278,15 @@ class _PaymentMethodsSettingsPageState
                       'Administra los metodos de pago disponibles, su codigo y si solicitan ID de transaccion.',
                     ),
                   ),
+                  _WorkOrderPaymentConfigCard(
+                    config: _workOrderPaymentConfig,
+                    currencyConfig: _currencyConfig,
+                    enabled: _canManage && !_saving,
+                    onChanged: (WorkOrderPaymentDisplayConfig value) {
+                      _saveWorkOrderPaymentConfig(value);
+                    },
+                  ),
+                  const SizedBox(height: 14),
                   if (_methods.isEmpty)
                     _EmptyPaymentMethods(
                       canManage: _canManage,
@@ -260,6 +311,233 @@ class _PaymentMethodsSettingsPageState
               ),
             ),
     );
+  }
+}
+
+class _WorkOrderPaymentConfigCard extends StatefulWidget {
+  const _WorkOrderPaymentConfigCard({
+    required this.config,
+    required this.currencyConfig,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final WorkOrderPaymentDisplayConfig config;
+  final AppCurrencyConfig currencyConfig;
+  final bool enabled;
+  final ValueChanged<WorkOrderPaymentDisplayConfig> onChanged;
+
+  @override
+  State<_WorkOrderPaymentConfigCard> createState() =>
+      _WorkOrderPaymentConfigCardState();
+}
+
+class _WorkOrderPaymentConfigCardState
+    extends State<_WorkOrderPaymentConfigCard> {
+  late final TextEditingController _fixedCtrl;
+  late final TextEditingController _transferCtrl;
+  late String _localCurrencyCode;
+  late String _foreignCurrencyCode;
+
+  @override
+  void initState() {
+    super.initState();
+    _fixedCtrl = TextEditingController();
+    _transferCtrl = TextEditingController();
+    _syncFromWidget();
+  }
+
+  @override
+  void didUpdateWidget(covariant _WorkOrderPaymentConfigCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.config != widget.config) {
+      _syncFromWidget();
+    }
+  }
+
+  void _syncFromWidget() {
+    _fixedCtrl.text = widget.config.localCashFixedSurcharge.toStringAsFixed(2);
+    _transferCtrl.text =
+        widget.config.localTransferPercentSurcharge.toStringAsFixed(2);
+    _localCurrencyCode = widget.config.localCurrencyCode;
+    _foreignCurrencyCode = widget.config.foreignCurrencyCode;
+  }
+
+  @override
+  void dispose() {
+    _fixedCtrl.dispose();
+    _transferCtrl.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final double fixed =
+        double.tryParse(_fixedCtrl.text.trim().replaceAll(',', '.')) ?? 0;
+    final double percent =
+        double.tryParse(_transferCtrl.text.trim().replaceAll(',', '.')) ?? 0;
+    widget.onChanged(
+      WorkOrderPaymentDisplayConfig(
+        localCurrencyCode: _localCurrencyCode,
+        foreignCurrencyCode: _foreignCurrencyCode,
+        localCashFixedSurcharge: fixed,
+        localTransferPercentSurcharge: percent,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<AppCurrencySetting> currencies =
+        widget.currencyConfig.currencies.isEmpty
+            ? AppCurrencyConfig.defaults.currencies
+            : widget.currencyConfig.currencies;
+    final List<String> availableCodes = currencies
+        .map((AppCurrencySetting row) => row.code.trim().toUpperCase())
+        .toSet()
+        .toList(growable: false);
+    final String fallbackCode =
+        availableCodes.isNotEmpty ? availableCodes.first : 'CUP';
+    final String localCurrencyCode = _resolveCurrencyCode(
+      preferred: _localCurrencyCode,
+      availableCodes: availableCodes,
+      fallbackCode: fallbackCode,
+    );
+    final String foreignCurrencyCode = _resolveCurrencyCode(
+      preferred: _foreignCurrencyCode,
+      availableCodes: availableCodes,
+      fallbackCode:
+          availableCodes.length > 1 ? availableCodes[1] : fallbackCode,
+    );
+    if (localCurrencyCode != _localCurrencyCode ||
+        foreignCurrencyCode != _foreignCurrencyCode) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _localCurrencyCode = localCurrencyCode;
+          _foreignCurrencyCode = foreignCurrencyCode;
+        });
+      });
+    }
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Text(
+            'Reglas de cobro para pedidos',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Define cómo se muestran las variantes de cobro del pedido cuando el cliente paga en USD, CUP efectivo o CUP transferencia.',
+            style: TextStyle(
+              color: Color(0xFF64748B),
+              fontWeight: FontWeight.w500,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 14),
+          DropdownButtonFormField<String>(
+            key: ValueKey<String>('local-$localCurrencyCode'),
+            initialValue: localCurrencyCode,
+            decoration: const InputDecoration(
+              labelText: 'Moneda local',
+            ),
+            items: currencies
+                .map(
+                  (AppCurrencySetting row) => DropdownMenuItem<String>(
+                    value: row.code,
+                    child: Text('${row.code} (${row.symbol})'),
+                  ),
+                )
+                .toList(growable: false),
+            onChanged: widget.enabled
+                ? (String? value) {
+                    if (value == null) {
+                      return;
+                    }
+                    setState(() => _localCurrencyCode = value);
+                  }
+                : null,
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            key: ValueKey<String>('foreign-$foreignCurrencyCode'),
+            initialValue: foreignCurrencyCode,
+            decoration: const InputDecoration(
+              labelText: 'Moneda extranjera',
+            ),
+            items: currencies
+                .map(
+                  (AppCurrencySetting row) => DropdownMenuItem<String>(
+                    value: row.code,
+                    child: Text('${row.code} (${row.symbol})'),
+                  ),
+                )
+                .toList(growable: false),
+            onChanged: widget.enabled
+                ? (String? value) {
+                    if (value == null) {
+                      return;
+                    }
+                    setState(() => _foreignCurrencyCode = value);
+                  }
+                : null,
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _fixedCtrl,
+            enabled: widget.enabled,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Recargo fijo en efectivo local',
+              helperText: 'Ejemplo: 5.00 CUP al convertir desde USD.',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _transferCtrl,
+            enabled: widget.enabled,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Recargo % para transferencia local',
+              helperText: 'Ejemplo: 10.00 aplica un 10% sobre el total local.',
+            ),
+          ),
+          const SizedBox(height: 14),
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.icon(
+              onPressed: widget.enabled ? _submit : null,
+              icon: const Icon(Icons.save_outlined),
+              label: const Text('Guardar reglas'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _resolveCurrencyCode({
+    required String preferred,
+    required List<String> availableCodes,
+    required String fallbackCode,
+  }) {
+    final String normalized = preferred.trim().toUpperCase();
+    if (availableCodes.contains(normalized)) {
+      return normalized;
+    }
+    return fallbackCode;
   }
 }
 

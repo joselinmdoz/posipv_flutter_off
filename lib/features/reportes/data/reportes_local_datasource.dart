@@ -128,6 +128,7 @@ class SalesAnalyticsSaleStat {
     required this.warehouseName,
     required this.cashierId,
     required this.cashierUsername,
+    required this.customerId,
     required this.customerName,
     required this.terminalId,
     required this.terminalSessionId,
@@ -144,6 +145,7 @@ class SalesAnalyticsSaleStat {
   final String warehouseName;
   final String cashierId;
   final String cashierUsername;
+  final String? customerId;
   final String? customerName;
   final String? terminalId;
   final String? terminalSessionId;
@@ -1233,6 +1235,7 @@ class ReportesLocalDataSource {
         s.total_cents AS total_cents,
         s.warehouse_id AS warehouse_id,
         s.cashier_id AS cashier_id,
+        s.customer_id AS customer_id,
         s.terminal_id AS terminal_id,
         s.terminal_session_id AS terminal_session_id,
         COALESCE(w.name, 'Sin almacén') AS warehouse_name,
@@ -1264,7 +1267,7 @@ class ReportesLocalDataSource {
         AND s.created_at < ?
       GROUP BY
         s.id, s.folio, s.created_at, s.total_cents, s.warehouse_id,
-        s.cashier_id, s.terminal_id, s.terminal_session_id,
+        s.cashier_id, s.customer_id, s.terminal_id, s.terminal_session_id,
         w.name, u.username, c.full_name, t.name
       ORDER BY s.created_at DESC, s.id DESC
       LIMIT ?
@@ -1296,6 +1299,7 @@ class ReportesLocalDataSource {
           'cashier_username',
           fallback: 'Sin usuario',
         ),
+        customerId: _nullableTextCell(row, 'customer_id'),
         customerName: _nullableTextCell(row, 'customer_name'),
         terminalId: _nullableTextCell(row, 'terminal_id'),
         terminalSessionId: _nullableTextCell(row, 'terminal_session_id'),
@@ -1688,6 +1692,7 @@ class ReportesLocalDataSource {
         s.total_cents AS total_cents,
         s.warehouse_id AS warehouse_id,
         s.cashier_id AS cashier_id,
+        s.customer_id AS customer_id,
         s.terminal_id AS terminal_id,
         s.terminal_session_id AS terminal_session_id,
         COALESCE(w.name, 'Sin almacén') AS warehouse_name,
@@ -1785,6 +1790,7 @@ class ReportesLocalDataSource {
         s.terminal_id,
         s.terminal_session_id,
         s.cashier_id,
+        s.customer_id,
         w.name,
         u.username,
         c.full_name,
@@ -1825,6 +1831,7 @@ class ReportesLocalDataSource {
           'cashier_username',
           fallback: 'Sin usuario',
         ),
+        customerId: _nullableTextCell(row, 'customer_id'),
         customerName: _nullableTextCell(row, 'customer_name'),
         terminalId: _nullableTextCell(row, 'terminal_id'),
         terminalSessionId: _nullableTextCell(row, 'terminal_session_id'),
@@ -1975,6 +1982,7 @@ class ReportesLocalDataSource {
         s.tax_cents AS tax_cents,
         s.warehouse_id AS warehouse_id,
         s.cashier_id AS cashier_id,
+        s.customer_id AS customer_id,
         s.terminal_id AS terminal_id,
         s.terminal_session_id AS terminal_session_id,
         COALESCE(w.name, 'Sin almacén') AS warehouse_name,
@@ -2005,6 +2013,7 @@ class ReportesLocalDataSource {
       GROUP BY
         s.id, s.folio, s.created_at, s.total_cents, s.subtotal_cents,
         s.tax_cents, s.warehouse_id, s.cashier_id,
+        s.customer_id,
         s.terminal_id, s.terminal_session_id,
         w.name, u.username, c.full_name, t.name
       LIMIT 1
@@ -2025,6 +2034,7 @@ class ReportesLocalDataSource {
       warehouseName: _readTextCell(header, 'warehouse_name', fallback: '-'),
       cashierId: _readTextCell(header, 'cashier_id', fallback: ''),
       cashierUsername: _readTextCell(header, 'cashier_username', fallback: '-'),
+      customerId: _nullableTextCell(header, 'customer_id'),
       customerName: _nullableTextCell(header, 'customer_name'),
       terminalId: _nullableTextCell(header, 'terminal_id'),
       terminalSessionId: _nullableTextCell(header, 'terminal_session_id'),
@@ -4103,6 +4113,8 @@ class ReportesLocalDataSource {
       ipvLinesLimit: 200000,
       ipvLinesOffset: 0,
     );
+    final List<_ConsignmentSaleExportStat> consignmentSales =
+        await _loadConsignmentSalesForDate(snapshot.reportDate);
     final DateTime now = DateTime.now();
     final Directory preferredBase = await _resolveDownloadsBaseDir();
     Directory dir = Directory(
@@ -4184,6 +4196,33 @@ class ReportesLocalDataSource {
               (row.totalAmountCents / 100).toStringAsFixed(2),
             ])
         .toList(growable: false);
+    final List<List<String>> consignmentRows = <List<String>>[];
+    int consignmentTotalCents = 0;
+    for (final _ConsignmentSaleExportStat sale in consignmentSales) {
+      if (sale.lines.isEmpty) {
+        consignmentRows.add(<String>[
+          sale.customerName,
+          sale.folio,
+          _formatDateTimeHuman(sale.createdAt),
+          '-',
+          '-',
+          (sale.totalCents / 100).toStringAsFixed(2),
+        ]);
+        consignmentTotalCents += sale.totalCents;
+        continue;
+      }
+      for (final _ConsignmentSaleLineExportStat line in sale.lines) {
+        consignmentRows.add(<String>[
+          sale.customerName,
+          sale.folio,
+          _formatDateTimeHuman(sale.createdAt),
+          line.productName,
+          _formatQtyPretty(line.qty),
+          (line.lineTotalCents / 100).toStringAsFixed(2),
+        ]);
+        consignmentTotalCents += line.lineTotalCents;
+      }
+    }
 
     pw.Widget sectionTitle(String text) {
       return pw.Padding(
@@ -4307,6 +4346,22 @@ class ReportesLocalDataSource {
                 'Total',
               ],
               data: salesRows,
+            ),
+            sectionTitle('Ventas en consignacion'),
+            table(
+              headers: const <String>[
+                'Cliente',
+                'Folio',
+                'Fecha',
+                'Producto',
+                'Cantidad',
+                'Monto',
+              ],
+              data: consignmentRows,
+            ),
+            simpleInfo(
+              'Total consignado',
+              '$currencySymbol${(consignmentTotalCents / 100).toStringAsFixed(2)}',
             ),
             sectionTitle('Movimientos'),
             table(
@@ -4459,6 +4514,8 @@ class ReportesLocalDataSource {
       }
       final IpvReportDetailStat detail = loaded;
       final _IpvExportMeta meta = await _loadIpvExportMeta(reportId);
+      final List<_ConsignmentSaleExportStat> consignmentSales =
+          await _loadConsignmentSalesForSession(detail.summary.sessionId);
       final Directory baseDir = await _resolveExportDir(detail.summary);
       final String fileName = _buildIpvExportFileName(
         detail.summary,
@@ -4482,6 +4539,7 @@ class ReportesLocalDataSource {
               meta: meta,
               generatedAt: generatedAt,
               includeAdminProfitColumns: includeAdminProfitColumns,
+              consignmentSales: consignmentSales,
             );
           },
         ),
@@ -4618,6 +4676,139 @@ class ReportesLocalDataSource {
       totalOutputsQty: totalOutputsQty,
       totalSalesAmountCents: totalSalesAmountCents,
     );
+  }
+
+  Future<List<_ConsignmentSaleExportStat>> _loadConsignmentSalesForDate(
+    DateTime reportDate,
+  ) async {
+    final DateTime from = _startOfDay(reportDate);
+    final DateTime toExclusive = from.add(const Duration(days: 1));
+    return _loadConsignmentSalesByScope(
+      scopeWhereSql: 's.created_at >= ? AND s.created_at < ?',
+      scopeVariables: <Variable<Object>>[
+        Variable<DateTime>(from),
+        Variable<DateTime>(toExclusive),
+      ],
+    );
+  }
+
+  Future<List<_ConsignmentSaleExportStat>> _loadConsignmentSalesForSession(
+    String sessionId,
+  ) async {
+    final String cleanSessionId = sessionId.trim();
+    if (cleanSessionId.isEmpty) {
+      return const <_ConsignmentSaleExportStat>[];
+    }
+    return _loadConsignmentSalesByScope(
+      scopeWhereSql: "COALESCE(TRIM(s.terminal_session_id), '') = ?",
+      scopeVariables: <Variable<Object>>[Variable<String>(cleanSessionId)],
+    );
+  }
+
+  Future<List<_ConsignmentSaleExportStat>> _loadConsignmentSalesByScope({
+    required String scopeWhereSql,
+    required List<Variable<Object>> scopeVariables,
+  }) async {
+    final List<QueryRow> saleRows = await _db.customSelect(
+      '''
+      SELECT
+        s.id AS sale_id,
+        s.folio AS folio,
+        s.created_at AS created_at,
+        COALESCE(c.full_name, 'Cliente') AS customer_name,
+        COALESCE(s.total_cents, 0) AS total_cents
+      FROM sales s
+      LEFT JOIN customers c ON c.id = s.customer_id
+      WHERE s.status = 'posted'
+        AND s.customer_id IS NOT NULL
+        AND $scopeWhereSql
+        AND EXISTS (
+          SELECT 1
+          FROM stock_movements sm
+          WHERE sm.ref_id = s.id
+            AND LOWER(COALESCE(sm.ref_type, '')) IN (
+              'consignment_sale',
+              'consignment_sale_pos',
+              'consignment_sale_direct'
+            )
+            AND COALESCE(sm.is_voided, 0) = 0
+          LIMIT 1
+        )
+      ORDER BY
+        LOWER(COALESCE(c.full_name, 'cliente')) ASC,
+        s.created_at ASC,
+        s.folio ASC
+      ''',
+      variables: scopeVariables,
+    ).get();
+    if (saleRows.isEmpty) {
+      return const <_ConsignmentSaleExportStat>[];
+    }
+
+    final List<String> saleIds = saleRows
+        .map((QueryRow row) => _readTextCell(row, 'sale_id', fallback: ''))
+        .where((String value) => value.isNotEmpty)
+        .toList(growable: false);
+    if (saleIds.isEmpty) {
+      return const <_ConsignmentSaleExportStat>[];
+    }
+
+    final String placeholders =
+        List<String>.filled(saleIds.length, '?').join(', ');
+    final List<QueryRow> lineRows = await _db.customSelect(
+      '''
+      SELECT
+        si.sale_id AS sale_id,
+        COALESCE(p.name, 'Producto') AS product_name,
+        COALESCE(si.qty, 0) AS qty,
+        COALESCE(
+          si.line_total_cents,
+          CAST(
+            ROUND(COALESCE(si.qty, 0) * COALESCE(si.unit_price_cents, 0))
+            AS INTEGER
+          ),
+          0
+        ) AS line_total_cents
+      FROM sale_items si
+      LEFT JOIN products p ON p.id = si.product_id
+      WHERE si.sale_id IN ($placeholders)
+      ORDER BY si.sale_id ASC, product_name ASC
+      ''',
+      variables: saleIds
+          .map<Variable<Object>>((String id) => Variable<String>(id))
+          .toList(growable: false),
+    ).get();
+    final Map<String, List<_ConsignmentSaleLineExportStat>> linesBySaleId =
+        <String, List<_ConsignmentSaleLineExportStat>>{};
+    for (final QueryRow row in lineRows) {
+      final String saleId = _readTextCell(row, 'sale_id', fallback: '');
+      if (saleId.isEmpty) {
+        continue;
+      }
+      linesBySaleId.putIfAbsent(
+          saleId, () => <_ConsignmentSaleLineExportStat>[]);
+      linesBySaleId[saleId]!.add(
+        _ConsignmentSaleLineExportStat(
+          productName: _readTextCell(row, 'product_name', fallback: 'Producto'),
+          qty: (row.data['qty'] as num?)?.toDouble() ?? 0,
+          lineTotalCents: (row.data['line_total_cents'] as num?)?.toInt() ?? 0,
+        ),
+      );
+    }
+
+    return saleRows.map((QueryRow row) {
+      final String saleId = _readTextCell(row, 'sale_id', fallback: '');
+      return _ConsignmentSaleExportStat(
+        saleId: saleId,
+        folio: _readTextCell(row, 'folio', fallback: '-'),
+        customerName: _readTextCell(row, 'customer_name', fallback: 'Cliente'),
+        createdAt: row.readNullable<DateTime>('created_at') ?? DateTime.now(),
+        totalCents: (row.data['total_cents'] as num?)?.toInt() ?? 0,
+        lines:
+            (linesBySaleId[saleId] ?? const <_ConsignmentSaleLineExportStat>[])
+                .toList(growable: false),
+      );
+    }).toList(growable: false);
   }
 
   Future<Map<String, _IpvProfitByProduct>> _loadIpvProfitByProductForSession(
@@ -4879,6 +5070,7 @@ class ReportesLocalDataSource {
     required _IpvExportMeta meta,
     required String generatedAt,
     required bool includeAdminProfitColumns,
+    required List<_ConsignmentSaleExportStat> consignmentSales,
   }) {
     final _IpvExecutiveSummary executive = _buildIpvExecutiveSummary(detail);
     final List<MapEntry<String, int>> paymentEntries = meta
@@ -4904,6 +5096,33 @@ class ReportesLocalDataSource {
     );
     final int totalMarginCents =
         totalSalesQty <= 0 ? 0 : (totalRealProfitCents / totalSalesQty).round();
+    final List<List<String>> consignmentRows = <List<String>>[];
+    int consignmentTotalCents = 0;
+    for (final _ConsignmentSaleExportStat sale in consignmentSales) {
+      if (sale.lines.isEmpty) {
+        consignmentRows.add(<String>[
+          sale.customerName,
+          sale.folio,
+          _formatDateTimeHuman(sale.createdAt),
+          '-',
+          '-',
+          _formatMoney(sale.totalCents),
+        ]);
+        consignmentTotalCents += sale.totalCents;
+        continue;
+      }
+      for (final _ConsignmentSaleLineExportStat line in sale.lines) {
+        consignmentRows.add(<String>[
+          sale.customerName,
+          sale.folio,
+          _formatDateTimeHuman(sale.createdAt),
+          line.productName,
+          _formatQtyPretty(line.qty),
+          _formatMoney(line.lineTotalCents),
+        ]);
+        consignmentTotalCents += line.lineTotalCents;
+      }
+    }
 
     pw.Widget sectionTitle(String text) {
       return pw.Padding(
@@ -5177,6 +5396,50 @@ class ReportesLocalDataSource {
             if (includeAdminProfitColumns) 11: const pw.FlexColumnWidth(1.55),
           },
           children: tableRows,
+        ),
+      sectionTitle('Ventas en consignacion'),
+      if (consignmentRows.isEmpty)
+        pw.Text(
+          'Sin ventas en consignacion para este turno.',
+          style: const pw.TextStyle(fontSize: 11),
+        ),
+      if (consignmentRows.isNotEmpty)
+        pw.TableHelper.fromTextArray(
+          headers: const <String>[
+            'Cliente',
+            'Folio',
+            'Fecha',
+            'Producto',
+            'Cantidad',
+            'Monto',
+          ],
+          data: consignmentRows,
+          headerStyle: pw.TextStyle(
+            fontSize: 8.5,
+            fontWeight: pw.FontWeight.bold,
+            color: PdfColors.white,
+          ),
+          headerDecoration: pw.BoxDecoration(color: sectionBlue),
+          cellStyle: const pw.TextStyle(fontSize: 8),
+          cellPadding:
+              const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+          border: pw.TableBorder.all(color: infoBorder, width: 0.6),
+          headerAlignment: pw.Alignment.centerLeft,
+          cellAlignment: pw.Alignment.centerLeft,
+        ),
+      if (consignmentRows.isNotEmpty)
+        pw.Padding(
+          padding: const pw.EdgeInsets.only(top: 4),
+          child: pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              'Total consignado: ${_formatMoney(consignmentTotalCents)}',
+              style: pw.TextStyle(
+                fontSize: 10,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+          ),
         ),
       pw.SizedBox(height: 8),
       pw.Text(
@@ -5857,156 +6120,78 @@ class ReportesLocalDataSource {
       extension: 'pdf',
     );
     final File file = File(p.join(exportDir.path, fileName));
-    final String reportDateLabel = _dayKey(bundle.reportDate);
-    final int totalAmount = bundle.lines.fold<int>(
+    final int totalAmountCents = bundle.lines.fold<int>(
       0,
       (int sum, ManualIpvEditableLineStat row) => sum + row.totalAmountCents,
     );
-    final int totalRealProfit = bundle.lines.fold<int>(
-      0,
-      (int sum, ManualIpvEditableLineStat row) => sum + row.realProfitCents,
+    final DateTime openedAt = DateTime(
+      bundle.reportDate.year,
+      bundle.reportDate.month,
+      bundle.reportDate.day,
     );
-    final int totalPayments = bundle.paymentTotals.values.fold<int>(
-      0,
-      (int sum, int value) => sum + value,
+    final IpvReportSummaryStat summary = IpvReportSummaryStat(
+      reportId: bundle.reportId,
+      sessionId: '',
+      terminalName: 'IPV Manual',
+      currencySymbol: useCurrency,
+      openedAt: openedAt,
+      closedAt: bundle.updatedAt,
+      status: 'manual',
+      openingSource: 'manual',
+      lineCount: bundle.lines.length,
+      totalAmountCents: totalAmountCents,
     );
+    final IpvReportDetailStat detail = IpvReportDetailStat(
+      summary: summary,
+      lines: bundle.lines
+          .map(
+            (ManualIpvEditableLineStat row) => IpvReportLineStat(
+              productId: (row.productId ?? '').trim().isEmpty
+                  ? row.lineId
+                  : row.productId!.trim(),
+              productName: row.productName,
+              sku: row.sku,
+              startQty: row.startQty,
+              entriesQty: row.entriesQty,
+              outputsQty: row.outputsQty,
+              salesQty: row.salesQty,
+              finalQty: row.finalQty,
+              salePriceCents: row.salePriceCents,
+              totalAmountCents: row.totalAmountCents,
+              profitMarginCents: row.profitMarginCents,
+              realProfitCents: row.realProfitCents,
+            ),
+          )
+          .toList(growable: false),
+    );
+    final _IpvExportMeta meta = _IpvExportMeta(
+      terminalId: 'manual',
+      terminalName: 'IPV Manual',
+      warehouseId: '-',
+      warehouseName: 'No aplica',
+      employeesLabel:
+          bundle.employeeNames.isEmpty ? '-' : bundle.employeeNames.join(', '),
+      paymentTotalsByMethod: bundle.paymentTotals,
+    );
+    final String generatedAt = _formatDateTimeHuman(DateTime.now());
 
     final pw.Document doc = pw.Document();
     doc.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.fromLTRB(20, 20, 20, 20),
+        margin: const pw.EdgeInsets.fromLTRB(24, 24, 24, 24),
+        header: (pw.Context context) => _buildIpvPdfHeader(
+          generatedAt: generatedAt,
+          pageNumber: context.pageNumber,
+        ),
         build: (pw.Context context) {
-          return <pw.Widget>[
-            pw.Text(
-              'IPV Manual',
-              style: pw.TextStyle(
-                fontSize: 18,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-            pw.SizedBox(height: 4),
-            pw.Text('Reporte ID: ${bundle.reportId}'),
-            pw.Text('Fecha: $reportDateLabel'),
-            pw.Text('Moneda: $useCurrency'),
-            pw.Text('Actualizado: ${_formatDateTimeHuman(bundle.updatedAt)}'),
-            pw.Text(
-              'Empleados: ${bundle.employeeNames.isEmpty ? '-' : bundle.employeeNames.join(', ')}',
-            ),
-            pw.Text('Nota: ${bundle.note.isEmpty ? '-' : bundle.note}'),
-            pw.SizedBox(height: 10),
-            pw.Text(
-              'Pagos por método',
-              style: pw.TextStyle(
-                fontSize: 12,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-            pw.SizedBox(height: 4),
-            pw.TableHelper.fromTextArray(
-              headers: const <String>['Método', 'Monto'],
-              data: bundle.paymentTotals.isEmpty
-                  ? const <List<String>>[
-                      <String>['-', '0.00'],
-                    ]
-                  : bundle.paymentTotals.entries
-                      .map((MapEntry<String, int> entry) => <String>[
-                            _paymentMethodLabel(entry.key),
-                            (entry.value / 100).toStringAsFixed(2),
-                          ])
-                      .toList(growable: false),
-              headerStyle: pw.TextStyle(
-                fontSize: 8,
-                fontWeight: pw.FontWeight.bold,
-                color: PdfColors.white,
-              ),
-              headerDecoration: const pw.BoxDecoration(
-                color: PdfColor(0.07, 0.32, 0.83),
-              ),
-              cellStyle: const pw.TextStyle(fontSize: 8),
-              border: null,
-              cellPadding:
-                  const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3),
-            ),
-            pw.SizedBox(height: 10),
-            pw.Text(
-              'Líneas',
-              style: pw.TextStyle(
-                fontSize: 12,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-            pw.SizedBox(height: 4),
-            pw.TableHelper.fromTextArray(
-              headers: const <String>[
-                'Producto',
-                'Código',
-                'Ini',
-                'Ent',
-                'Sal',
-                'Ven',
-                'Fin',
-                'Precio',
-                'Importe',
-                'GxP',
-                'G.Real',
-              ],
-              data: bundle.lines.isEmpty
-                  ? const <List<String>>[
-                      <String>[
-                        '-',
-                        '-',
-                        '0.00',
-                        '0.00',
-                        '0.00',
-                        '0.00',
-                        '0.00',
-                        '0.00',
-                        '0.00',
-                        '0.00',
-                        '0.00',
-                      ],
-                    ]
-                  : bundle.lines.map((ManualIpvEditableLineStat row) {
-                      return <String>[
-                        row.productName,
-                        row.sku,
-                        _formatQtyCsv(row.startQty),
-                        _formatQtyCsv(row.entriesQty),
-                        _formatQtyCsv(row.outputsQty),
-                        _formatQtyCsv(row.salesQty),
-                        _formatQtyCsv(row.finalQty),
-                        (row.salePriceCents / 100).toStringAsFixed(2),
-                        (row.totalAmountCents / 100).toStringAsFixed(2),
-                        (row.profitMarginCents / 100).toStringAsFixed(2),
-                        (row.realProfitCents / 100).toStringAsFixed(2),
-                      ];
-                    }).toList(growable: false),
-              headerStyle: pw.TextStyle(
-                fontSize: 7,
-                fontWeight: pw.FontWeight.bold,
-                color: PdfColors.white,
-              ),
-              headerDecoration: const pw.BoxDecoration(
-                color: PdfColor(0.07, 0.32, 0.83),
-              ),
-              cellStyle: const pw.TextStyle(fontSize: 7),
-              border: null,
-              cellPadding:
-                  const pw.EdgeInsets.symmetric(horizontal: 3, vertical: 2),
-            ),
-            pw.SizedBox(height: 10),
-            pw.Text('Resumen',
-                style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-            pw.Text('Líneas: ${bundle.lines.length}'),
-            pw.Text('Importe total: ${(totalAmount / 100).toStringAsFixed(2)}'),
-            pw.Text(
-              'Ganancia real: ${(totalRealProfit / 100).toStringAsFixed(2)}',
-            ),
-            pw.Text(
-              'Pagos reportados: ${(totalPayments / 100).toStringAsFixed(2)}',
-            ),
-          ];
+          return _buildIpvPdfContent(
+            detail: detail,
+            meta: meta,
+            generatedAt: generatedAt,
+            includeAdminProfitColumns: true,
+            consignmentSales: const <_ConsignmentSaleExportStat>[],
+          );
         },
       ),
     );
@@ -7220,6 +7405,36 @@ class _IpvExportMeta {
   final String warehouseName;
   final String employeesLabel;
   final Map<String, int> paymentTotalsByMethod;
+}
+
+class _ConsignmentSaleExportStat {
+  const _ConsignmentSaleExportStat({
+    required this.saleId,
+    required this.folio,
+    required this.customerName,
+    required this.createdAt,
+    required this.totalCents,
+    required this.lines,
+  });
+
+  final String saleId;
+  final String folio;
+  final String customerName;
+  final DateTime createdAt;
+  final int totalCents;
+  final List<_ConsignmentSaleLineExportStat> lines;
+}
+
+class _ConsignmentSaleLineExportStat {
+  const _ConsignmentSaleLineExportStat({
+    required this.productName,
+    required this.qty,
+    required this.lineTotalCents,
+  });
+
+  final String productName;
+  final double qty;
+  final int lineTotalCents;
 }
 
 class _IpvProductSnapshot {

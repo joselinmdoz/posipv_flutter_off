@@ -18,6 +18,8 @@ import '../features/configuracion/presentation/measurement_unit_types_settings_p
 import '../features/configuracion/presentation/payment_methods_settings_page.dart';
 import '../features/configuracion/presentation/product_catalog_settings_page.dart';
 import '../features/configuracion/presentation/security_page.dart';
+import '../features/configuracion/presentation/work_order_task_types_settings_page.dart';
+import '../features/configuracion/presentation/work_order_task_worker_roles_settings_page.dart';
 import '../features/auth/presentation/user_access_management_page.dart';
 import '../features/auth/presentation/role_permissions_management_page.dart';
 import '../features/clientes/presentation/clientes_page.dart';
@@ -27,6 +29,7 @@ import '../features/home/presentation/home_recent_activity_page.dart';
 import '../features/inventario/presentation/inventario_page.dart';
 import '../features/inventario/presentation/movimientos_inventario_page.dart';
 import '../features/licencia/presentation/licencia_page.dart';
+import '../features/pedidos/presentation/pedidos_page.dart';
 import '../features/productos/presentation/productos_page.dart';
 import '../features/compras/presentation/compras_page.dart';
 import '../features/reportes/presentation/reportes_page.dart';
@@ -156,6 +159,10 @@ final Provider<GoRouter> appRouterProvider = Provider<GoRouter>((Ref ref) {
             builder: (context, state) => const ConsignacionesPage(),
           ),
           _branch(
+            path: '/pedidos',
+            builder: (context, state) => const PedidosPage(),
+          ),
+          _branch(
             path: '/clientes',
             builder: (context, state) => const ClientesPage(),
           ),
@@ -226,6 +233,15 @@ final Provider<GoRouter> appRouterProvider = Provider<GoRouter>((Ref ref) {
       GoRoute(
         path: '/configuracion-tipos-unidad',
         builder: (context, state) => const MeasurementUnitTypesSettingsPage(),
+      ),
+      GoRoute(
+        path: '/configuracion-tipos-trabajo-pedidos',
+        builder: (context, state) => const WorkOrderTaskTypesSettingsPage(),
+      ),
+      GoRoute(
+        path: '/configuracion-roles-trabajo-pedidos',
+        builder: (context, state) =>
+            const WorkOrderTaskWorkerRolesSettingsPage(),
       ),
       GoRoute(
         path: '/configuracion-archivados',

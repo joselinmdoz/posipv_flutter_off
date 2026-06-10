@@ -10,6 +10,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_service.dart';
+import '../../../core/security/app_permissions.dart';
 
 class InventoryView {
   const InventoryView({
@@ -1305,6 +1306,8 @@ class InventarioLocalDataSource {
     required String reasonCode,
     required String userId,
     String? note,
+    DateTime? movementAt,
+    String? linkedPosSessionId,
   }) async {
     await _licenseService.requireWriteAccess();
     final String safeType = _sanitizeMovementType(type);
@@ -1321,6 +1324,8 @@ class InventarioLocalDataSource {
       throw Exception('La cantidad debe ser mayor que 0.');
     }
     final String safeReasonCode = _sanitizeReasonCode(reasonCode);
+    final String safeLinkedPosSessionId = (linkedPosSessionId ?? '').trim();
+    final bool hasLinkedPosSession = safeLinkedPosSessionId.isNotEmpty;
     final List<InventoryMovementReason> manualReasons =
         await listManualMovementReasons(movementType: safeType);
     final bool reasonAllowed = manualReasons.any(
@@ -1331,7 +1336,10 @@ class InventarioLocalDataSource {
     }
 
     await _db.transaction(() async {
-      final DateTime now = DateTime.now();
+      final DateTime movementTime = await _resolveManualMovementTimestamp(
+        userId: safeUserId,
+        requestedAt: movementAt,
+      );
       final String movementId = _uuid.v4();
       final StockBalance? current = await (_db.select(_db.stockBalances)
             ..where(
@@ -1361,11 +1369,15 @@ class InventarioLocalDataSource {
               qty: qty,
               reasonCode: Value(safeReasonCode),
               movementSource: const Value('manual'),
-              refType: const Value('manual_move'),
-              refId: const Value(null),
+              refType: Value(
+                hasLinkedPosSession ? 'pos_manual_move' : 'manual_move',
+              ),
+              refId: Value(
+                hasLinkedPosSession ? safeLinkedPosSessionId : null,
+              ),
               note: Value(_normalizeOptional(note)),
               createdBy: safeUserId,
-              createdAt: Value(now),
+              createdAt: Value(movementTime),
             ),
           );
 
@@ -1377,7 +1389,7 @@ class InventarioLocalDataSource {
         qty: qty.abs(),
         note: _normalizeOptional(note),
         userId: safeUserId,
-        at: now,
+        at: movementTime,
       );
     });
   }
@@ -1389,6 +1401,7 @@ class InventarioLocalDataSource {
     required double qty,
     required String userId,
     String? note,
+    DateTime? movementAt,
   }) async {
     await _licenseService.requireWriteAccess();
     final String safeProductId = productId.trim();
@@ -1433,7 +1446,10 @@ class InventarioLocalDataSource {
         throw Exception('La transferencia supera el stock disponible.');
       }
       final double destinationQty = destinationBalance?.qty ?? 0;
-      final DateTime now = DateTime.now();
+      final DateTime movementTime = await _resolveManualMovementTimestamp(
+        userId: safeUserId,
+        requestedAt: movementAt,
+      );
       final String transferId = _uuid.v4();
       final String outMovementId = _uuid.v4();
       final String inMovementId = _uuid.v4();
@@ -1459,7 +1475,7 @@ class InventarioLocalDataSource {
         qty: qty,
         fallbackUnitCostCents: fallbackCostCents,
         note: normalizedNote,
-        at: now,
+        at: movementTime,
       );
 
       await _db.into(_db.stockMovements).insert(
@@ -1475,7 +1491,7 @@ class InventarioLocalDataSource {
               refId: Value(transferId),
               note: Value(normalizedNote),
               createdBy: safeUserId,
-              createdAt: Value(now),
+              createdAt: Value(movementTime),
             ),
           );
 
@@ -1498,8 +1514,8 @@ class InventarioLocalDataSource {
                 qtyIn: Value(lineQty),
                 qtyRemaining: Value(lineQty),
                 unitCostCents: Value(allocation.unitCostCents),
-                receivedAt: Value(now),
-                createdAt: Value(now),
+                receivedAt: Value(movementTime),
+                createdAt: Value(movementTime),
                 note: Value(normalizedNote),
               ),
             );
@@ -1527,7 +1543,7 @@ class InventarioLocalDataSource {
               refId: Value(transferId),
               note: Value(normalizedNote),
               createdBy: safeUserId,
-              createdAt: Value(now),
+              createdAt: Value(movementTime),
             ),
           );
 
@@ -1577,6 +1593,7 @@ class InventarioLocalDataSource {
     required String reasonCode,
     required String userId,
     String? note,
+    DateTime? movementAt,
   }) async {
     await _licenseService.requireWriteAccess();
     final String safeMovementId = movementId.trim();
@@ -1621,6 +1638,52 @@ class InventarioLocalDataSource {
       final String refType = (existing.refType ?? '').trim().toLowerCase();
       if (source != 'manual' || _isSaleRefType(refType)) {
         throw Exception('Solo se pueden editar movimientos manuales.');
+      }
+
+      final String existingType =
+          _normalizeMovementType(existing.type, existing.qty);
+      final double existingQtyAbs = existing.qty.abs();
+      const double epsilon = 0.000001;
+      final bool isStructureChange = existing.productId != safeProductId ||
+          existing.warehouseId != safeWarehouseId ||
+          existingType != safeType ||
+          (existingQtyAbs - qty.abs()).abs() > epsilon;
+      final DateTime movementTime = movementAt == null
+          ? existing.createdAt
+          : await _resolveManualMovementTimestamp(
+              userId: safeUserId,
+              requestedAt: movementAt,
+            );
+
+      if (!isStructureChange) {
+        await (_db.update(_db.stockMovements)
+              ..where((StockMovements tbl) => tbl.id.equals(safeMovementId)))
+            .write(
+          StockMovementsCompanion(
+            reasonCode: Value(safeReasonCode),
+            note: Value(_normalizeOptional(note)),
+            createdAt: Value(movementTime),
+          ),
+        );
+        await _updateMovementLinkedLotsTimestamp(
+          movementId: safeMovementId,
+          at: movementTime,
+        );
+        await _db.into(_db.auditLogs).insert(
+              AuditLogsCompanion.insert(
+                id: _uuid.v4(),
+                userId: Value(safeUserId),
+                action: 'STOCK_MOVEMENT_EDITED',
+                entity: 'stock_movement',
+                entityId: safeMovementId,
+                payloadJson: jsonEncode(<String, Object?>{
+                  'mode': 'metadata_only',
+                  'createdAt': movementTime.toIso8601String(),
+                  'reasonCode': safeReasonCode,
+                }),
+              ),
+            );
+        return;
       }
 
       final double oldSignedDelta = _signedMovementDelta(existing);
@@ -1693,7 +1756,6 @@ class InventarioLocalDataSource {
         qty: existing.qty.abs(),
       );
 
-      final DateTime now = DateTime.now();
       await _applyManualMovementLotImpact(
         movementId: safeMovementId,
         productId: safeProductId,
@@ -1702,7 +1764,7 @@ class InventarioLocalDataSource {
         qty: qty.abs(),
         note: _normalizeOptional(note),
         userId: safeUserId,
-        at: now,
+        at: movementTime,
       );
 
       await (_db.update(_db.stockMovements)
@@ -1718,6 +1780,7 @@ class InventarioLocalDataSource {
           refType: const Value('manual_move'),
           refId: const Value(null),
           note: Value(_normalizeOptional(note)),
+          createdAt: Value(movementTime),
         ),
       );
 
@@ -1729,12 +1792,14 @@ class InventarioLocalDataSource {
               entity: 'stock_movement',
               entityId: safeMovementId,
               payloadJson: jsonEncode(<String, Object?>{
+                'mode': 'structural',
                 'from': <String, Object?>{
                   'productId': existing.productId,
                   'warehouseId': existing.warehouseId,
                   'type': existing.type,
                   'qty': existing.qty,
                   'reasonCode': existing.reasonCode,
+                  'createdAt': existing.createdAt.toIso8601String(),
                 },
                 'to': <String, Object?>{
                   'productId': safeProductId,
@@ -1742,6 +1807,7 @@ class InventarioLocalDataSource {
                   'type': safeType,
                   'qty': qty.abs(),
                   'reasonCode': safeReasonCode,
+                  'createdAt': movementTime.toIso8601String(),
                 },
               }),
             ),
@@ -2629,6 +2695,24 @@ class InventarioLocalDataSource {
     }
   }
 
+  Future<void> _updateMovementLinkedLotsTimestamp({
+    required String movementId,
+    required DateTime at,
+  }) async {
+    final String safeMovementId = movementId.trim();
+    if (safeMovementId.isEmpty) {
+      return;
+    }
+    await (_db.update(_db.stockLots)
+          ..where((StockLots tbl) => tbl.sourceId.equals(safeMovementId)))
+        .write(
+      StockLotsCompanion(
+        receivedAt: Value(at),
+        createdAt: Value(at),
+      ),
+    );
+  }
+
   Future<List<_ManualLotAllocation>> _consumeFifoLotsForManualOut({
     required String movementId,
     required String productId,
@@ -3196,6 +3280,49 @@ class InventarioLocalDataSource {
       throw Exception('Tipo de movimiento invalido.');
     }
     return value;
+  }
+
+  Future<DateTime> _resolveManualMovementTimestamp({
+    required String userId,
+    required DateTime? requestedAt,
+  }) async {
+    final DateTime now = DateTime.now();
+    if (requestedAt == null) {
+      return now;
+    }
+    final DateTime normalized = requestedAt.toLocal();
+    if (normalized.isAfter(now)) {
+      throw Exception(
+          'La fecha/hora del movimiento no puede estar en el futuro.');
+    }
+    final bool isAdmin = await _isAdminUser(userId);
+    if (!isAdmin) {
+      throw Exception(
+        'Solo un administrador puede definir fecha/hora manual en movimientos.',
+      );
+    }
+    return normalized;
+  }
+
+  Future<bool> _isAdminUser(String userId) async {
+    final String safeUserId = userId.trim();
+    if (safeUserId.isEmpty) {
+      return false;
+    }
+    final User? user = await (_db.select(_db.users)
+          ..where((Users tbl) => tbl.id.equals(safeUserId)))
+        .getSingleOrNull();
+    if (user != null && user.role.trim().toLowerCase() == 'admin') {
+      return true;
+    }
+    final UserRole? role = await (_db.select(_db.userRoles)
+          ..where(
+            (UserRoles tbl) =>
+                tbl.userId.equals(safeUserId) &
+                tbl.roleId.equals(AppRoleIds.admin),
+          ))
+        .getSingleOrNull();
+    return role != null;
   }
 
   String _sanitizeReasonAppliesTo(String raw) {

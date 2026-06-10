@@ -8,7 +8,7 @@ import '../../../shared/widgets/app_scaffold.dart';
 import '../data/tpv_local_datasource.dart';
 import 'tpv_employee_form_page.dart';
 import 'tpv_providers.dart';
-import 'widgets/tpv_employee_avatar.dart';
+import 'widgets/tpv_employee_list_card.dart';
 
 class TpvEmployeesPage extends ConsumerStatefulWidget {
   const TpvEmployeesPage({
@@ -27,19 +27,6 @@ class _TpvEmployeesPageState extends ConsumerState<TpvEmployeesPage> {
   bool _loading = true;
   String _selectedFilter = 'all';
   final TextEditingController _searchCtrl = TextEditingController();
-
-  String _sexLabel(String sex) {
-    switch (sex.trim().toUpperCase()) {
-      case 'F':
-        return 'Femenino';
-      case 'M':
-        return 'Masculino';
-      case 'X':
-        return 'Otro';
-      default:
-        return sex;
-    }
-  }
 
   @override
   void initState() {
@@ -282,28 +269,75 @@ class _TpvEmployeesPageState extends ConsumerState<TpvEmployeesPage> {
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  child: TextField(
-                    controller: _searchCtrl,
-                    decoration: InputDecoration(
-                      hintText: 'Buscar empleado...',
-                      prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                      filled: true,
-                      fillColor: theme.cardColor,
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 12),
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide.none),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color:
+                            theme.colorScheme.outline.withValues(alpha: 0.18),
+                      ),
+                      boxShadow: const <BoxShadow>[
+                        BoxShadow(
+                          color: Color(0x120F172A),
+                          blurRadius: 12,
+                          offset: Offset(0, 4),
+                        ),
+                      ],
                     ),
-                    onChanged: (_) => setState(() {}),
+                    child: TextField(
+                      controller: _searchCtrl,
+                      decoration: InputDecoration(
+                        hintText: 'Buscar empleado...',
+                        prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                        filled: true,
+                        fillColor: Colors.transparent,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(18),
+                          borderSide: BorderSide.none,
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(18),
+                          borderSide: BorderSide.none,
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(18),
+                          borderSide:
+                              const BorderSide(color: Color(0xFF1152D4)),
+                        ),
+                      ),
+                      onChanged: (_) => setState(() {}),
+                    ),
                   ),
                 ),
                 Expanded(
                   child: filteredEmployees.isEmpty
                       ? Center(
-                          child: Text('No hay empleados.',
+                          child: Container(
+                            margin: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(22),
+                              border: Border.all(
+                                color: theme.colorScheme.outline
+                                    .withValues(alpha: 0.14),
+                              ),
+                            ),
+                            child: Text(
+                              'No hay empleados para mostrar con los filtros actuales.',
+                              textAlign: TextAlign.center,
                               style: TextStyle(
-                                  color: theme.colorScheme.onSurfaceVariant)))
+                                color: theme.colorScheme.onSurfaceVariant,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        )
                       : ListView.builder(
                           key: const PageStorageKey<String>(
                               'tpv-employees-list'),
@@ -320,124 +354,26 @@ class _TpvEmployeesPageState extends ConsumerState<TpvEmployeesPage> {
   }
 
   Widget _employeeCard(TpvEmployee employee, ThemeData theme) {
-    final bool isActive = employee.isActive;
-    final String genderLabel = employee.sex != null && employee.sex!.isNotEmpty
-        ? 'Género: ${_sexLabel(employee.sex!)}'
-        : '';
-    final String ciLabel = (employee.identityNumber ?? '').isNotEmpty
-        ? 'CI: ${employee.identityNumber}'
-        : '';
-    final String infoText = [
-      if (genderLabel.isNotEmpty) genderLabel,
-      if (ciLabel.isNotEmpty) ciLabel
-    ].join(' • ');
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border:
-            Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.2)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          SizedBox(
-            width: 64,
-            height: 64,
-            child: TpvEmployeeAvatar(
-              imagePath: employee.imagePath,
-              radius: 32,
-              backgroundColor: isActive
-                  ? const Color(0xFF1152D4).withValues(alpha: 0.1)
-                  : theme.colorScheme.surfaceContainerHighest,
-              iconColor: isActive ? const Color(0xFF1152D4) : Colors.grey,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Row(
-                  children: [
-                    Expanded(
-                        child: Text(employee.name,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w700, fontSize: 16),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis)),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                          color: isActive
-                              ? const Color(0xFFDCFCE7)
-                              : theme.colorScheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(999)),
-                      child: Text(isActive ? 'Activo' : 'Inactivo',
-                          style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: isActive
-                                  ? const Color(0xFF15803D)
-                                  : theme.colorScheme.onSurfaceVariant)),
-                    ),
-                  ],
-                ),
-                if (infoText.isNotEmpty)
-                  Text(infoText,
-                      style: TextStyle(
-                          fontSize: 14,
-                          color: theme.colorScheme.onSurfaceVariant)),
-                if ((employee.associatedUsername ?? '').isNotEmpty)
-                  Text('@${employee.associatedUsername}',
-                      style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          color: Color(0xFF1152D4))),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Column(
-            children: <Widget>[
-              IconButton(
-                  tooltip: 'Editar',
-                  onPressed: () => _openForm(employee: employee),
-                  icon: Icon(Icons.edit_outlined,
-                      color: theme.colorScheme.onSurfaceVariant, size: 20)),
-              IconButton(
-                  tooltip: isActive ? 'Desactivar' : 'Activar',
-                  onPressed: () => _toggleEmployee(employee),
-                  icon: Icon(
-                      isActive
-                          ? Icons.block_rounded
-                          : Icons.check_circle_outline,
-                      color: isActive
-                          ? theme.colorScheme.onSurfaceVariant
-                          : const Color(0xFF1152D4),
-                      size: 20)),
-              IconButton(
-                tooltip: isActive
-                    ? 'Desactiva para eliminar'
-                    : 'Eliminar definitivamente',
-                onPressed: isActive
-                    ? () => _show('Primero desactiva el empleado.')
-                    : () => _deleteEmployee(employee),
-                icon: const Icon(
-                  Icons.delete_forever_rounded,
-                  color: Color(0xFFB91C1C),
-                  size: 20,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+    return TpvEmployeeListCard(
+      employee: employee,
+      onTap: () => _openForm(employee: employee),
+      onActionSelected: (TpvEmployeeCardAction action) {
+        switch (action) {
+          case TpvEmployeeCardAction.edit:
+            _openForm(employee: employee);
+            break;
+          case TpvEmployeeCardAction.toggleActive:
+            _toggleEmployee(employee);
+            break;
+          case TpvEmployeeCardAction.delete:
+            if (employee.isActive) {
+              _show('Primero desactiva el empleado.');
+              return;
+            }
+            _deleteEmployee(employee);
+            break;
+        }
+      },
     );
   }
 }

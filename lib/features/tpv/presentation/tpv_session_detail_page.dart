@@ -250,6 +250,7 @@ class _TpvSessionDetailPageState extends ConsumerState<TpvSessionDetailPage> {
     DateTime draftOpenedAt = _session.openedAt.toLocal();
     DateTime? draftClosedAt = _session.closedAt?.toLocal();
     final bool isOpen = _session.status.trim().toLowerCase() == 'open';
+    bool closedAtManuallyEdited = false;
     final TextEditingController noteCtrl = TextEditingController();
     try {
       final bool? confirm = await showDialog<bool>(
@@ -261,6 +262,7 @@ class _TpvSessionDetailPageState extends ConsumerState<TpvSessionDetailPage> {
               Future<void> pickOpenedAt() async {
                 final DateTime now = DateTime.now();
                 final DateTime firstDate = DateTime(now.year - 5, 1, 1);
+                final DateTime previousOpenedAt = draftOpenedAt;
                 final DateTime? picked = await _pickDateTime(
                   initial: draftOpenedAt,
                   firstDate: firstDate,
@@ -270,10 +272,15 @@ class _TpvSessionDetailPageState extends ConsumerState<TpvSessionDetailPage> {
                   return;
                 }
                 setD(() {
+                  final Duration delta = picked.difference(previousOpenedAt);
                   draftOpenedAt = picked;
-                  if (draftClosedAt != null &&
-                      draftClosedAt!.isBefore(draftOpenedAt)) {
-                    draftClosedAt = draftOpenedAt;
+                  if (!isOpen && draftClosedAt != null) {
+                    if (!closedAtManuallyEdited) {
+                      draftClosedAt = draftClosedAt!.add(delta);
+                    }
+                    if (draftClosedAt!.isBefore(draftOpenedAt)) {
+                      draftClosedAt = draftOpenedAt;
+                    }
                   }
                 });
               }
@@ -291,6 +298,7 @@ class _TpvSessionDetailPageState extends ConsumerState<TpvSessionDetailPage> {
                 }
                 setD(() {
                   draftClosedAt = picked;
+                  closedAtManuallyEdited = true;
                 });
               }
 
@@ -460,7 +468,6 @@ class _TpvSessionDetailPageState extends ConsumerState<TpvSessionDetailPage> {
             'Cierre',
             _session.closedAt == null ? '-' : _date(_session.closedAt!),
           ),
-          _kv('Fondo inicial', _money(_session.openingFloatCents)),
           _kv(
             'Efectivo cierre',
             _money(_session.closingCashCents ?? 0),

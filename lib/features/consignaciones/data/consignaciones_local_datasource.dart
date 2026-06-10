@@ -34,14 +34,20 @@ class ConsignmentCustomerDebt {
     required this.customerId,
     required this.customerName,
     this.customerPhone,
+    required this.totalConsignedPrimaryCents,
+    required this.totalPaidPrimaryCents,
     required this.pendingPrimaryCents,
+    required this.paymentSummary,
     required this.sales,
   });
 
   final String customerId;
   final String customerName;
   final String? customerPhone;
+  final int totalConsignedPrimaryCents;
+  final int totalPaidPrimaryCents;
   final int pendingPrimaryCents;
+  final List<ConsignmentCustomerPaymentRecord> paymentSummary;
   final List<ConsignmentSaleDebt> sales;
 
   DateTime? get lastSaleAt {
@@ -56,6 +62,22 @@ class ConsignmentCustomerDebt {
     }
     return newest;
   }
+}
+
+class ConsignmentCustomerPaymentRecord {
+  const ConsignmentCustomerPaymentRecord({
+    required this.method,
+    required this.amountCents,
+    required this.currencySymbol,
+    required this.createdAt,
+    this.transactionId,
+  });
+
+  final String method;
+  final int amountCents;
+  final String currencySymbol;
+  final DateTime createdAt;
+  final String? transactionId;
 }
 
 class ConsignmentSaleDebt {
@@ -261,6 +283,16 @@ class ConsignacionesLocalDataSource {
         currencyCode: saleCurrencyCode,
         currencyConfig: currencyConfig,
       );
+      final int totalPrimaryCents = _toPrimaryCents(
+        amountCents: totalCents,
+        currencyCode: saleCurrencyCode,
+        currencyConfig: currencyConfig,
+      );
+      final int paidPrimaryCents = _toPrimaryCents(
+        amountCents: paidCents,
+        currencyCode: saleCurrencyCode,
+        currencyConfig: currencyConfig,
+      );
 
       final ConsignmentSaleDebt sale = ConsignmentSaleDebt(
         saleId: saleId,
@@ -290,8 +322,69 @@ class ConsignacionesLocalDataSource {
         ),
       );
       bucket.pendingPrimaryCents += pendingPrimaryCents;
+      bucket.totalConsignedPrimaryCents += totalPrimaryCents;
+      bucket.totalPaidPrimaryCents += paidPrimaryCents;
       bucket.sales.add(sale);
       totalPendingPrimaryCents += pendingPrimaryCents;
+    }
+
+    final List<QueryRow> paymentRows = await _db.customSelect(
+      '''
+      SELECT
+        s.customer_id AS customer_id,
+        p.method AS method,
+        p.amount_cents AS amount_cents,
+        p.transaction_id AS transaction_id,
+        p.created_at AS created_at,
+        s.terminal_id AS terminal_id,
+        t.currency_code AS terminal_currency_code,
+        t.currency_symbol AS terminal_currency_symbol
+      FROM payments p
+      INNER JOIN sales s
+        ON s.id = p.sale_id
+      LEFT JOIN pos_terminals t
+        ON t.id = s.terminal_id
+      WHERE s.status = 'posted'
+        AND s.customer_id IS NOT NULL
+      ORDER BY p.created_at DESC
+      ''',
+    ).get();
+    for (final QueryRow row in paymentRows) {
+      final String customerId = _readText(row, 'customer_id', fallback: '');
+      if (customerId.isEmpty) {
+        continue;
+      }
+      final _MutableCustomerDebt? bucket = byCustomer[customerId];
+      if (bucket == null) {
+        continue;
+      }
+      if (bucket.paymentSummary.length >= 12) {
+        continue;
+      }
+      final String terminalId =
+          (row.readNullable<String>('terminal_id') ?? '').trim();
+      final bool isPos = terminalId.isNotEmpty;
+      final String currencyCode = isPos
+          ? _sanitizeCode(
+              row.readNullable<String>('terminal_currency_code'),
+              fallback: primaryCode,
+            )
+          : primaryCode;
+      final String currencySymbol = isPos
+          ? _sanitizeSymbol(
+              row.readNullable<String>('terminal_currency_symbol'),
+              fallback: currencyConfig.symbolForCode(currencyCode),
+            )
+          : primarySymbol;
+      bucket.paymentSummary.add(
+        ConsignmentCustomerPaymentRecord(
+          method: _readText(row, 'method', fallback: 'pago'),
+          amountCents: (row.data['amount_cents'] as num?)?.toInt() ?? 0,
+          currencySymbol: currencySymbol,
+          transactionId: _nullableText(row, 'transaction_id'),
+          createdAt: row.readNullable<DateTime>('created_at') ?? DateTime.now(),
+        ),
+      );
     }
 
     final List<ConsignmentCustomerDebt> customers =
@@ -304,7 +397,10 @@ class ConsignacionesLocalDataSource {
         customerId: row.customerId,
         customerName: row.customerName,
         customerPhone: row.customerPhone,
+        totalConsignedPrimaryCents: row.totalConsignedPrimaryCents,
+        totalPaidPrimaryCents: row.totalPaidPrimaryCents,
         pendingPrimaryCents: row.pendingPrimaryCents,
+        paymentSummary: row.paymentSummary.toList(growable: false),
         sales: row.sales.toList(growable: false),
       );
     }).toList(growable: false)
@@ -577,6 +673,339 @@ class ConsignacionesLocalDataSource {
     });
   }
 
+  Future<int> registerCustomerDebtPayment({
+    required String customerId,
+    required String userId,
+    required String method,
+    required int amountPrimaryCents,
+    String? transactionId,
+    Set<String> onlineMethodCodes = const <String>{},
+  }) async {
+    await _licenseService.requireWriteAccess();
+
+    final String cleanCustomerId = customerId.trim();
+    final String cleanUserId = userId.trim();
+    final String cleanMethod = method.trim().toLowerCase();
+    final String cleanTx = (transactionId ?? '').trim();
+    if (cleanCustomerId.isEmpty) {
+      throw Exception('Cliente inválido para registrar pago.');
+    }
+    if (cleanUserId.isEmpty) {
+      throw Exception('Usuario inválido para registrar pago.');
+    }
+    final bool canReconcile = await _userHasPermission(
+      userId: cleanUserId,
+      permissionKey: AppPermissionKeys.consignmentsReconcile,
+    );
+    if (!canReconcile) {
+      throw Exception('No tienes permisos para conciliar consignaciones.');
+    }
+    if (cleanMethod.isEmpty) {
+      throw Exception('Debes seleccionar un método de pago.');
+    }
+    if (cleanMethod == _consignmentMethodCode) {
+      throw Exception('Consignación no es válido para registrar abonos.');
+    }
+    if (amountPrimaryCents <= 0) {
+      throw Exception('El monto debe ser mayor que cero.');
+    }
+    if (onlineMethodCodes.contains(cleanMethod) && cleanTx.isEmpty) {
+      throw Exception('Este método requiere ID de transacción.');
+    }
+
+    final AppCurrencyConfig currencyConfig =
+        (await _configDs.loadCurrencyConfig()).normalized();
+    final String primaryCode = currencyConfig.primaryCurrencyCode;
+
+    return _db.transaction(() async {
+      final List<QueryRow> rows = await _db.customSelect(
+        '''
+        SELECT
+          s.id AS sale_id,
+          s.created_at AS created_at,
+          s.total_cents AS total_cents,
+          COALESCE(paid.total_paid_cents, 0) AS paid_cents,
+          s.terminal_id AS terminal_id,
+          t.currency_code AS terminal_currency_code
+        FROM sales s
+        LEFT JOIN (
+          SELECT sale_id, SUM(amount_cents) AS total_paid_cents
+          FROM payments
+          GROUP BY sale_id
+        ) paid ON paid.sale_id = s.id
+        LEFT JOIN pos_terminals t ON t.id = s.terminal_id
+        WHERE s.status = 'posted'
+          AND s.customer_id = ?
+        ORDER BY s.created_at ASC
+        ''',
+        variables: <Variable<Object>>[Variable<String>(cleanCustomerId)],
+      ).get();
+      if (rows.isEmpty) {
+        throw Exception('No hay ventas en consignación para este cliente.');
+      }
+
+      final List<_PendingCustomerSaleDebt> pendingSales =
+          <_PendingCustomerSaleDebt>[];
+      int totalPendingPrimaryCents = 0;
+      for (final QueryRow row in rows) {
+        final int totalCents = (row.data['total_cents'] as num?)?.toInt() ?? 0;
+        final int paidCents = (row.data['paid_cents'] as num?)?.toInt() ?? 0;
+        final int pendingCents = totalCents - paidCents;
+        if (pendingCents <= 0) {
+          continue;
+        }
+        final String saleId = _readText(row, 'sale_id', fallback: '');
+        if (saleId.isEmpty) {
+          continue;
+        }
+        final String terminalId =
+            (row.readNullable<String>('terminal_id') ?? '').trim();
+        final String saleCurrencyCode = terminalId.isNotEmpty
+            ? _sanitizeCode(
+                row.readNullable<String>('terminal_currency_code'),
+                fallback: primaryCode,
+              )
+            : primaryCode;
+        final int pendingPrimaryCents = _toPrimaryCents(
+          amountCents: pendingCents,
+          currencyCode: saleCurrencyCode,
+          currencyConfig: currencyConfig,
+        );
+        if (pendingPrimaryCents <= 0) {
+          continue;
+        }
+        pendingSales.add(
+          _PendingCustomerSaleDebt(
+            saleId: saleId,
+            pendingSaleCents: pendingCents,
+            pendingPrimaryCents: pendingPrimaryCents,
+            currencyCode: saleCurrencyCode,
+          ),
+        );
+        totalPendingPrimaryCents += pendingPrimaryCents;
+      }
+
+      if (pendingSales.isEmpty) {
+        throw Exception('El cliente no tiene saldo pendiente.');
+      }
+      if (amountPrimaryCents > totalPendingPrimaryCents) {
+        throw Exception('El abono supera el saldo pendiente del cliente.');
+      }
+
+      int remainingPrimaryCents = amountPrimaryCents;
+      int appliedPrimaryCents = 0;
+      final List<Map<String, Object?>> allocations = <Map<String, Object?>>[];
+
+      for (final _PendingCustomerSaleDebt sale in pendingSales) {
+        if (remainingPrimaryCents <= 0) {
+          break;
+        }
+        int allocatePrimaryCents =
+            remainingPrimaryCents.clamp(0, sale.pendingPrimaryCents);
+        if (allocatePrimaryCents <= 0) {
+          continue;
+        }
+
+        int allocateSaleCents = _fromPrimaryCents(
+          amountPrimaryCents: allocatePrimaryCents,
+          targetCurrencyCode: sale.currencyCode,
+          currencyConfig: currencyConfig,
+        );
+        if (allocateSaleCents <= 0) {
+          allocateSaleCents = 1;
+        }
+        if (allocateSaleCents > sale.pendingSaleCents) {
+          allocateSaleCents = sale.pendingSaleCents;
+        }
+        allocatePrimaryCents = _toPrimaryCents(
+          amountCents: allocateSaleCents,
+          currencyCode: sale.currencyCode,
+          currencyConfig: currencyConfig,
+        );
+        if (allocateSaleCents <= 0 || allocatePrimaryCents <= 0) {
+          continue;
+        }
+
+        await _db.into(_db.payments).insert(
+              PaymentsCompanion.insert(
+                id: _uuid.v4(),
+                saleId: sale.saleId,
+                method: cleanMethod,
+                amountCents: allocateSaleCents,
+                transactionId: Value(cleanTx.isEmpty ? null : cleanTx),
+              ),
+            );
+
+        allocations.add(<String, Object?>{
+          'saleId': sale.saleId,
+          'amountCents': allocateSaleCents,
+          'currencyCode': sale.currencyCode,
+          'amountPrimaryCents': allocatePrimaryCents,
+        });
+        remainingPrimaryCents -= allocatePrimaryCents;
+        appliedPrimaryCents += allocatePrimaryCents;
+      }
+
+      if (appliedPrimaryCents <= 0) {
+        throw Exception(
+            'No se pudo aplicar el abono a las deudas del cliente.');
+      }
+
+      await _db.into(_db.auditLogs).insert(
+            AuditLogsCompanion.insert(
+              id: _uuid.v4(),
+              userId: Value(cleanUserId),
+              action: 'CUSTOMER_DEBT_PAYMENT_REGISTERED',
+              entity: 'customer',
+              entityId: cleanCustomerId,
+              payloadJson: jsonEncode(<String, Object?>{
+                'method': cleanMethod,
+                'amountPrimaryCentsRequested': amountPrimaryCents,
+                'amountPrimaryCentsApplied': appliedPrimaryCents,
+                'transactionId': cleanTx.isEmpty ? null : cleanTx,
+                'pendingBeforePrimaryCents': totalPendingPrimaryCents,
+                'pendingAfterPrimaryCents':
+                    (totalPendingPrimaryCents - appliedPrimaryCents)
+                        .clamp(0, totalPendingPrimaryCents),
+                'allocations': allocations,
+              }),
+            ),
+          );
+
+      return (totalPendingPrimaryCents - appliedPrimaryCents)
+          .clamp(0, totalPendingPrimaryCents);
+    });
+  }
+
+  Future<void> reassignConsignmentSaleCustomer({
+    required String saleId,
+    required String newCustomerId,
+    required String userId,
+  }) async {
+    await _licenseService.requireWriteAccess();
+
+    final String cleanSaleId = saleId.trim();
+    final String cleanCustomerId = newCustomerId.trim();
+    final String cleanUserId = userId.trim();
+    if (cleanSaleId.isEmpty) {
+      throw Exception('Venta inválida.');
+    }
+    if (cleanCustomerId.isEmpty) {
+      throw Exception('Cliente inválido.');
+    }
+    if (cleanUserId.isEmpty) {
+      throw Exception('Usuario inválido.');
+    }
+    final bool canReconcile = await _userHasPermission(
+      userId: cleanUserId,
+      permissionKey: AppPermissionKeys.consignmentsReconcile,
+    );
+    if (!canReconcile) {
+      throw Exception('No tienes permisos para editar consignaciones.');
+    }
+
+    await _db.transaction(() async {
+      final QueryRow? saleRow = await _db.customSelect(
+        '''
+        SELECT
+          s.id AS sale_id,
+          s.folio AS folio,
+          s.customer_id AS customer_id,
+          s.total_cents AS total_cents,
+          COALESCE(paid.total_paid_cents, 0) AS paid_cents
+        FROM sales s
+        LEFT JOIN (
+          SELECT sale_id, SUM(amount_cents) AS total_paid_cents
+          FROM payments
+          GROUP BY sale_id
+        ) paid ON paid.sale_id = s.id
+        WHERE s.id = ?
+          AND s.status = 'posted'
+          AND s.customer_id IS NOT NULL
+        LIMIT 1
+        ''',
+        variables: <Variable<Object>>[Variable<String>(cleanSaleId)],
+      ).getSingleOrNull();
+      if (saleRow == null) {
+        throw Exception('La venta no existe o no corresponde a consignación.');
+      }
+      final int totalCents =
+          (saleRow.data['total_cents'] as num?)?.toInt() ?? 0;
+      final int paidCents = (saleRow.data['paid_cents'] as num?)?.toInt() ?? 0;
+      final int pendingCents = totalCents - paidCents;
+      if (pendingCents <= 0) {
+        throw Exception('La venta ya está conciliada.');
+      }
+
+      final String previousCustomerId =
+          _readText(saleRow, 'customer_id', fallback: '');
+      if (previousCustomerId.isEmpty) {
+        throw Exception('La venta no tiene cliente asociado.');
+      }
+      if (previousCustomerId == cleanCustomerId) {
+        return;
+      }
+
+      final QueryRow? newCustomer = await _db.customSelect(
+        '''
+        SELECT
+          c.id AS customer_id,
+          COALESCE(c.full_name, 'Cliente') AS customer_name
+        FROM customers c
+        WHERE c.id = ?
+          AND c.is_active = 1
+        LIMIT 1
+        ''',
+        variables: <Variable<Object>>[Variable<String>(cleanCustomerId)],
+      ).getSingleOrNull();
+      if (newCustomer == null) {
+        throw Exception(
+            'El cliente seleccionado no es válido o está inactivo.');
+      }
+      final QueryRow? oldCustomer = await _db.customSelect(
+        '''
+        SELECT
+          c.id AS customer_id,
+          COALESCE(c.full_name, 'Cliente') AS customer_name
+        FROM customers c
+        WHERE c.id = ?
+        LIMIT 1
+        ''',
+        variables: <Variable<Object>>[Variable<String>(previousCustomerId)],
+      ).getSingleOrNull();
+
+      await (_db.update(_db.sales)
+            ..where((Sales tbl) => tbl.id.equals(cleanSaleId)))
+          .write(
+        SalesCompanion(
+          customerId: Value(cleanCustomerId),
+        ),
+      );
+
+      await _db.into(_db.auditLogs).insert(
+            AuditLogsCompanion.insert(
+              id: _uuid.v4(),
+              userId: Value(cleanUserId),
+              action: 'SALE_CONSIGNMENT_CUSTOMER_REASSIGNED',
+              entity: 'sale',
+              entityId: cleanSaleId,
+              payloadJson: jsonEncode(<String, Object?>{
+                'saleId': cleanSaleId,
+                'folio': _readText(saleRow, 'folio', fallback: '-'),
+                'pendingCents': pendingCents,
+                'fromCustomerId': previousCustomerId,
+                'fromCustomerName': _readText(
+                    oldCustomer ?? saleRow, 'customer_name',
+                    fallback: 'Cliente'),
+                'toCustomerId': cleanCustomerId,
+                'toCustomerName': _readText(newCustomer, 'customer_name',
+                    fallback: 'Cliente'),
+              }),
+            ),
+          );
+    });
+  }
+
   int _toPrimaryCents({
     required int amountCents,
     required String currencyCode,
@@ -592,6 +1021,23 @@ class ConsignacionesLocalDataSource {
       return amountCents;
     }
     return (amountCents / rateToPrimary).round();
+  }
+
+  int _fromPrimaryCents({
+    required int amountPrimaryCents,
+    required String targetCurrencyCode,
+    required AppCurrencyConfig currencyConfig,
+  }) {
+    final String code = targetCurrencyCode.trim().toUpperCase();
+    if (code.isEmpty || code == currencyConfig.primaryCurrencyCode) {
+      return amountPrimaryCents;
+    }
+    final AppCurrencySetting? row = currencyConfig.currencyByCode(code);
+    final double rateToPrimary = row?.rateToPrimary ?? 1;
+    if (!rateToPrimary.isFinite || rateToPrimary <= 0) {
+      return amountPrimaryCents;
+    }
+    return (amountPrimaryCents * rateToPrimary).round();
   }
 
   String _readText(QueryRow row, String key, {required String fallback}) {
@@ -678,6 +1124,24 @@ class _MutableCustomerDebt {
   final String customerName;
   final String? customerCode;
   final String? customerPhone;
+  int totalConsignedPrimaryCents = 0;
+  int totalPaidPrimaryCents = 0;
   int pendingPrimaryCents = 0;
+  final List<ConsignmentCustomerPaymentRecord> paymentSummary =
+      <ConsignmentCustomerPaymentRecord>[];
   final List<ConsignmentSaleDebt> sales = <ConsignmentSaleDebt>[];
+}
+
+class _PendingCustomerSaleDebt {
+  const _PendingCustomerSaleDebt({
+    required this.saleId,
+    required this.pendingSaleCents,
+    required this.pendingPrimaryCents,
+    required this.currencyCode,
+  });
+
+  final String saleId;
+  final int pendingSaleCents;
+  final int pendingPrimaryCents;
+  final String currencyCode;
 }

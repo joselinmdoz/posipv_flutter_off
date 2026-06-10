@@ -14,10 +14,15 @@ class AppPermissionKeys {
   static const String tpvManageTerminals = 'tpv.manage.terminals';
   static const String tpvManageEmployees = 'tpv.manage.employees';
   static const String tpvManageSessions = 'tpv.manage.sessions';
+  static const String tpvMovementEntry = 'tpv.movement.entry';
+  static const String tpvMovementOutput = 'tpv.movement.output';
+  static const String tpvMovementTransfer = 'tpv.movement.transfer';
 
   static const String salesPos = 'sales.pos';
   static const String salesDirect = 'sales.direct';
   static const String salesConsignment = 'sales.consignment';
+  static const String ordersView = 'orders.view';
+  static const String ordersManage = 'orders.manage';
 
   static const String inventoryView = 'inventory.view';
   static const String inventoryMovements = 'inventory.movements';
@@ -98,6 +103,24 @@ class AppPermissionsCatalog {
       description: 'Abrir y cerrar turnos de TPV.',
     ),
     AppPermissionDefinition(
+      key: AppPermissionKeys.tpvMovementEntry,
+      module: 'TPV',
+      label: 'TPV: entrada de inventario',
+      description: 'Permite registrar entradas manuales desde el TPV.',
+    ),
+    AppPermissionDefinition(
+      key: AppPermissionKeys.tpvMovementOutput,
+      module: 'TPV',
+      label: 'TPV: salida de inventario',
+      description: 'Permite registrar salidas manuales desde el TPV.',
+    ),
+    AppPermissionDefinition(
+      key: AppPermissionKeys.tpvMovementTransfer,
+      module: 'TPV',
+      label: 'TPV: transferencias',
+      description: 'Permite transferencias entre almacenes desde el TPV.',
+    ),
+    AppPermissionDefinition(
       key: AppPermissionKeys.salesPos,
       module: 'Ventas',
       label: 'Vender desde TPV',
@@ -114,6 +137,18 @@ class AppPermissionsCatalog {
       module: 'Ventas',
       label: 'Vender en consignación',
       description: 'Registrar ventas en consignación (sin pago inicial).',
+    ),
+    AppPermissionDefinition(
+      key: AppPermissionKeys.ordersView,
+      module: 'Pedidos',
+      label: 'Ver pedidos',
+      description: 'Acceder al modulo de pedidos de impresion.',
+    ),
+    AppPermissionDefinition(
+      key: AppPermissionKeys.ordersManage,
+      module: 'Pedidos',
+      label: 'Gestionar pedidos',
+      description: 'Crear, editar, asignar y actualizar pedidos.',
     ),
     AppPermissionDefinition(
       key: AppPermissionKeys.inventoryView,
@@ -250,6 +285,9 @@ class AppPermissionsCatalog {
     AppPermissionKeys.homeView,
     AppPermissionKeys.tpvView,
     AppPermissionKeys.tpvManageSessions,
+    AppPermissionKeys.tpvMovementEntry,
+    AppPermissionKeys.tpvMovementOutput,
+    AppPermissionKeys.tpvMovementTransfer,
     AppPermissionKeys.salesPos,
     AppPermissionKeys.salesConsignment,
     AppPermissionKeys.customersView,
@@ -269,6 +307,7 @@ class AppPermissionsCatalog {
     '/ventas-pos': AppPermissionKeys.salesPos,
     '/ventas-directas': AppPermissionKeys.salesDirect,
     '/consignaciones': AppPermissionKeys.consignmentsView,
+    '/pedidos': AppPermissionKeys.ordersView,
     '/clientes': AppPermissionKeys.customersView,
     '/inventario': AppPermissionKeys.inventoryView,
     '/inventario-movimientos': AppPermissionKeys.inventoryMovements,
@@ -285,6 +324,8 @@ class AppPermissionsCatalog {
     '/configuracion-catalogos-producto': AppPermissionKeys.productsManage,
     '/configuracion-unidades-medida': AppPermissionKeys.productsManage,
     '/configuracion-tipos-unidad': AppPermissionKeys.productsManage,
+    '/configuracion-tipos-trabajo-pedidos': AppPermissionKeys.ordersManage,
+    '/configuracion-roles-trabajo-pedidos': AppPermissionKeys.ordersManage,
     '/configuracion-archivados': AppPermissionKeys.usersManage,
     '/configuracion-metodos-pago': AppPermissionKeys.settingsData,
     '/configuracion-usuarios': AppPermissionKeys.usersManage,
@@ -299,6 +340,7 @@ class AppPermissionsCatalog {
     '/productos': AppPermissionKeys.productsManage,
     '/almacenes': AppPermissionKeys.warehousesManage,
     '/clientes': AppPermissionKeys.customersManage,
+    '/pedidos': AppPermissionKeys.ordersManage,
     '/compras': AppPermissionKeys.purchasesManage,
     '/configuracion': AppPermissionKeys.settingsData,
   };
@@ -308,6 +350,7 @@ class AppPermissionsCatalog {
     '/tpv',
     '/ventas-pos',
     '/ventas-directas',
+    '/pedidos',
     '/clientes',
     '/inventario',
     '/compras',

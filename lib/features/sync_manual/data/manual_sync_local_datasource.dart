@@ -772,6 +772,12 @@ class ManualSyncLocalDataSource {
                     Value(_readString(row['productType'], fallback: 'Fisico')),
                 unitMeasure:
                     Value(_readString(row['unitMeasure'], fallback: 'Unidad')),
+                orderCostingMode: Value(
+                  _readString(
+                    row['orderCostingMode'],
+                    fallback: 'ordered_qty',
+                  ),
+                ),
                 currencyCode:
                     Value(_readString(row['currencyCode'], fallback: 'USD')),
                 isActive: Value(_readBool(row['isActive'], fallback: true)),
@@ -1883,6 +1889,7 @@ class ManualSyncLocalDataSource {
       'category': row.category,
       'productType': row.productType,
       'unitMeasure': row.unitMeasure,
+      'orderCostingMode': row.orderCostingMode,
       'currencyCode': row.currencyCode,
       'isActive': row.isActive,
       'createdAt': row.createdAt.toIso8601String(),

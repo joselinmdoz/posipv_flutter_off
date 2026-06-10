@@ -9,14 +9,29 @@ class ConsignmentCustomerCard extends StatelessWidget {
     required this.customer,
     required this.primaryCurrencySymbol,
     required this.onOpenSale,
+    required this.onReconcileCustomer,
+    required this.onChangeSaleCustomer,
   });
 
   final ConsignmentCustomerDebt customer;
   final String primaryCurrencySymbol;
   final void Function(ConsignmentSaleDebt sale) onOpenSale;
+  final VoidCallback onReconcileCustomer;
+  final void Function(ConsignmentSaleDebt sale, String currentCustomerId)
+      onChangeSaleCustomer;
 
   String _money(int cents, String symbol) {
     return '$symbol${(cents / 100).toStringAsFixed(2)}';
+  }
+
+  String _date(DateTime dt) {
+    final DateTime local = dt.toLocal();
+    final String day = local.day.toString().padLeft(2, '0');
+    final String month = local.month.toString().padLeft(2, '0');
+    final String year = local.year.toString();
+    final String hh = local.hour.toString().padLeft(2, '0');
+    final String mm = local.minute.toString().padLeft(2, '0');
+    return '$day/$month/$year $hh:$mm';
   }
 
   @override
@@ -58,17 +73,103 @@ class ConsignmentCustomerCard extends StatelessWidget {
             color: Color(0xFFB91C1C),
           ),
         ),
-        children: customer.sales
-            .map(
-              (ConsignmentSaleDebt sale) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: ConsignmentSaleTile(
-                  sale: sale,
-                  onTap: () => onOpenSale(sale),
-                ),
+        children: <Widget>[
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+              border: Border.all(
+                color:
+                    isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
               ),
-            )
-            .toList(growable: false),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    const Expanded(
+                      child: Text(
+                        'Resumen',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    Text(
+                      'Pagado ${_money(customer.totalPaidPrimaryCents, primaryCurrencySymbol)} de ${_money(customer.totalConsignedPrimaryCents, primaryCurrencySymbol)}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: isDark
+                            ? const Color(0xFFCBD5E1)
+                            : const Color(0xFF334155),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: onReconcileCustomer,
+                    icon: const Icon(Icons.task_alt_rounded),
+                    label: const Text('Conciliar cliente'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...customer.sales.map(
+            (ConsignmentSaleDebt sale) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: ConsignmentSaleTile(
+                sale: sale,
+                onTap: () => onOpenSale(sale),
+                onChangeCustomer: () =>
+                    onChangeSaleCustomer(sale, customer.customerId),
+              ),
+            ),
+          ),
+          if (customer.paymentSummary.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 2),
+            Text(
+              'Pagos recientes',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color:
+                    isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155),
+              ),
+            ),
+            const SizedBox(height: 6),
+            ...customer.paymentSummary.take(4).map(
+                  (ConsignmentCustomerPaymentRecord row) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: Text(
+                            _date(row.createdAt),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isDark
+                                  ? const Color(0xFF94A3B8)
+                                  : const Color(0xFF64748B),
+                            ),
+                          ),
+                        ),
+                        Text(
+                          _money(row.amountCents, row.currencySymbol),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+          ],
+        ],
       ),
     );
   }

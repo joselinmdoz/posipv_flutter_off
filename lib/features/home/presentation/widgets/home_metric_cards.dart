@@ -245,7 +245,7 @@ class HomeMetricCards extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            'PEDIDOS',
+            'VENTAS',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,

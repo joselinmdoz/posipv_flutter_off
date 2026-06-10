@@ -282,6 +282,8 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
         session?.hasPermission(AppPermissionKeys.usersManage) ?? false;
     final bool canManageProducts =
         session?.hasPermission(AppPermissionKeys.productsManage) ?? false;
+    final bool canManageOrders =
+        session?.hasPermission(AppPermissionKeys.ordersManage) ?? false;
     final bool canManageDashboardWidgets =
         session?.hasPermission(AppPermissionKeys.settingsDashboardWidgets) ??
             false;
@@ -346,6 +348,24 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
                   subtitle: 'Gestiona tipos de unidad y símbolos',
                   onTap: canManageProducts
                       ? () => context.push('/configuracion-unidades-medida')
+                      : null,
+                ),
+                ConfigOptionTile(
+                  icon: Icons.precision_manufacturing_outlined,
+                  title: 'Tipos de trabajo',
+                  subtitle: 'Configura procesos para pedidos del taller',
+                  onTap: canManageOrders
+                      ? () =>
+                          context.push('/configuracion-tipos-trabajo-pedidos')
+                      : null,
+                ),
+                ConfigOptionTile(
+                  icon: Icons.badge_outlined,
+                  title: 'Roles de trabajo',
+                  subtitle: 'Gestiona los roles de los trabajadores del taller',
+                  onTap: canManageOrders
+                      ? () =>
+                          context.push('/configuracion-roles-trabajo-pedidos')
                       : null,
                 ),
                 const SizedBox(height: 14),

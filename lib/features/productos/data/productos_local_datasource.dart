@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import '../../../core/db/app_database.dart';
 import '../../../core/licensing/license_models.dart';
 import '../../../core/licensing/license_service.dart';
+import '../domain/product_order_costing_mode.dart';
 
 enum ProductCatalogKind { type, category, unit }
 
@@ -42,6 +43,7 @@ class ProductFormInput {
     required this.category,
     required this.productType,
     required this.unitMeasure,
+    required this.orderCostingMode,
     required this.currencyCode,
     this.barcode,
     this.imagePath,
@@ -55,6 +57,7 @@ class ProductFormInput {
   final String category;
   final String productType;
   final String unitMeasure;
+  final String orderCostingMode;
   final String currencyCode;
   final String? barcode;
   final String? imagePath;
@@ -857,7 +860,7 @@ class ProductosLocalDataSource {
       } catch (_) {
         catalog = _defaultMeasurementCatalog();
       }
-      catalog = catalog.normalized();
+      catalog = _mergeDefaultMeasurementCatalog(catalog).normalized();
       await _saveMeasurementUnitCatalog(catalog);
     }
     await _syncMeasurementUnitsWithProductCatalog(catalog.units);
@@ -1099,6 +1102,9 @@ class ProductosLocalDataSource {
             category: Value(input.category),
             productType: Value(input.productType),
             unitMeasure: Value(input.unitMeasure),
+            orderCostingMode: Value(
+              ProductOrderCostingModeCatalog.normalize(input.orderCostingMode),
+            ),
             currencyCode: Value(input.currencyCode),
           ),
         );
@@ -1136,6 +1142,9 @@ class ProductosLocalDataSource {
         category: Value(input.category),
         productType: Value(input.productType),
         unitMeasure: Value(input.unitMeasure),
+        orderCostingMode: Value(
+          ProductOrderCostingModeCatalog.normalize(input.orderCostingMode),
+        ),
         currencyCode: Value(input.currencyCode),
         updatedAt: Value(DateTime.now()),
       ),
@@ -1587,12 +1596,20 @@ class ProductosLocalDataSource {
         sortOrder: 0,
       ),
       MeasurementUnitTypeModel(
+        id: 'unit-type-area',
+        name: 'Superficie',
+        description: 'Unidades para area y cobertura.',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 1,
+      ),
+      MeasurementUnitTypeModel(
         id: 'unit-type-mass',
         name: 'Masa',
         description: 'Unidades para peso y masa.',
         isSystem: true,
         isActive: true,
-        sortOrder: 1,
+        sortOrder: 2,
       ),
       MeasurementUnitTypeModel(
         id: 'unit-type-volume',
@@ -1600,7 +1617,15 @@ class ProductosLocalDataSource {
         description: 'Unidades para capacidad y líquidos.',
         isSystem: true,
         isActive: true,
-        sortOrder: 2,
+        sortOrder: 3,
+      ),
+      MeasurementUnitTypeModel(
+        id: 'unit-type-kitchen',
+        name: 'Cocina',
+        description: 'Medidas prácticas para recetas y preparación.',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 4,
       ),
       MeasurementUnitTypeModel(
         id: 'unit-type-count',
@@ -1608,7 +1633,7 @@ class ProductosLocalDataSource {
         description: 'Unidades de conteo para productos.',
         isSystem: true,
         isActive: true,
-        sortOrder: 3,
+        sortOrder: 5,
       ),
     ];
 
@@ -1632,13 +1657,22 @@ class ProductosLocalDataSource {
         sortOrder: 1,
       ),
       MeasurementUnitModel(
+        id: 'unit-dm',
+        typeId: 'unit-type-length',
+        symbol: 'dm',
+        name: 'Decimetro',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 2,
+      ),
+      MeasurementUnitModel(
         id: 'unit-cm',
         typeId: 'unit-type-length',
         symbol: 'cm',
         name: 'Centimetro',
         isSystem: true,
         isActive: true,
-        sortOrder: 2,
+        sortOrder: 3,
       ),
       MeasurementUnitModel(
         id: 'unit-mm',
@@ -1647,7 +1681,43 @@ class ProductosLocalDataSource {
         name: 'Milimetro',
         isSystem: true,
         isActive: true,
-        sortOrder: 3,
+        sortOrder: 4,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-m2',
+        typeId: 'unit-type-area',
+        symbol: 'm²',
+        name: 'Metro cuadrado',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 10,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-dm2',
+        typeId: 'unit-type-area',
+        symbol: 'dm²',
+        name: 'Decimetro cuadrado',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 11,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-cm2',
+        typeId: 'unit-type-area',
+        symbol: 'cm²',
+        name: 'Centimetro cuadrado',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 12,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-mm2',
+        typeId: 'unit-type-area',
+        symbol: 'mm²',
+        name: 'Milimetro cuadrado',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 13,
       ),
       MeasurementUnitModel(
         id: 'unit-g',
@@ -1656,7 +1726,16 @@ class ProductosLocalDataSource {
         name: 'Gramo',
         isSystem: true,
         isActive: true,
-        sortOrder: 10,
+        sortOrder: 20,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-mg',
+        typeId: 'unit-type-mass',
+        symbol: 'mg',
+        name: 'Miligramo',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 21,
       ),
       MeasurementUnitModel(
         id: 'unit-kg',
@@ -1665,7 +1744,16 @@ class ProductosLocalDataSource {
         name: 'Kilogramo',
         isSystem: true,
         isActive: true,
-        sortOrder: 11,
+        sortOrder: 22,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-t',
+        typeId: 'unit-type-mass',
+        symbol: 't',
+        name: 'Tonelada',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 23,
       ),
       MeasurementUnitModel(
         id: 'unit-lb',
@@ -1674,7 +1762,16 @@ class ProductosLocalDataSource {
         name: 'Libra',
         isSystem: true,
         isActive: true,
-        sortOrder: 12,
+        sortOrder: 24,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-oz',
+        typeId: 'unit-type-mass',
+        symbol: 'oz',
+        name: 'Onza',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 25,
       ),
       MeasurementUnitModel(
         id: 'unit-ml',
@@ -1683,7 +1780,16 @@ class ProductosLocalDataSource {
         name: 'Mililitro',
         isSystem: true,
         isActive: true,
-        sortOrder: 20,
+        sortOrder: 30,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-cl',
+        typeId: 'unit-type-volume',
+        symbol: 'cl',
+        name: 'Centilitro',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 31,
       ),
       MeasurementUnitModel(
         id: 'unit-l',
@@ -1692,7 +1798,52 @@ class ProductosLocalDataSource {
         name: 'Litro',
         isSystem: true,
         isActive: true,
-        sortOrder: 21,
+        sortOrder: 32,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-m3',
+        typeId: 'unit-type-volume',
+        symbol: 'm³',
+        name: 'Metro cubico',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 33,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-cucharadita',
+        typeId: 'unit-type-kitchen',
+        symbol: 'cdta',
+        name: 'Cucharadita',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 40,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-cucharada',
+        typeId: 'unit-type-kitchen',
+        symbol: 'cda',
+        name: 'Cucharada',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 41,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-taza',
+        typeId: 'unit-type-kitchen',
+        symbol: 'taza',
+        name: 'Taza',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 42,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-pizca',
+        typeId: 'unit-type-kitchen',
+        symbol: 'pizca',
+        name: 'Pizca',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 43,
       ),
       MeasurementUnitModel(
         id: 'unit-ud',
@@ -1701,7 +1852,16 @@ class ProductosLocalDataSource {
         name: 'Unidad',
         isSystem: true,
         isActive: true,
-        sortOrder: 30,
+        sortOrder: 50,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-docena',
+        typeId: 'unit-type-count',
+        symbol: 'docena',
+        name: 'Docena',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 51,
       ),
       MeasurementUnitModel(
         id: 'unit-caja',
@@ -1710,7 +1870,7 @@ class ProductosLocalDataSource {
         name: 'Caja',
         isSystem: true,
         isActive: true,
-        sortOrder: 31,
+        sortOrder: 52,
       ),
       MeasurementUnitModel(
         id: 'unit-paquete',
@@ -1719,11 +1879,74 @@ class ProductosLocalDataSource {
         name: 'Paquete',
         isSystem: true,
         isActive: true,
-        sortOrder: 32,
+        sortOrder: 53,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-rollo',
+        typeId: 'unit-type-count',
+        symbol: 'rollo',
+        name: 'Rollo',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 54,
+      ),
+      MeasurementUnitModel(
+        id: 'unit-pliego',
+        typeId: 'unit-type-count',
+        symbol: 'pliego',
+        name: 'Pliego',
+        isSystem: true,
+        isActive: true,
+        sortOrder: 55,
       ),
     ];
 
     return MeasurementUnitCatalog(types: types, units: units).normalized();
+  }
+
+  MeasurementUnitCatalog _mergeDefaultMeasurementCatalog(
+    MeasurementUnitCatalog catalog,
+  ) {
+    final MeasurementUnitCatalog defaults = _defaultMeasurementCatalog();
+    final List<MeasurementUnitTypeModel> mergedTypes =
+        catalog.types.toList(growable: true);
+    final List<MeasurementUnitModel> mergedUnits =
+        catalog.units.toList(growable: true);
+
+    final Set<String> existingTypeIds = mergedTypes
+        .map((MeasurementUnitTypeModel row) => row.id.trim())
+        .where((String id) => id.isNotEmpty)
+        .toSet();
+    final Set<String> existingUnitIds = mergedUnits
+        .map((MeasurementUnitModel row) => row.id.trim())
+        .where((String id) => id.isNotEmpty)
+        .toSet();
+    final Set<String> existingSymbols = mergedUnits
+        .map((MeasurementUnitModel row) => row.symbol.trim().toLowerCase())
+        .where((String symbol) => symbol.isNotEmpty)
+        .toSet();
+
+    for (final MeasurementUnitTypeModel type in defaults.types) {
+      if (existingTypeIds.add(type.id)) {
+        mergedTypes.add(type);
+      }
+    }
+
+    for (final MeasurementUnitModel unit in defaults.units) {
+      final String symbolKey = unit.symbol.trim().toLowerCase();
+      if (existingUnitIds.contains(unit.id) ||
+          existingSymbols.contains(symbolKey)) {
+        continue;
+      }
+      existingUnitIds.add(unit.id);
+      existingSymbols.add(symbolKey);
+      mergedUnits.add(unit);
+    }
+
+    return MeasurementUnitCatalog(
+      types: mergedTypes,
+      units: mergedUnits,
+    );
   }
 
   Future<void> _saveMeasurementUnitCatalog(

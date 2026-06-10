@@ -79,6 +79,8 @@ class Products extends Table {
   TextColumn get category => text().withDefault(const Constant('General'))();
   TextColumn get productType => text().withDefault(const Constant('Fisico'))();
   TextColumn get unitMeasure => text().withDefault(const Constant('Unidad'))();
+  TextColumn get orderCostingMode =>
+      text().withDefault(const Constant('ordered_qty'))();
   TextColumn get currencyCode => text().withDefault(const Constant('USD'))();
   BoolColumn get isActive => boolean().withDefault(const Constant(true))();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
@@ -460,6 +462,50 @@ class SaleItemLotAllocations extends Table {
   Set<Column> get primaryKey => <Column>{id};
 }
 
+class WorkOrders extends Table {
+  TextColumn get id => text()();
+  TextColumn get folio => text().unique()();
+  TextColumn get customerId => text().references(Customers, #id).nullable()();
+  TextColumn get customerNameSnapshot => text().nullable()();
+  TextColumn get assignedEmployeeId =>
+      text().references(Employees, #id).nullable()();
+  TextColumn get assignedEmployeeNameSnapshot => text().nullable()();
+  TextColumn get workType => text().withDefault(const Constant('General'))();
+  TextColumn get title => text()();
+  TextColumn get description => text().nullable()();
+  TextColumn get itemsJson => text().withDefault(const Constant('[]'))();
+  TextColumn get assignmentsJson => text().withDefault(const Constant('[]'))();
+  TextColumn get tasksJson => text().withDefault(const Constant('[]'))();
+  RealColumn get qty => real().withDefault(const Constant(1))();
+  TextColumn get unitLabel => text().withDefault(const Constant('ud'))();
+  TextColumn get status => text().withDefault(const Constant('pending'))();
+  TextColumn get paymentStatus =>
+      text().withDefault(const Constant('unpaid'))();
+  TextColumn get priority => text().withDefault(const Constant('normal'))();
+  DateTimeColumn get dueAt => dateTime().nullable()();
+  TextColumn get note => text().nullable()();
+  TextColumn get quotedTotalsJson => text().withDefault(const Constant('[]'))();
+  TextColumn get quotedRequestedLinesJson =>
+      text().withDefault(const Constant('[]'))();
+  TextColumn get quotedPaymentVariantsJson =>
+      text().withDefault(const Constant('[]'))();
+  TextColumn get pricingSnapshotJson =>
+      text().withDefault(const Constant('{}'))();
+  TextColumn get paymentLinesJson => text().withDefault(const Constant('[]'))();
+  @ReferenceName('createdWorkOrders')
+  TextColumn get createdBy => text().references(Users, #id)();
+  @ReferenceName('updatedWorkOrders')
+  TextColumn get updatedBy => text().references(Users, #id).nullable()();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get updatedAt => dateTime().nullable()();
+  DateTimeColumn get completedAt => dateTime().nullable()();
+  DateTimeColumn get paidAt => dateTime().nullable()();
+  DateTimeColumn get deliveredAt => dateTime().nullable()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{id};
+}
+
 class AppSettings extends Table {
   TextColumn get key => text()();
   TextColumn get value => text()();
@@ -512,6 +558,7 @@ class AuditLogs extends Table {
     PurchaseItems,
     StockLots,
     SaleItemLotAllocations,
+    WorkOrders,
     AppSettings,
     AuditLogs,
   ],
@@ -521,7 +568,7 @@ class AppDatabase extends _$AppDatabase {
   final Uuid _uuid = const Uuid();
 
   @override
-  int get schemaVersion => 27;
+  int get schemaVersion => 32;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -550,6 +597,20 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 5) {
             await m.addColumn(products, products.barcode);
+          }
+          if (from < 30) {
+            await m.addColumn(products, products.orderCostingMode);
+            await customStatement('''
+              UPDATE products
+              SET order_costing_mode = 'consumed_area'
+              WHERE LOWER(COALESCE(name, '')) LIKE '%lona%'
+                AND (
+                  LOWER(COALESCE(unit_measure, '')) LIKE '%m2%'
+                  OR LOWER(COALESCE(unit_measure, '')) LIKE '%m²%'
+                  OR LOWER(COALESCE(unit_measure, '')) LIKE '%metro cuadrado%'
+                  OR LOWER(COALESCE(unit_measure, '')) LIKE '%metros cuadrados%'
+                )
+            ''');
           }
           if (from < 6) {
             await _addWarehouseColumnIfMissing(
@@ -941,6 +1002,71 @@ class AppDatabase extends _$AppDatabase {
               ''',
             );
           }
+          if (from < 28) {
+            if (!await _tableExists('work_orders')) {
+              await m.createTable(workOrders);
+            }
+            await _seedAccessControlDefaults();
+            await _createPerformanceIndexes();
+          }
+          if (from < 29) {
+            await _addWorkOrderColumnIfMissing(
+              m,
+              'items_json',
+              () => m.addColumn(workOrders, workOrders.itemsJson),
+            );
+            await _addWorkOrderColumnIfMissing(
+              m,
+              'assignments_json',
+              () => m.addColumn(workOrders, workOrders.assignmentsJson),
+            );
+            await _addWorkOrderColumnIfMissing(
+              m,
+              'tasks_json',
+              () => m.addColumn(workOrders, workOrders.tasksJson),
+            );
+          }
+          if (from < 31) {
+            await _addWorkOrderColumnIfMissing(
+              m,
+              'payment_status',
+              () => m.addColumn(workOrders, workOrders.paymentStatus),
+            );
+            await _addWorkOrderColumnIfMissing(
+              m,
+              'quoted_totals_json',
+              () => m.addColumn(workOrders, workOrders.quotedTotalsJson),
+            );
+            await _addWorkOrderColumnIfMissing(
+              m,
+              'quoted_requested_lines_json',
+              () =>
+                  m.addColumn(workOrders, workOrders.quotedRequestedLinesJson),
+            );
+            await _addWorkOrderColumnIfMissing(
+              m,
+              'quoted_payment_variants_json',
+              () =>
+                  m.addColumn(workOrders, workOrders.quotedPaymentVariantsJson),
+            );
+            await _addWorkOrderColumnIfMissing(
+              m,
+              'pricing_snapshot_json',
+              () => m.addColumn(workOrders, workOrders.pricingSnapshotJson),
+            );
+            await _addWorkOrderColumnIfMissing(
+              m,
+              'paid_at',
+              () => m.addColumn(workOrders, workOrders.paidAt),
+            );
+          }
+          if (from < 32) {
+            await _addWorkOrderColumnIfMissing(
+              m,
+              'payment_lines_json',
+              () => m.addColumn(workOrders, workOrders.paymentLinesJson),
+            );
+          }
         },
       );
 
@@ -1038,6 +1164,17 @@ class AppDatabase extends _$AppDatabase {
     Future<void> Function() addColumn,
   ) async {
     final bool exists = await _tableHasColumn('ipv_report_lines', columnName);
+    if (!exists) {
+      await addColumn();
+    }
+  }
+
+  Future<void> _addWorkOrderColumnIfMissing(
+    Migrator migrator,
+    String columnName,
+    Future<void> Function() addColumn,
+  ) async {
+    final bool exists = await _tableHasColumn('work_orders', columnName);
     if (!exists) {
       await addColumn();
     }
@@ -1320,6 +1457,38 @@ class AppDatabase extends _$AppDatabase {
       sql: '''
       CREATE INDEX IF NOT EXISTS idx_sales_warehouse_created_at
       ON sales (warehouse_id, created_at)
+      ''',
+    );
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'work_orders',
+      requiredColumns: <String>['status', 'due_at'],
+      sql: '''
+      CREATE INDEX IF NOT EXISTS idx_work_orders_status_due_at
+      ON work_orders (status, due_at)
+      ''',
+    );
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'work_orders',
+      requiredColumns: <String>['assigned_employee_id', 'status'],
+      sql: '''
+      CREATE INDEX IF NOT EXISTS idx_work_orders_employee_status
+      ON work_orders (assigned_employee_id, status)
+      ''',
+    );
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'work_orders',
+      requiredColumns: <String>['work_type', 'status'],
+      sql: '''
+      CREATE INDEX IF NOT EXISTS idx_work_orders_type_status
+      ON work_orders (work_type, status)
+      ''',
+    );
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'work_orders',
+      requiredColumns: <String>['created_at'],
+      sql: '''
+      CREATE INDEX IF NOT EXISTS idx_work_orders_created_at
+      ON work_orders (created_at)
       ''',
     );
     await _createIndexIfTableAndColumnsExist(

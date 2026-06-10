@@ -405,6 +405,7 @@ class _MovimientosInventarioPageState
     final InventarioLocalDataSource ds =
         ref.read(inventarioLocalDataSourceProvider);
     final bool isEdit = movement != null;
+    final bool canSelectMovementDateTime = session.isAdmin;
     final String selectedWarehouseId =
         (movement?.warehouseId ?? '').trim().isEmpty
             ? (_selectedWarehouseId ?? _warehouses.first.id)
@@ -470,6 +471,9 @@ class _MovimientosInventarioPageState
           initialReasonCode: movement?.reasonCode,
           initialQty: movement?.qty,
           initialNote: movement?.note,
+          allowCustomTimestamp: canSelectMovementDateTime,
+          initialMovementDateTime:
+              movement?.createdAt.toLocal() ?? DateTime.now(),
           loadAdjustRowsForWarehouse: (String warehouseId) {
             return ds.listInventoryPage(
               warehouseId: warehouseId,
@@ -501,6 +505,7 @@ class _MovimientosInventarioPageState
         ((result['reasonCode'] as String?) ?? (isTransfer ? 'transfer' : ''))
             .trim();
     final String note = (result['note'] as String).trim();
+    final DateTime? movementAt = result['movementDateTime'] as DateTime?;
     final String safeWarehouseId =
         ((result['warehouseId'] as String?) ?? selectedWarehouseId).trim();
     final String safeDestinationWarehouseId =
@@ -522,6 +527,7 @@ class _MovimientosInventarioPageState
           qty: qty,
           reasonCode: safeReasonCode,
           userId: session.userId,
+          movementAt: movementAt,
           note: note.isEmpty
               ? (isEntry
                   ? 'Entrada manual inventario'
@@ -536,6 +542,7 @@ class _MovimientosInventarioPageState
             destinationWarehouseId: safeDestinationWarehouseId,
             qty: qty,
             userId: session.userId,
+            movementAt: movementAt,
             note: note.isEmpty ? 'Transferencia manual de inventario' : note,
           );
         } else {
@@ -546,6 +553,7 @@ class _MovimientosInventarioPageState
             qty: qty,
             reasonCode: safeReasonCode,
             userId: session.userId,
+            movementAt: movementAt,
             note: note.isEmpty
                 ? (isEntry
                     ? 'Entrada manual inventario'

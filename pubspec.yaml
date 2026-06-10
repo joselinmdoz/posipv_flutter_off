@@ -1,7 +1,7 @@
 name: posipv
 description: Offline-first POS and inventory app
 publish_to: 'none'
-version: 0.3.5+10
+version: 0.3.6+11
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -47,3 +47,8 @@ flutter:
   assets:
     - assets/images/
     - assets/icons/
+
+hooks:
+  user_defines:
+    sqlite3:
+      source: system

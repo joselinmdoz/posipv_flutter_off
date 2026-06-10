@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../../core/licensing/license_providers.dart';
 import '../../../shared/widgets/app_scaffold.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../configuracion/data/configuracion_local_datasource.dart';
@@ -24,7 +25,7 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
   bool _historyLoading = false;
   bool _exporting = false;
   bool _dirty = false;
-  int _formSeed = 0;
+  bool _loadedOnce = false;
 
   DateTime _reportDate = DateTime(
     DateTime.now().year,
@@ -38,6 +39,10 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
   final TextEditingController _noteCtrl = TextEditingController();
   final Map<String, TextEditingController> _paymentCtrls =
       <String, TextEditingController>{};
+  final Map<String, TextEditingController> _lineFieldCtrls =
+      <String, TextEditingController>{};
+  final Map<String, FocusNode> _fieldFocusNodes = <String, FocusNode>{};
+  final Set<String> _autoSelectConsumedFields = <String>{};
 
   List<ManualIpvEmployeeOption> _employeeOptions = <ManualIpvEmployeeOption>[];
   Set<String> _selectedEmployeeIds = <String>{};
@@ -52,22 +57,109 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
       if (!mounted) {
         return;
       }
+      final bool canUseManualIpv =
+          ref.read(currentLicenseStatusProvider).canSell;
+      if (!canUseManualIpv) {
+        setState(() => _loading = false);
+        return;
+      }
       _loadInitial();
     });
   }
 
   @override
   void dispose() {
+    _disposeAllLineFieldEditors();
     _noteCtrl.dispose();
     for (final TextEditingController ctrl in _paymentCtrls.values) {
       ctrl.dispose();
+    }
+    for (final FocusNode node in _fieldFocusNodes.values) {
+      node.dispose();
     }
     super.dispose();
   }
 
   ReportesLocalDataSource get _ds => ref.read(reportesLocalDataSourceProvider);
 
+  void _disposeAllLineFieldEditors() {
+    for (final TextEditingController ctrl in _lineFieldCtrls.values) {
+      ctrl.dispose();
+    }
+    _lineFieldCtrls.clear();
+    final List<String> lineFocusKeys = _fieldFocusNodes.keys
+        .where((String key) => key.contains('|'))
+        .toList(growable: false);
+    for (final String key in lineFocusKeys) {
+      _fieldFocusNodes.remove(key)?.dispose();
+      _autoSelectConsumedFields.remove(key);
+    }
+  }
+
+  void _disposeLineFieldEditorsByLine(String lineId) {
+    final String safeLineId = lineId.trim();
+    if (safeLineId.isEmpty) {
+      return;
+    }
+    for (final _LineField field in _LineField.values) {
+      final String key = _lineFieldKey(safeLineId, field);
+      _lineFieldCtrls.remove(key)?.dispose();
+      _fieldFocusNodes.remove(key)?.dispose();
+      _autoSelectConsumedFields.remove(key);
+    }
+  }
+
+  String _lineFieldKey(String lineId, _LineField field) {
+    return '$lineId|${field.name}';
+  }
+
+  FocusNode _focusNodeForField(String fieldKey) {
+    return _fieldFocusNodes.putIfAbsent(fieldKey, () {
+      final FocusNode node = FocusNode();
+      node.addListener(() {
+        if (!node.hasFocus) {
+          _autoSelectConsumedFields.remove(fieldKey);
+        }
+      });
+      return node;
+    });
+  }
+
+  void _handleSelectAllOnFirstTap({
+    required String fieldKey,
+    required TextEditingController controller,
+  }) {
+    if (!_autoSelectConsumedFields.add(fieldKey)) {
+      return;
+    }
+    final String text = controller.text;
+    controller.selection =
+        TextSelection(baseOffset: 0, extentOffset: text.length);
+  }
+
+  TextEditingController _lineFieldController({
+    required String fieldKey,
+    required String value,
+  }) {
+    final TextEditingController ctrl = _lineFieldCtrls.putIfAbsent(
+      fieldKey,
+      () => TextEditingController(text: value),
+    );
+    final FocusNode focusNode = _focusNodeForField(fieldKey);
+    if (!focusNode.hasFocus && ctrl.text != value) {
+      ctrl.text = value;
+    }
+    return ctrl;
+  }
+
   Future<void> _loadInitial() async {
+    final bool canUseManualIpv = ref.read(currentLicenseStatusProvider).canSell;
+    if (!canUseManualIpv) {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+      return;
+    }
     if (mounted) {
       setState(() => _loading = true);
     }
@@ -89,6 +181,7 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
         _employeeOptions = employees;
         _paymentMethodLabelsByCode =
             buildPaymentMethodLabelMap(paymentSettings);
+        _loadedOnce = true;
       });
       await _loadReportForDate(_reportDate, resetDirty: true);
     } catch (e) {
@@ -122,6 +215,7 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
       _hasPreviousReport = report.hasPreviousReport;
       _selectedEmployeeIds = report.employeeIds.toSet();
       _paymentMethods = report.paymentMethods;
+      _disposeAllLineFieldEditors();
       _lines = report.lines.toList(growable: true)
         ..sort(
           (ManualIpvEditableLineStat a, ManualIpvEditableLineStat b) =>
@@ -132,7 +226,7 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
       setState(() {
         _loading = false;
         _dirty = resetDirty ? false : _dirty;
-        _formSeed += 1;
+        _loadedOnce = true;
       });
       if (resetDirty) {
         setState(() => _dirty = false);
@@ -153,6 +247,9 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
         .toList(growable: false);
     for (final String key in stale) {
       _paymentCtrls.remove(key)?.dispose();
+      final String fieldKey = 'payment_$key';
+      _fieldFocusNodes.remove(fieldKey)?.dispose();
+      _autoSelectConsumedFields.remove(fieldKey);
     }
     for (final String method in _paymentMethods) {
       final TextEditingController ctrl =
@@ -327,6 +424,16 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
         _show('No hay productos activos disponibles para agregar.');
         return;
       }
+      final TextEditingController searchCtrl = TextEditingController();
+      final Set<String> autoSelect = <String>{};
+      void selectAllOnce(String key, TextEditingController ctrl) {
+        if (!autoSelect.add(key)) {
+          return;
+        }
+        ctrl.selection =
+            TextSelection(baseOffset: 0, extentOffset: ctrl.text.length);
+      }
+
       final ManualIpvProductOption? selected =
           await showDialog<ManualIpvProductOption>(
         context: context,
@@ -348,6 +455,9 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
                   child: Column(
                     children: <Widget>[
                       TextField(
+                        controller: searchCtrl,
+                        onTap: () =>
+                            selectAllOnce('catalog_search', searchCtrl),
                         decoration: const InputDecoration(
                           prefixIcon: Icon(Icons.search_rounded),
                           hintText: 'Buscar por nombre o código',
@@ -394,6 +504,7 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
           );
         },
       );
+      searchCtrl.dispose();
       if (selected == null) {
         return;
       }
@@ -425,7 +536,6 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
       setState(() {
         _lines = <ManualIpvEditableLineStat>[..._lines, line];
         _dirty = true;
-        _formSeed += 1;
       });
     } catch (e) {
       _show('No se pudo cargar productos activos: $e');
@@ -438,6 +548,15 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
     final TextEditingController startCtrl = TextEditingController(text: '0');
     final TextEditingController priceCtrl = TextEditingController(text: '0.00');
     final TextEditingController costCtrl = TextEditingController(text: '0.00');
+    final Set<String> autoSelect = <String>{};
+    void selectAllOnce(String key, TextEditingController ctrl) {
+      if (!autoSelect.add(key)) {
+        return;
+      }
+      ctrl.selection =
+          TextSelection(baseOffset: 0, extentOffset: ctrl.text.length);
+    }
+
     final bool? ok = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
@@ -451,6 +570,7 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
                 children: <Widget>[
                   TextField(
                     controller: nameCtrl,
+                    onTap: () => selectAllOnce('manual_name', nameCtrl),
                     decoration: const InputDecoration(
                       labelText: 'Producto *',
                     ),
@@ -458,6 +578,7 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
                   const SizedBox(height: 10),
                   TextField(
                     controller: skuCtrl,
+                    onTap: () => selectAllOnce('manual_sku', skuCtrl),
                     decoration: const InputDecoration(
                       labelText: 'Código',
                     ),
@@ -465,6 +586,7 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
                   const SizedBox(height: 10),
                   TextField(
                     controller: startCtrl,
+                    onTap: () => selectAllOnce('manual_start', startCtrl),
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
                     decoration: const InputDecoration(
@@ -474,6 +596,7 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
                   const SizedBox(height: 10),
                   TextField(
                     controller: priceCtrl,
+                    onTap: () => selectAllOnce('manual_price', priceCtrl),
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
                     decoration: const InputDecoration(
@@ -483,6 +606,7 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
                   const SizedBox(height: 10),
                   TextField(
                     controller: costCtrl,
+                    onTap: () => selectAllOnce('manual_cost', costCtrl),
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
                     decoration: const InputDecoration(
@@ -548,7 +672,6 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
     setState(() {
       _lines = <ManualIpvEditableLineStat>[..._lines, line];
       _dirty = true;
-      _formSeed += 1;
     });
     nameCtrl.dispose();
     skuCtrl.dispose();
@@ -746,6 +869,83 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
       if (mounted) {
         setState(() => _saving = false);
       }
+    }
+  }
+
+  Future<void> _openCurrentExportMenu() async {
+    if (_exporting) {
+      return;
+    }
+    final _ManualIpvExportAction? action =
+        await showModalBottomSheet<_ManualIpvExportAction>(
+      context: context,
+      showDragHandle: true,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.table_view_rounded),
+                title: const Text('Exportar CSV'),
+                onTap: () =>
+                    Navigator.of(context).pop(_ManualIpvExportAction.exportCsv),
+              ),
+              ListTile(
+                leading: const Icon(Icons.picture_as_pdf_rounded),
+                title: const Text('Exportar PDF'),
+                onTap: () =>
+                    Navigator.of(context).pop(_ManualIpvExportAction.exportPdf),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.share_rounded),
+                title: const Text('Compartir CSV'),
+                onTap: () =>
+                    Navigator.of(context).pop(_ManualIpvExportAction.shareCsv),
+              ),
+              ListTile(
+                leading: const Icon(Icons.ios_share_rounded),
+                title: const Text('Compartir PDF'),
+                onTap: () =>
+                    Navigator.of(context).pop(_ManualIpvExportAction.sharePdf),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (action == null) {
+      return;
+    }
+    await _handleCurrentExportAction(action);
+  }
+
+  Future<void> _handleTopMenuAction({
+    required _ManualIpvTopAction action,
+    required bool isAdmin,
+  }) async {
+    switch (action) {
+      case _ManualIpvTopAction.history:
+        await _openHistory();
+        break;
+      case _ManualIpvTopAction.export:
+        await _openCurrentExportMenu();
+        break;
+      case _ManualIpvTopAction.recalculate:
+        if (!isAdmin) {
+          _show('Solo administrador puede recalcular.');
+          return;
+        }
+        await _recalculateStartsFromCurrentDate();
+        break;
+      case _ManualIpvTopAction.delete:
+        if (!isAdmin) {
+          _show('Solo administrador puede eliminar IPV manual.');
+          return;
+        }
+        await _deleteCurrentReport();
+        break;
     }
   }
 
@@ -1191,6 +1391,7 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
   }
 
   void _removeLine(ManualIpvEditableLineStat line) {
+    _disposeLineFieldEditorsByLine(line.lineId);
     setState(() {
       _lines.removeWhere(
           (ManualIpvEditableLineStat row) => row.lineId == line.lineId);
@@ -1200,7 +1401,6 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
               row.copyWith(sortOrder: sort++))
           .toList(growable: true);
       _dirty = true;
-      _formSeed += 1;
     });
   }
 
@@ -1263,36 +1463,116 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
   Widget build(BuildContext context) {
     final session = ref.watch(currentSessionProvider);
     final bool isAdmin = session?.isAdmin ?? false;
+    final license = ref.watch(currentLicenseStatusProvider);
+    if (license.canSell && !_loadedOnce && !_loading) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _loadInitial();
+        }
+      });
+    }
     return AppScaffold(
       title: 'IPV Manual',
       currentRoute: '/ipv-manual',
-      onRefresh: _loadInitial,
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: <Widget>[
-                if (_saving) const LinearProgressIndicator(minHeight: 2),
-                Expanded(
-                  child: RefreshIndicator(
-                    onRefresh: _loadInitial,
-                    child: ListView(
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                      children: <Widget>[
-                        _buildTopCard(isAdmin),
-                        const SizedBox(height: 8),
-                        _buildPaymentsCard(),
-                        const SizedBox(height: 8),
-                        _buildLinesCard(isAdmin),
-                      ],
-                    ),
-                  ),
+      onRefresh: license.canSell ? _loadInitial : null,
+      appBarActions: <Widget>[
+        PopupMenuButton<_ManualIpvTopAction>(
+          tooltip: 'Más opciones',
+          icon: const Icon(Icons.more_vert_rounded),
+          onSelected: (_ManualIpvTopAction action) =>
+              _handleTopMenuAction(action: action, isAdmin: isAdmin),
+          itemBuilder: (BuildContext context) {
+            return <PopupMenuEntry<_ManualIpvTopAction>>[
+              PopupMenuItem<_ManualIpvTopAction>(
+                value: _ManualIpvTopAction.history,
+                enabled: !_historyLoading,
+                child: Text(
+                  _historyLoading ? 'Cargando historial...' : 'Historial',
                 ),
-              ],
-            ),
+              ),
+              PopupMenuItem<_ManualIpvTopAction>(
+                value: _ManualIpvTopAction.export,
+                enabled: !_exporting,
+                child: Text(_exporting ? 'Exportando...' : 'Exportar'),
+              ),
+              if (isAdmin) const PopupMenuDivider(),
+              if (isAdmin)
+                const PopupMenuItem<_ManualIpvTopAction>(
+                  value: _ManualIpvTopAction.recalculate,
+                  child: Text('Recalcular inicios'),
+                ),
+              if (isAdmin)
+                const PopupMenuItem<_ManualIpvTopAction>(
+                  value: _ManualIpvTopAction.delete,
+                  child: Text('Eliminar IPV'),
+                ),
+            ];
+          },
+        ),
+      ],
+      body: !license.canSell
+          ? _buildLicenseBlockedBody(license.message)
+          : (_loading
+              ? const Center(child: CircularProgressIndicator())
+              : Column(
+                  children: <Widget>[
+                    if (_saving) const LinearProgressIndicator(minHeight: 2),
+                    Expanded(
+                      child: RefreshIndicator(
+                        onRefresh: _loadInitial,
+                        child: ListView(
+                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                          children: <Widget>[
+                            _buildTopCard(),
+                            const SizedBox(height: 8),
+                            _buildPaymentsCard(),
+                            const SizedBox(height: 8),
+                            _buildLinesCard(isAdmin),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                )),
     );
   }
 
-  Widget _buildTopCard(bool isAdmin) {
+  Widget _buildLicenseBlockedBody(String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  const Icon(Icons.lock_outline_rounded, size: 40),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'IPV Manual bloqueado',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopCard() {
     final List<String> selectedNames = _employeeOptions
         .where((ManualIpvEmployeeOption row) =>
             _selectedEmployeeIds.contains(row.id))
@@ -1323,22 +1603,6 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
                 ),
               ),
               const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: _historyLoading ? null : _openHistory,
-                icon: _historyLoading
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.history_rounded, size: 18),
-                label: const Text('Historial'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: <Widget>[
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: _pickEmployees,
@@ -1346,45 +1610,6 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
                   label: const Text('Empleados'),
                 ),
               ),
-              const SizedBox(width: 8),
-              if (_exporting)
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 12),
-                  child: SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                )
-              else
-                PopupMenuButton<_ManualIpvExportAction>(
-                  tooltip: 'Exportar / compartir',
-                  onSelected: _handleCurrentExportAction,
-                  itemBuilder: (BuildContext context) =>
-                      const <PopupMenuEntry<_ManualIpvExportAction>>[
-                    PopupMenuItem<_ManualIpvExportAction>(
-                      value: _ManualIpvExportAction.exportCsv,
-                      child: Text('Exportar CSV'),
-                    ),
-                    PopupMenuItem<_ManualIpvExportAction>(
-                      value: _ManualIpvExportAction.exportPdf,
-                      child: Text('Exportar PDF'),
-                    ),
-                    PopupMenuDivider(),
-                    PopupMenuItem<_ManualIpvExportAction>(
-                      value: _ManualIpvExportAction.shareCsv,
-                      child: Text('Compartir CSV'),
-                    ),
-                    PopupMenuItem<_ManualIpvExportAction>(
-                      value: _ManualIpvExportAction.sharePdf,
-                      child: Text('Compartir PDF'),
-                    ),
-                  ],
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                    child: Icon(Icons.ios_share_rounded),
-                  ),
-                ),
             ],
           ),
           const SizedBox(height: 6),
@@ -1399,6 +1624,11 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
           const SizedBox(height: 8),
           TextField(
             controller: _noteCtrl,
+            focusNode: _focusNodeForField('note'),
+            onTap: () => _handleSelectAllOnFirstTap(
+              fieldKey: 'note',
+              controller: _noteCtrl,
+            ),
             decoration: const InputDecoration(
               labelText: 'Nota (opcional)',
               isDense: true,
@@ -1422,35 +1652,6 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
                 icon: const Icon(Icons.save_rounded),
                 label: Text(_dirty ? 'Guardar cambios' : 'Guardar'),
               ),
-              if (isAdmin)
-                OutlinedButton.icon(
-                  onPressed: _saving ? null : _recalculateStartsFromCurrentDate,
-                  icon: const Icon(Icons.sync_rounded),
-                  label: const Text('Recalcular inicios'),
-                ),
-              if (isAdmin)
-                OutlinedButton.icon(
-                  onPressed: _saving ? null : _deleteCurrentReport,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFFB91C1C),
-                    side: const BorderSide(color: Color(0xFFFCA5A5)),
-                  ),
-                  icon: const Icon(Icons.delete_outline_rounded),
-                  label: const Text('Eliminar IPV'),
-                ),
-              if (_hasPreviousReport)
-                const Chip(
-                  avatar: Icon(Icons.link_rounded, size: 16),
-                  label: Text('Inicio enlazado al IPV anterior'),
-                  side: BorderSide(color: Color(0xFFBFDBFE)),
-                  backgroundColor: Color(0xFFEFF6FF),
-                ),
-              if (isAdmin)
-                const Chip(
-                  avatar: Icon(Icons.admin_panel_settings_rounded, size: 16),
-                  label: Text('Vista administrador'),
-                  backgroundColor: Color(0xFFF1F5F9),
-                ),
             ],
           ),
         ],
@@ -1486,6 +1687,11 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
                 width: 152,
                 child: TextField(
                   controller: ctrl,
+                  focusNode: _focusNodeForField('payment_$method'),
+                  onTap: () => _handleSelectAllOnFirstTap(
+                    fieldKey: 'payment_$method',
+                    controller: ctrl,
+                  ),
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
                   decoration: InputDecoration(
@@ -1818,13 +2024,22 @@ class _IpvManualPageState extends ConsumerState<IpvManualPage> {
     bool readOnly = false,
     bool isMoney = false,
   }) {
+    final String fieldKey = _lineFieldKey(line.lineId, field);
+    final TextEditingController ctrl = _lineFieldController(
+      fieldKey: fieldKey,
+      value: value,
+    );
     return SizedBox(
       width: width,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
-        child: TextFormField(
-          key: ValueKey('${_formSeed}_${line.lineId}_${field.name}'),
-          initialValue: value,
+        child: TextField(
+          controller: ctrl,
+          focusNode: _focusNodeForField(fieldKey),
+          onTap: () => _handleSelectAllOnFirstTap(
+            fieldKey: fieldKey,
+            controller: ctrl,
+          ),
           textAlign: TextAlign.right,
           readOnly: readOnly,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -1858,6 +2073,13 @@ enum _ManualIpvExportAction {
   exportPdf,
   shareCsv,
   sharePdf,
+}
+
+enum _ManualIpvTopAction {
+  history,
+  export,
+  recalculate,
+  delete,
 }
 
 enum _ManualIpvHistoryAction {

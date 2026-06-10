@@ -7,10 +7,12 @@ class ConsignmentSaleTile extends StatelessWidget {
     super.key,
     required this.sale,
     required this.onTap,
+    this.onChangeCustomer,
   });
 
   final ConsignmentSaleDebt sale;
   final VoidCallback onTap;
+  final VoidCallback? onChangeCustomer;
 
   String _money(int cents, String symbol) {
     return '$symbol${(cents / 100).toStringAsFixed(2)}';
@@ -53,10 +55,12 @@ class ConsignmentSaleTile extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  _money(sale.pendingCents, sale.currencySymbol),
-                  style: const TextStyle(
+                  _money(sale.totalCents, sale.currencySymbol),
+                  style: TextStyle(
                     fontWeight: FontWeight.w900,
-                    color: Color(0xFFB91C1C),
+                    color: isDark
+                        ? const Color(0xFFE2E8F0)
+                        : const Color(0xFF0F172A),
                   ),
                 ),
               ],
@@ -85,7 +89,7 @@ class ConsignmentSaleTile extends StatelessWidget {
               children: <Widget>[
                 Expanded(
                   child: Text(
-                    'Pagado ${_money(sale.paidCents, sale.currencySymbol)} / Total ${_money(sale.totalCents, sale.currencySymbol)}',
+                    'Pagado ${_money(sale.paidCents, sale.currencySymbol)} • Pendiente ${_money(sale.pendingCents, sale.currencySymbol)}',
                     style: TextStyle(
                       fontSize: 12,
                       color: isDark
@@ -95,12 +99,35 @@ class ConsignmentSaleTile extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                const Text(
-                  'Conciliar',
-                  style: TextStyle(
-                    color: Color(0xFF1152D4),
-                    fontWeight: FontWeight.w800,
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    if (onChangeCustomer != null)
+                      TextButton(
+                        onPressed: onChangeCustomer,
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          minimumSize: const Size(0, 28),
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                        ),
+                        child: const Text(
+                          'Cambiar cliente',
+                          style: TextStyle(
+                            color: Color(0xFF1152D4),
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    const SizedBox(width: 4),
+                    const Text(
+                      'Ver detalle',
+                      style: TextStyle(
+                        color: Color(0xFF1152D4),
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

@@ -1812,6 +1812,12 @@ class TpvLocalDataSource {
                     tbl.terminalId.equals(session.terminalId) &
                     tbl.id.isNotValue(session.id)))
               .get();
+      final PosTerminal? terminal = await (_db.select(_db.posTerminals)
+            ..where((PosTerminals tbl) => tbl.id.equals(session.terminalId)))
+          .getSingleOrNull();
+      if (terminal == null) {
+        throw Exception('El TPV asociado al turno no existe.');
+      }
       for (final PosSession other in siblingSessions) {
         if (_intervalsOverlap(
           startA: targetOpenedAt,
@@ -1819,8 +1825,11 @@ class TpvLocalDataSource {
           startB: other.openedAt,
           endB: other.closedAt,
         )) {
+          final String otherOpenedAt = other.openedAt.toIso8601String();
+          final String otherClosedAt =
+              other.closedAt?.toIso8601String() ?? 'abierto';
           throw Exception(
-            'El rango del turno se solapa con otro turno existente (${other.id.substring(0, 8)}).',
+            'El rango del turno se solapa con otro turno existente (${other.id.substring(0, 8)}: $otherOpenedAt → $otherClosedAt).',
           );
         }
       }
@@ -1828,9 +1837,21 @@ class TpvLocalDataSource {
       final List<Sale> sessionSales = await (_db.select(_db.sales)
             ..where((Sales tbl) => tbl.terminalSessionId.equals(session.id)))
           .get();
+      final DateTime currentWindowEnd = session.closedAt ?? now;
+      final List<Sale> windowSales = sessionSales.where((Sale sale) {
+        if (!sale.createdAt.isAfter(session.openedAt)) {
+          return false;
+        }
+        if (sale.createdAt.isAfter(currentWindowEnd)) {
+          return false;
+        }
+        return true;
+      }).toList(growable: false);
+      final int ignoredOutOfWindowSales =
+          sessionSales.length - windowSales.length;
       DateTime? minSaleAt;
       DateTime? maxSaleAt;
-      for (final Sale sale in sessionSales) {
+      for (final Sale sale in windowSales) {
         if (minSaleAt == null || sale.createdAt.isBefore(minSaleAt)) {
           minSaleAt = sale.createdAt;
         }
@@ -1894,10 +1915,14 @@ class TpvLocalDataSource {
         );
       }
 
-      if (timelineShift != Duration.zero && sessionSales.isNotEmpty) {
+      if (timelineShift != Duration.zero) {
         await _shiftSessionLinkedTimeline(
           sessionId: session.id,
-          sales: sessionSales,
+          sessionWarehouseId: terminal.warehouseId,
+          previousOpenedAt: session.openedAt,
+          previousClosedAt: currentWindowEnd,
+          sessionOpenedByUserId: session.userId,
+          sales: windowSales,
           shift: timelineShift,
         );
       }
@@ -1922,6 +1947,8 @@ class TpvLocalDataSource {
           'oldClosedAt': session.closedAt?.toIso8601String(),
           'newClosedAt': targetClosedAt?.toIso8601String(),
           'shiftSeconds': timelineShift.inSeconds,
+          'windowSalesCount': windowSales.length,
+          'ignoredOutOfWindowSales': ignoredOutOfWindowSales,
           'status': session.status,
           'note': _normalizeOptional(note),
         },
@@ -1935,108 +1962,159 @@ class TpvLocalDataSource {
 
   Future<void> _shiftSessionLinkedTimeline({
     required String sessionId,
+    required String sessionWarehouseId,
+    required DateTime previousOpenedAt,
+    required DateTime previousClosedAt,
+    required String sessionOpenedByUserId,
     required List<Sale> sales,
     required Duration shift,
   }) async {
-    if (sales.isEmpty || shift == Duration.zero) {
+    if (shift == Duration.zero) {
       return;
     }
-    await _db.batch((Batch batch) {
-      for (final Sale sale in sales) {
-        batch.update(
-          _db.sales,
-          SalesCompanion(createdAt: Value(sale.createdAt.add(shift))),
-          where: (Sales tbl) => tbl.id.equals(sale.id),
-        );
-      }
-    });
-
-    final List<_TimelineRow> paymentRows = await _loadTimelineRows(
-      '''
-      SELECT p.id AS id, p.created_at AS created_at
-      FROM payments p
-      INNER JOIN sales s ON s.id = p.sale_id
-      WHERE s.terminal_session_id = ?
-      ''',
-      <Variable<Object>>[Variable<String>(sessionId)],
-    );
-    if (paymentRows.isNotEmpty) {
+    if (sales.isNotEmpty) {
       await _db.batch((Batch batch) {
-        for (final _TimelineRow row in paymentRows) {
+        for (final Sale sale in sales) {
           batch.update(
-            _db.payments,
-            PaymentsCompanion(createdAt: Value(row.createdAt.add(shift))),
-            where: (Payments tbl) => tbl.id.equals(row.id),
+            _db.sales,
+            SalesCompanion(createdAt: Value(sale.createdAt.add(shift))),
+            where: (Sales tbl) => tbl.id.equals(sale.id),
           );
         }
       });
     }
 
-    final List<_TimelineRow> stockRows = await _loadTimelineRows(
-      '''
-      SELECT sm.id AS id, sm.created_at AS created_at
-      FROM stock_movements sm
-      INNER JOIN sales s ON s.id = sm.ref_id
-      WHERE s.terminal_session_id = ?
-      ''',
-      <Variable<Object>>[Variable<String>(sessionId)],
-    );
-    if (stockRows.isNotEmpty) {
+    final Set<String> shiftedMovementIds = <String>{};
+    final Set<String> saleIds = sales
+        .map((Sale row) => row.id)
+        .where((String id) => id.isNotEmpty)
+        .toSet();
+    final List<String> saleIdValues = saleIds.toList(growable: false);
+
+    if (saleIds.isNotEmpty) {
+      final List<Payment> paymentRows = await (_db.select(_db.payments)
+            ..where((Payments tbl) => tbl.saleId.isIn(saleIds)))
+          .get();
+      if (paymentRows.isNotEmpty) {
+        await _db.batch((Batch batch) {
+          for (final Payment row in paymentRows) {
+            batch.update(
+              _db.payments,
+              PaymentsCompanion(createdAt: Value(row.createdAt.add(shift))),
+              where: (Payments tbl) => tbl.id.equals(row.id),
+            );
+          }
+        });
+      }
+
+      final List<StockMovement> stockRows =
+          await (_db.select(_db.stockMovements)
+                ..where((StockMovements tbl) => tbl.refId.isIn(saleIdValues)))
+              .get();
+      if (stockRows.isNotEmpty) {
+        await _db.batch((Batch batch) {
+          for (final StockMovement row in stockRows) {
+            batch.update(
+              _db.stockMovements,
+              StockMovementsCompanion(
+                createdAt: Value(row.createdAt.add(shift)),
+              ),
+              where: (StockMovements tbl) => tbl.id.equals(row.id),
+            );
+            shiftedMovementIds.add(row.id);
+          }
+        });
+      }
+
+      final List<SaleItemLotAllocation> allocationRows =
+          await (_db.select(_db.saleItemLotAllocations)
+                ..where(
+                  (SaleItemLotAllocations tbl) => tbl.saleId.isIn(saleIds),
+                ))
+              .get();
+      if (allocationRows.isNotEmpty) {
+        await _db.batch((Batch batch) {
+          for (final SaleItemLotAllocation row in allocationRows) {
+            batch.update(
+              _db.saleItemLotAllocations,
+              SaleItemLotAllocationsCompanion(
+                createdAt: Value(row.createdAt.add(shift)),
+              ),
+              where: (SaleItemLotAllocations tbl) => tbl.id.equals(row.id),
+            );
+          }
+        });
+      }
+    }
+
+    final List<StockMovement> linkedPosAdjustRows =
+        await (_db.select(_db.stockMovements)
+              ..where((StockMovements tbl) {
+                return tbl.refType.equals('pos_manual_move') &
+                    tbl.refId.equals(sessionId) &
+                    tbl.isVoided.equals(false);
+              }))
+            .get();
+    if (linkedPosAdjustRows.isNotEmpty) {
       await _db.batch((Batch batch) {
-        for (final _TimelineRow row in stockRows) {
+        for (final StockMovement row in linkedPosAdjustRows) {
+          if (shiftedMovementIds.contains(row.id)) {
+            continue;
+          }
           batch.update(
             _db.stockMovements,
             StockMovementsCompanion(createdAt: Value(row.createdAt.add(shift))),
             where: (StockMovements tbl) => tbl.id.equals(row.id),
           );
+          shiftedMovementIds.add(row.id);
         }
       });
     }
 
-    final List<_TimelineRow> allocationRows = await _loadTimelineRows(
-      '''
-      SELECT a.id AS id, a.created_at AS created_at
-      FROM sale_item_lot_allocations a
-      INNER JOIN sales s ON s.id = a.sale_id
-      WHERE s.terminal_session_id = ?
-      ''',
-      <Variable<Object>>[Variable<String>(sessionId)],
-    );
-    if (allocationRows.isNotEmpty) {
-      await _db.batch((Batch batch) {
-        for (final _TimelineRow row in allocationRows) {
-          batch.update(
-            _db.saleItemLotAllocations,
-            SaleItemLotAllocationsCompanion(
-              createdAt: Value(row.createdAt.add(shift)),
-            ),
-            where: (SaleItemLotAllocations tbl) => tbl.id.equals(row.id),
-          );
-        }
-      });
-    }
-  }
-
-  Future<List<_TimelineRow>> _loadTimelineRows(
-    String query,
-    List<Variable<Object>> variables,
-  ) async {
-    final List<QueryRow> rows = await _db
-        .customSelect(
-          query,
-          variables: variables,
-        )
-        .get();
-    final List<_TimelineRow> mapped = <_TimelineRow>[];
-    for (final QueryRow row in rows) {
-      final String id = (row.readNullable<String>('id') ?? '').trim();
-      final DateTime? createdAt = row.readNullable<DateTime>('created_at');
-      if (id.isEmpty || createdAt == null) {
-        continue;
+    final Set<String> actorUserIds = <String>{
+      sessionOpenedByUserId,
+      ...sales.map((Sale row) => row.cashierId),
+    }.where((String id) => id.trim().isNotEmpty).toSet();
+    if (actorUserIds.isNotEmpty) {
+      final List<StockMovement> legacyPosAdjustRows =
+          await (_db.select(_db.stockMovements)
+                ..where((StockMovements tbl) {
+                  final Expression<bool> isLegacyRefType =
+                      tbl.refType.isNull() |
+                          tbl.refType.equals('manual_move') |
+                          tbl.refType.equals('adjust');
+                  final Expression<bool> hasNoRefId =
+                      tbl.refId.isNull() | tbl.refId.equals('');
+                  return tbl.warehouseId.equals(sessionWarehouseId) &
+                      tbl.movementSource.equals('manual') &
+                      tbl.createdBy.isIn(actorUserIds.toList(growable: false)) &
+                      tbl.createdAt.isBiggerOrEqualValue(previousOpenedAt) &
+                      tbl.createdAt.isSmallerOrEqualValue(previousClosedAt) &
+                      tbl.isVoided.equals(false) &
+                      isLegacyRefType &
+                      hasNoRefId &
+                      tbl.note.isNotNull() &
+                      tbl.note.like('%TPV%');
+                }))
+              .get();
+      if (legacyPosAdjustRows.isNotEmpty) {
+        await _db.batch((Batch batch) {
+          for (final StockMovement row in legacyPosAdjustRows) {
+            if (shiftedMovementIds.contains(row.id)) {
+              continue;
+            }
+            batch.update(
+              _db.stockMovements,
+              StockMovementsCompanion(
+                createdAt: Value(row.createdAt.add(shift)),
+              ),
+              where: (StockMovements tbl) => tbl.id.equals(row.id),
+            );
+            shiftedMovementIds.add(row.id);
+          }
+        });
       }
-      mapped.add(_TimelineRow(id: id, createdAt: createdAt));
     }
-    return mapped;
   }
 
   Future<Map<String, int>> getSessionExpectedPaymentsByMethod(
@@ -2178,13 +2256,13 @@ class TpvLocalDataSource {
       final String rawMethods =
           (row.readNullable<String>('methods') ?? '').trim();
       final List<String> methods = rawMethods.isEmpty
-          ? const <String>[]
+          ? <String>[]
           : rawMethods
               .split(',')
               .map((String value) => value.trim())
               .where((String value) => value.isNotEmpty)
               .toSet()
-              .toList()
+              .toList(growable: true)
         ..sort();
       final String customerName =
           (row.readNullable<String>('customer_name') ?? '').trim();
@@ -3426,16 +3504,6 @@ class _IpvOpeningSnapshot {
 
   final String source;
   final Map<String, double> startQtyByProduct;
-}
-
-class _TimelineRow {
-  const _TimelineRow({
-    required this.id,
-    required this.createdAt,
-  });
-
-  final String id;
-  final DateTime createdAt;
 }
 
 class _IpvLineAccumulator {

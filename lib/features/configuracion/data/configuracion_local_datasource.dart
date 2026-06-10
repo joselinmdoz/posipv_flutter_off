@@ -348,6 +348,84 @@ class AppPaymentMethodSetting {
   }
 }
 
+class WorkOrderPaymentDisplayConfig {
+  const WorkOrderPaymentDisplayConfig({
+    required this.localCurrencyCode,
+    required this.foreignCurrencyCode,
+    required this.localCashFixedSurcharge,
+    required this.localTransferPercentSurcharge,
+  });
+
+  static const WorkOrderPaymentDisplayConfig defaults =
+      WorkOrderPaymentDisplayConfig(
+    localCurrencyCode: 'CUP',
+    foreignCurrencyCode: 'USD',
+    localCashFixedSurcharge: 5,
+    localTransferPercentSurcharge: 10,
+  );
+
+  final String localCurrencyCode;
+  final String foreignCurrencyCode;
+  final double localCashFixedSurcharge;
+  final double localTransferPercentSurcharge;
+
+  factory WorkOrderPaymentDisplayConfig.fromJson(Map<String, Object?> json) {
+    return WorkOrderPaymentDisplayConfig(
+      localCurrencyCode: _sanitizeCurrencyCode(
+        json['localCurrencyCode'] as String?,
+      ),
+      foreignCurrencyCode: _sanitizeCurrencyCode(
+        json['foreignCurrencyCode'] as String?,
+      ),
+      localCashFixedSurcharge: _asDouble(json['localCashFixedSurcharge']) ?? 5,
+      localTransferPercentSurcharge:
+          _asDouble(json['localTransferPercentSurcharge']) ?? 10,
+    ).normalized();
+  }
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'localCurrencyCode': localCurrencyCode,
+      'foreignCurrencyCode': foreignCurrencyCode,
+      'localCashFixedSurcharge': localCashFixedSurcharge,
+      'localTransferPercentSurcharge': localTransferPercentSurcharge,
+    };
+  }
+
+  WorkOrderPaymentDisplayConfig copyWith({
+    String? localCurrencyCode,
+    String? foreignCurrencyCode,
+    double? localCashFixedSurcharge,
+    double? localTransferPercentSurcharge,
+  }) {
+    return WorkOrderPaymentDisplayConfig(
+      localCurrencyCode: localCurrencyCode ?? this.localCurrencyCode,
+      foreignCurrencyCode: foreignCurrencyCode ?? this.foreignCurrencyCode,
+      localCashFixedSurcharge:
+          localCashFixedSurcharge ?? this.localCashFixedSurcharge,
+      localTransferPercentSurcharge:
+          localTransferPercentSurcharge ?? this.localTransferPercentSurcharge,
+    ).normalized();
+  }
+
+  WorkOrderPaymentDisplayConfig normalized() {
+    final String localCode = _sanitizeCurrencyCode(localCurrencyCode);
+    final String foreignCode = _sanitizeCurrencyCode(foreignCurrencyCode);
+    return WorkOrderPaymentDisplayConfig(
+      localCurrencyCode: localCode.isEmpty ? 'CUP' : localCode,
+      foreignCurrencyCode: foreignCode.isEmpty ? 'USD' : foreignCode,
+      localCashFixedSurcharge:
+          localCashFixedSurcharge.isFinite && localCashFixedSurcharge >= 0
+              ? localCashFixedSurcharge
+              : 0,
+      localTransferPercentSurcharge: localTransferPercentSurcharge.isFinite &&
+              localTransferPercentSurcharge >= 0
+          ? localTransferPercentSurcharge
+          : 0,
+    );
+  }
+}
+
 class AppConfig {
   const AppConfig({
     required this.businessName,
@@ -406,6 +484,8 @@ class ConfiguracionLocalDataSource {
   static const String _kThemePreference = 'theme_preference';
   static const String _kPaymentMethodsConfigJson =
       'payment_methods_config_json_v1';
+  static const String _kWorkOrderPaymentDisplayConfigJson =
+      'work_order_payment_display_config_json_v1';
   static const String _kDashboardWidgetsPrefix =
       'dashboard_widgets_visible_v1::';
   static const List<AppPaymentMethodSetting> _initialInstallPaymentMethods =
@@ -432,6 +512,7 @@ class ConfiguracionLocalDataSource {
                   _kCurrencyConfigJson,
                   _kAllowNegativeStock,
                   _kThemePreference,
+                  _kWorkOrderPaymentDisplayConfigJson,
                 ]) &
                 tbl.key.isNotNull() &
                 tbl.value.isNotNull(),
@@ -570,6 +651,39 @@ class ConfiguracionLocalDataSource {
         .toSet();
   }
 
+  Future<WorkOrderPaymentDisplayConfig>
+      loadWorkOrderPaymentDisplayConfig() async {
+    final AppSetting? row = await (_db.select(_db.appSettings)
+          ..where((AppSettings tbl) =>
+              tbl.key.equals(_kWorkOrderPaymentDisplayConfigJson)))
+        .getSingleOrNull();
+    if (row == null || row.value.trim().isEmpty) {
+      const WorkOrderPaymentDisplayConfig fallback =
+          WorkOrderPaymentDisplayConfig.defaults;
+      await saveWorkOrderPaymentDisplayConfig(fallback);
+      return fallback;
+    }
+    try {
+      final Object? decoded = jsonDecode(row.value);
+      if (decoded is Map) {
+        return WorkOrderPaymentDisplayConfig.fromJson(
+          decoded.cast<String, Object?>(),
+        );
+      }
+    } catch (_) {}
+    return WorkOrderPaymentDisplayConfig.defaults;
+  }
+
+  Future<void> saveWorkOrderPaymentDisplayConfig(
+    WorkOrderPaymentDisplayConfig config,
+  ) async {
+    final WorkOrderPaymentDisplayConfig normalized = config.normalized();
+    await _upsert(
+      _kWorkOrderPaymentDisplayConfigJson,
+      jsonEncode(normalized.toJson()),
+    );
+  }
+
   Future<DashboardWidgetLayout> loadDashboardWidgetLayout({
     required String userId,
   }) async {
@@ -677,6 +791,8 @@ class ConfiguracionLocalDataSource {
         !_hasStoredValue(existingValues, _kAllowNegativeStock);
     final bool missingThemePreference =
         !_hasStoredValue(existingValues, _kThemePreference);
+    final bool missingWorkOrderPaymentDisplayConfig =
+        !_hasStoredValue(existingValues, _kWorkOrderPaymentDisplayConfigJson);
 
     final AppSetting? paymentSetting = await (_db.select(_db.appSettings)
           ..where(
@@ -691,6 +807,7 @@ class ConfiguracionLocalDataSource {
         !missingCurrencyConfig &&
         !missingAllowNegativeStock &&
         !missingThemePreference &&
+        !missingWorkOrderPaymentDisplayConfig &&
         !missingPaymentMethods) {
       return;
     }
@@ -721,6 +838,12 @@ class ConfiguracionLocalDataSource {
       }
       if (missingThemePreference) {
         await _upsert(_kThemePreference, config.themePreference.storageValue);
+      }
+      if (missingWorkOrderPaymentDisplayConfig) {
+        await _upsert(
+          _kWorkOrderPaymentDisplayConfigJson,
+          jsonEncode(WorkOrderPaymentDisplayConfig.defaults.toJson()),
+        );
       }
       if (missingPaymentMethods) {
         await _upsert(
