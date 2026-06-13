@@ -528,6 +528,38 @@ class AuditLogs extends Table {
   Set<Column> get primaryKey => <Column>{id};
 }
 
+class SyncQueueEntries extends Table {
+  TextColumn get id => text()();
+  TextColumn get entityType => text()();
+  TextColumn get entityId => text()();
+  TextColumn get operation => text()();
+  TextColumn get payloadJson => text()();
+  TextColumn get sourceModule => text().nullable()();
+  TextColumn get status => text().withDefault(const Constant('pending'))();
+  IntColumn get retryCount => integer().withDefault(const Constant(0))();
+  TextColumn get lastError => text().nullable()();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get updatedAt => dateTime().nullable()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{id};
+}
+
+class SyncRuns extends Table {
+  TextColumn get id => text()();
+  TextColumn get direction => text()();
+  TextColumn get status => text().withDefault(const Constant('running'))();
+  IntColumn get requestCount => integer().withDefault(const Constant(0))();
+  IntColumn get recordCount => integer().withDefault(const Constant(0))();
+  TextColumn get summaryJson => text().withDefault(const Constant('{}'))();
+  TextColumn get errorMessage => text().nullable()();
+  DateTimeColumn get startedAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get finishedAt => dateTime().nullable()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{id};
+}
+
 @DriftDatabase(
   tables: <Type>[
     Users,
@@ -561,6 +593,8 @@ class AuditLogs extends Table {
     WorkOrders,
     AppSettings,
     AuditLogs,
+    SyncQueueEntries,
+    SyncRuns,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -568,7 +602,7 @@ class AppDatabase extends _$AppDatabase {
   final Uuid _uuid = const Uuid();
 
   @override
-  int get schemaVersion => 32;
+  int get schemaVersion => 33;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1066,6 +1100,15 @@ class AppDatabase extends _$AppDatabase {
               'payment_lines_json',
               () => m.addColumn(workOrders, workOrders.paymentLinesJson),
             );
+          }
+          if (from < 33) {
+            if (!await _tableExists('sync_queue_entries')) {
+              await m.createTable(syncQueueEntries);
+            }
+            if (!await _tableExists('sync_runs')) {
+              await m.createTable(syncRuns);
+            }
+            await _createPerformanceIndexes();
           }
         },
       );
@@ -1630,6 +1673,30 @@ class AppDatabase extends _$AppDatabase {
       sql: '''
       CREATE INDEX IF NOT EXISTS idx_sale_item_lot_alloc_lot
       ON sale_item_lot_allocations (lot_id)
+      ''',
+    );
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'sync_queue_entries',
+      requiredColumns: <String>['status', 'created_at'],
+      sql: '''
+      CREATE INDEX IF NOT EXISTS idx_sync_queue_status_created
+      ON sync_queue_entries (status, created_at)
+      ''',
+    );
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'sync_queue_entries',
+      requiredColumns: <String>['entity_type', 'entity_id'],
+      sql: '''
+      CREATE INDEX IF NOT EXISTS idx_sync_queue_entity
+      ON sync_queue_entries (entity_type, entity_id)
+      ''',
+    );
+    await _createIndexIfTableAndColumnsExist(
+      tableName: 'sync_runs',
+      requiredColumns: <String>['status', 'started_at'],
+      sql: '''
+      CREATE INDEX IF NOT EXISTS idx_sync_runs_status_started
+      ON sync_runs (status, started_at DESC)
       ''',
     );
   }

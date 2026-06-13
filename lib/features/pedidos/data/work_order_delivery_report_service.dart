@@ -371,6 +371,29 @@ class WorkOrderDeliveryReportService {
             '${line.currencyCode} · ${_formatDateTime(line.paidAt)}',
             style: const pw.TextStyle(fontSize: 9),
           ),
+          if (line.primaryCurrencyCode != line.currencyCode)
+            pw.Padding(
+              padding: const pw.EdgeInsets.only(top: 3),
+              child: pw.Text(
+                'Equiv. ${line.primaryCurrencyCode}: ${_symbol(line.primaryCurrencyCode)}${(line.equivalentAmountCents / 100).toStringAsFixed(2)}',
+                style: const pw.TextStyle(fontSize: 9),
+              ),
+            ),
+          pw.Padding(
+            padding: const pw.EdgeInsets.only(top: 3),
+            child: pw.Text(
+              'Tasa aplicada: 1 ${line.currencyCode} = ${line.appliedRateToPrimary.toStringAsFixed(2)} ${line.primaryCurrencyCode}',
+              style: const pw.TextStyle(fontSize: 9),
+            ),
+          ),
+          if ((line.quoteLabel ?? '').trim().isNotEmpty)
+            pw.Padding(
+              padding: const pw.EdgeInsets.only(top: 3),
+              child: pw.Text(
+                'Variante usada: ${line.quoteLabel}',
+                style: const pw.TextStyle(fontSize: 9),
+              ),
+            ),
           if ((line.transactionId ?? '').trim().isNotEmpty)
             pw.Padding(
               padding: const pw.EdgeInsets.only(top: 3),

@@ -233,6 +233,13 @@ class _PedidoDetailPageState extends ConsumerState<PedidoDetailPage> {
             orderTotals: detail.totalCosts,
             initialPricingSnapshot: detail.pricingSnapshot ??
                 _fallbackPricingSnapshot(currencyConfig),
+            initialPaymentValues: detail.paymentValues.isEmpty
+                ? buildWorkOrderPaymentVariants(
+                    totals: detail.totalCosts,
+                    currencyConfig: currencyConfig,
+                    paymentDisplayConfig: _paymentDisplayConfig,
+                  )
+                : detail.paymentValues,
             initialPaymentLines: detail.paymentLines,
             currencyConfig: currencyConfig,
             paymentMethods: paymentMethods,
@@ -587,6 +594,84 @@ class _PedidoDetailPageState extends ConsumerState<PedidoDetailPage> {
     Navigator.of(context).pop(_changed);
   }
 
+  Future<void> _showPaymentLinesDetail(
+      List<WorkOrderRecordedPaymentLine> lines) async {
+    if (lines.isEmpty || !mounted) {
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext context) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.62,
+          minChildSize: 0.42,
+          maxChildSize: 0.9,
+          builder: (BuildContext context, ScrollController controller) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              ),
+              child: Column(
+                children: <Widget>[
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 48,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFCBD5E1),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 18),
+                    child: Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: Text(
+                            'Detalle de pagos',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF0F172A),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: ListView.builder(
+                      controller: controller,
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                      itemCount: lines.length,
+                      itemBuilder: (BuildContext context, int index) {
+                        final WorkOrderRecordedPaymentLine line = lines[index];
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _PaymentLineCard(
+                            line: line,
+                            formatMoney: _formatCents,
+                            formatDateTime: _dateTime,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _openHistory() async {
     final WorkOrderDetail? detail = _detail;
     if (detail == null) {
@@ -614,6 +699,12 @@ class _PedidoDetailPageState extends ConsumerState<PedidoDetailPage> {
     final WorkOrderDetail? detail = _detail;
     final WorkOrderProductItem? firstItem =
         detail == null || detail.items.isEmpty ? null : detail.items.first;
+    final List<WorkOrderMaterialCostLine> visibleMaterialCostLines = detail ==
+            null
+        ? const <WorkOrderMaterialCostLine>[]
+        : detail.materialCostLines
+            .where((WorkOrderMaterialCostLine row) => row.totalCostCents > 0)
+            .toList(growable: false);
     final List<WorkOrderPaymentValue> paymentVariants = detail == null
         ? const <WorkOrderPaymentValue>[]
         : detail.paymentValues.isEmpty
@@ -653,6 +744,12 @@ class _PedidoDetailPageState extends ConsumerState<PedidoDetailPage> {
                 case _OrderAction.history:
                   _openHistory();
                   break;
+                case _OrderAction.shareDeliveryCertificate:
+                  _exportDeliveryCertificate(shareFile: true);
+                  break;
+                case _OrderAction.saveDeliveryCertificate:
+                  _exportDeliveryCertificate(shareFile: false);
+                  break;
                 case _OrderAction.cancel:
                   _cancelOrder();
                   break;
@@ -676,6 +773,34 @@ class _PedidoDetailPageState extends ConsumerState<PedidoDetailPage> {
                   ],
                 ),
               ),
+              if (_canGenerateDeliveryCertificate(detail.status))
+                const PopupMenuItem<_OrderAction>(
+                  value: _OrderAction.shareDeliveryCertificate,
+                  child: Row(
+                    children: <Widget>[
+                      Icon(
+                        Icons.print_outlined,
+                        color: Color(0xFF2563EB),
+                      ),
+                      SizedBox(width: 10),
+                      Text('Imprimir acta'),
+                    ],
+                  ),
+                ),
+              if (_canGenerateDeliveryCertificate(detail.status))
+                const PopupMenuItem<_OrderAction>(
+                  value: _OrderAction.saveDeliveryCertificate,
+                  child: Row(
+                    children: <Widget>[
+                      Icon(
+                        Icons.picture_as_pdf_outlined,
+                        color: Color(0xFF2563EB),
+                      ),
+                      SizedBox(width: 10),
+                      Text('Guardar acta PDF'),
+                    ],
+                  ),
+                ),
               if (canManage &&
                   detail.status != WorkOrderStatusCatalog.cancelled &&
                   detail.status != WorkOrderStatusCatalog.delivered)
@@ -741,42 +866,65 @@ class _PedidoDetailPageState extends ConsumerState<PedidoDetailPage> {
                       ),
                       const SizedBox(height: 18),
                     ],
-                    _CommercialStatusPanel(
-                      paymentStatus: detail.paymentStatus,
-                      paidAt: detail.paidAt,
-                      deliveredAt: detail.deliveredAt,
-                      pricingSnapshot: detail.pricingSnapshot,
-                      busy: _saving,
-                      onManagePayment:
-                          canManage ? _openPaymentManagement : null,
-                    ),
-                    const SizedBox(height: 18),
-                    if (detail.paymentLines.isNotEmpty) ...<Widget>[
-                      const _BlockTitle('Pagos registrados'),
+                    const _BlockTitle('Valor del pedido'),
+                    const SizedBox(height: 10),
+                    if (detail.requestedCostLines.isEmpty)
+                      const _TextPanel(
+                        text:
+                            'Aun no hay productos solicitados para calcular el valor del pedido.',
+                      )
+                    else ...<Widget>[
+                      _InfoCard(
+                        children: paymentVariants.isEmpty
+                            ? detail.totalCosts
+                                .map(
+                                  (WorkOrderCostTotal row) => _InfoRow(
+                                    label: row.currencyCode,
+                                    value: _formatCents(
+                                      row.totalCostCents,
+                                      row.currencyCode,
+                                    ),
+                                  ),
+                                )
+                                .toList(growable: false)
+                            : paymentVariants
+                                .map(
+                                  (WorkOrderPaymentValue row) => _InfoRow(
+                                    label: row.label,
+                                    value: _formatCents(
+                                      row.amountCents,
+                                      row.currencyCode,
+                                    ),
+                                  ),
+                                )
+                                .toList(growable: false),
+                      ),
                       const SizedBox(height: 10),
-                      ...detail.paymentLines.map(
-                        (WorkOrderRecordedPaymentLine line) => Padding(
+                      ...detail.requestedCostLines.map(
+                        (WorkOrderRequestedCostLine row) => Padding(
                           padding: const EdgeInsets.only(bottom: 10),
-                          child: _PaymentLineCard(
-                            line: line,
+                          child: _RequestedCostCard(
+                            line: row,
                             formatMoney: _formatCents,
-                            formatDateTime: _dateTime,
+                            formatQty: _qty,
                           ),
                         ),
                       ),
                       const SizedBox(height: 18),
                     ],
-                    if (_canGenerateDeliveryCertificate(
-                        detail.status)) ...<Widget>[
-                      _DeliveryCertificatePanel(
-                        busy: _saving,
-                        onPrint: () =>
-                            _exportDeliveryCertificate(shareFile: true),
-                        onSavePdf: () =>
-                            _exportDeliveryCertificate(shareFile: false),
-                      ),
-                      const SizedBox(height: 18),
-                    ],
+                    _CommercialStatusPanel(
+                      paymentStatus: detail.paymentStatus,
+                      deliveredAt: detail.deliveredAt,
+                      paymentLines: detail.paymentLines,
+                      busy: _saving,
+                      formatMoney: _formatCents,
+                      onShowPaymentDetails: detail.paymentLines.isEmpty
+                          ? null
+                          : () => _showPaymentLinesDetail(detail.paymentLines),
+                      onManagePayment:
+                          canManage ? _openPaymentManagement : null,
+                    ),
+                    const SizedBox(height: 18),
                     const _BlockTitle('Cliente'),
                     const SizedBox(height: 10),
                     _ContactCard(
@@ -920,55 +1068,9 @@ class _PedidoDetailPageState extends ConsumerState<PedidoDetailPage> {
                         ),
                       ),
                     const SizedBox(height: 18),
-                    const _BlockTitle('Valor del pedido'),
-                    const SizedBox(height: 10),
-                    if (detail.requestedCostLines.isEmpty)
-                      const _TextPanel(
-                        text:
-                            'Aun no hay productos solicitados para calcular el valor del pedido.',
-                      )
-                    else ...<Widget>[
-                      _InfoCard(
-                        children: paymentVariants.isEmpty
-                            ? detail.totalCosts
-                                .map(
-                                  (WorkOrderCostTotal row) => _InfoRow(
-                                    label: row.currencyCode,
-                                    value: _formatCents(
-                                      row.totalCostCents,
-                                      row.currencyCode,
-                                    ),
-                                  ),
-                                )
-                                .toList(growable: false)
-                            : paymentVariants
-                                .map(
-                                  (WorkOrderPaymentValue row) => _InfoRow(
-                                    label: row.label,
-                                    value: _formatCents(
-                                      row.amountCents,
-                                      row.currencyCode,
-                                    ),
-                                  ),
-                                )
-                                .toList(growable: false),
-                      ),
-                      const SizedBox(height: 10),
-                      ...detail.requestedCostLines.map(
-                        (WorkOrderRequestedCostLine row) => Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: _RequestedCostCard(
-                            line: row,
-                            formatMoney: _formatCents,
-                            formatQty: _qty,
-                          ),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 18),
                     const _BlockTitle('Costos de materiales y merma'),
                     const SizedBox(height: 10),
-                    if (detail.materialCostLines.isEmpty)
+                    if (visibleMaterialCostLines.isEmpty)
                       const _TextPanel(
                         text:
                             'Aun no hay materiales consumidos para calcular los costos productivos de este pedido.',
@@ -988,7 +1090,7 @@ class _PedidoDetailPageState extends ConsumerState<PedidoDetailPage> {
                             .toList(growable: false),
                       ),
                       const SizedBox(height: 10),
-                      ...detail.materialCostLines.map(
+                      ...visibleMaterialCostLines.map(
                         (WorkOrderMaterialCostLine row) => Padding(
                           padding: const EdgeInsets.only(bottom: 10),
                           child: _MaterialCostCard(
@@ -1351,30 +1453,33 @@ class _ProcessActionConfig {
 class _CommercialStatusPanel extends StatelessWidget {
   const _CommercialStatusPanel({
     required this.paymentStatus,
-    required this.paidAt,
     required this.deliveredAt,
-    required this.pricingSnapshot,
+    required this.paymentLines,
     required this.busy,
+    required this.formatMoney,
+    this.onShowPaymentDetails,
     this.onManagePayment,
   });
 
   final String paymentStatus;
-  final DateTime? paidAt;
   final DateTime? deliveredAt;
-  final WorkOrderPricingSnapshot? pricingSnapshot;
+  final List<WorkOrderRecordedPaymentLine> paymentLines;
   final bool busy;
+  final String Function(int cents, String currencyCode) formatMoney;
+  final VoidCallback? onShowPaymentDetails;
   final VoidCallback? onManagePayment;
 
   @override
   Widget build(BuildContext context) {
-    final bool isPaid = paymentStatus == WorkOrderPaymentStatusCatalog.paid;
+    final ({Color bg, Color border}) palette =
+        _commercialPanelPalette(paymentStatus);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isPaid ? const Color(0xFFECFDF5) : const Color(0xFFFFFBEB),
+        color: palette.bg,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: isPaid ? const Color(0xFFA7F3D0) : const Color(0xFFFDE68A),
+          color: palette.border,
         ),
       ),
       child: Column(
@@ -1395,34 +1500,52 @@ class _CommercialStatusPanel extends StatelessWidget {
               _PaymentStatusBadge(status: paymentStatus),
             ],
           ),
-          const SizedBox(height: 8),
-          Text(
-            isPaid
-                ? 'Este pedido ya quedó marcado como cobrado. La entrega puede ocurrir antes o después de ese cobro.'
-                : 'Este pedido sigue pendiente de cobro. Puede entregarse aunque aún no se haya cobrado, o cobrarse antes de la entrega.',
-            style: const TextStyle(
-              color: Color(0xFF475569),
-              fontWeight: FontWeight.w600,
-              height: 1.35,
+          const SizedBox(height: 12),
+          if (paymentLines.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.75),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: const Text(
+                'Aún no hay pagos registrados.',
+                style: TextStyle(
+                  color: Color(0xFF64748B),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            )
+          else
+            InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: onShowPaymentDetails,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.78),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Column(
+                  children: paymentLines
+                      .map(
+                        (WorkOrderRecordedPaymentLine line) =>
+                            _PaymentSummaryTile(
+                          line: line,
+                          formatMoney: formatMoney,
+                        ),
+                      )
+                      .toList(growable: false),
+                ),
+              ),
             ),
-          ),
           const SizedBox(height: 12),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: <Widget>[
-              _MetaTag(
-                icon: Icons.payments_outlined,
-                label: paidAt == null
-                    ? 'Cobro: pendiente'
-                    : 'Cobrado: ${_fmtDate(paidAt!)}',
-              ),
-              _MetaTag(
-                icon: Icons.currency_exchange_rounded,
-                label: pricingSnapshot == null
-                    ? 'Cotización dinámica'
-                    : 'Tasa fijada: ${_fmtDate(pricingSnapshot!.capturedAt)}',
-              ),
               if (deliveredAt != null)
                 _MetaTag(
                   icon: Icons.local_shipping_outlined,
@@ -1452,6 +1575,67 @@ class _CommercialStatusPanel extends StatelessWidget {
     final String hour = local.hour.toString().padLeft(2, '0');
     final String minute = local.minute.toString().padLeft(2, '0');
     return '$day/$month · $hour:$minute';
+  }
+}
+
+({Color bg, Color border}) _commercialPanelPalette(String status) {
+  switch (status) {
+    case WorkOrderPaymentStatusCatalog.paid:
+      return (bg: const Color(0xFFECFDF5), border: const Color(0xFFA7F3D0));
+    case WorkOrderPaymentStatusCatalog.partial:
+      return (bg: const Color(0xFFFFFBEB), border: const Color(0xFFFDE68A));
+    case WorkOrderPaymentStatusCatalog.unpaid:
+    default:
+      return (bg: const Color(0xFFFEF2F2), border: const Color(0xFFFECACA));
+  }
+}
+
+class _PaymentSummaryTile extends StatelessWidget {
+  const _PaymentSummaryTile({
+    required this.line,
+    required this.formatMoney,
+  });
+
+  final WorkOrderRecordedPaymentLine line;
+  final String Function(int cents, String currencyCode) formatMoney;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: const BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Color(0xFFE2E8F0)),
+        ),
+      ),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              line.methodLabel,
+              style: const TextStyle(
+                color: Color(0xFF0F172A),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            '${formatMoney(line.enteredAmountCents, line.currencyCode)} ${line.currencyCode}',
+            style: const TextStyle(
+              color: Color(0xFF1152D4),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Icon(
+            Icons.chevron_right_rounded,
+            color: Color(0xFF64748B),
+            size: 18,
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -1508,6 +1692,38 @@ class _PaymentLineCard extends StatelessWidget {
               fontWeight: FontWeight.w600,
             ),
           ),
+          if (line.primaryCurrencyCode != line.currencyCode)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'Equiv. ${line.primaryCurrencyCode}: ${formatMoney(line.equivalentAmountCents, line.primaryCurrencyCode)}',
+                style: const TextStyle(
+                  color: Color(0xFF475569),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              'Tasa aplicada: 1 ${line.currencyCode} = ${line.appliedRateToPrimary.toStringAsFixed(2)} ${line.primaryCurrencyCode}',
+              style: const TextStyle(
+                color: Color(0xFF64748B),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          if ((line.quoteLabel ?? '').trim().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'Variante usada: ${line.quoteLabel}',
+                style: const TextStyle(
+                  color: Color(0xFF475569),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
           if ((line.transactionId ?? '').trim().isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 6),
@@ -1545,17 +1761,17 @@ class _PaymentStatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool isPaid = status == WorkOrderPaymentStatusCatalog.paid;
+    final ({Color bg, Color fg}) palette = _paymentBadgePalette(status);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: isPaid ? const Color(0xFFDCFCE7) : const Color(0xFFFFEDD5),
+        color: palette.bg,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         WorkOrderPaymentStatusCatalog.label(status),
         style: TextStyle(
-          color: isPaid ? const Color(0xFF047857) : const Color(0xFFB45309),
+          color: palette.fg,
           fontSize: 11,
           fontWeight: FontWeight.w900,
         ),
@@ -1564,73 +1780,24 @@ class _PaymentStatusBadge extends StatelessWidget {
   }
 }
 
-enum _OrderAction {
-  history,
-  cancel,
-  delete,
+({Color bg, Color fg}) _paymentBadgePalette(String status) {
+  switch (status) {
+    case WorkOrderPaymentStatusCatalog.paid:
+      return (bg: const Color(0xFFDCFCE7), fg: const Color(0xFF047857));
+    case WorkOrderPaymentStatusCatalog.partial:
+      return (bg: const Color(0xFFFEF3C7), fg: const Color(0xFFB45309));
+    case WorkOrderPaymentStatusCatalog.unpaid:
+    default:
+      return (bg: const Color(0xFFFEE2E2), fg: const Color(0xFFB91C1C));
+  }
 }
 
-class _DeliveryCertificatePanel extends StatelessWidget {
-  const _DeliveryCertificatePanel({
-    required this.busy,
-    required this.onPrint,
-    required this.onSavePdf,
-  });
-
-  final bool busy;
-  final VoidCallback onPrint;
-  final VoidCallback onSavePdf;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEFF6FF),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFBFDBFE)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          const Text(
-            'Acta de entrega',
-            style: TextStyle(
-              color: Color(0xFF0F172A),
-              fontWeight: FontWeight.w800,
-              fontSize: 15,
-            ),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'Genera el documento con los datos del cliente, el pedido y los trabajos realizados para su entrega.',
-            style: TextStyle(
-              color: Color(0xFF475569),
-              fontWeight: FontWeight.w600,
-              height: 1.35,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: <Widget>[
-              FilledButton.icon(
-                onPressed: busy ? null : onPrint,
-                icon: const Icon(Icons.print_outlined),
-                label: const Text('Imprimir acta'),
-              ),
-              OutlinedButton.icon(
-                onPressed: busy ? null : onSavePdf,
-                icon: const Icon(Icons.picture_as_pdf_outlined),
-                label: const Text('Guardar PDF'),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+enum _OrderAction {
+  history,
+  shareDeliveryCertificate,
+  saveDeliveryCertificate,
+  cancel,
+  delete,
 }
 
 class _StatusHistoryCard extends StatelessWidget {

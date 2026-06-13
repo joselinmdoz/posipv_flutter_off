@@ -1,0 +1,79 @@
+<odoo>
+    <record id="view_posipv_backend_settings_form" model="ir.ui.view">
+        <field name="name">posipv.backend.settings.form</field>
+        <field name="model">posipv.backend.settings</field>
+        <field name="arch" type="xml">
+            <form string="Configuración backend POSIPV">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="company_id"/>
+                            <field name="active"/>
+                        </group>
+                        <group>
+                            <field name="allow_device_registration"/>
+                            <field name="allow_push"/>
+                            <field name="allow_pull"/>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="show_bootstrap_token" invisible="1"/>
+                        <field
+                            name="bootstrap_token"
+                            password="True"
+                            invisible="show_bootstrap_token"
+                        />
+                        <field
+                            name="bootstrap_token"
+                            readonly="1"
+                            widget="CopyClipboardChar"
+                            invisible="not show_bootstrap_token"
+                        />
+                        <div colspan="2">
+                            <button
+                                name="action_show_bootstrap_token"
+                                string="Mostrar token"
+                                type="object"
+                                class="btn-link"
+                                invisible="show_bootstrap_token"
+                            />
+                            <button
+                                name="action_hide_bootstrap_token"
+                                string="Ocultar token"
+                                type="object"
+                                class="btn-link"
+                                invisible="not show_bootstrap_token"
+                            />
+                            <button
+                                name="action_regenerate_bootstrap_token"
+                                string="Regenerar token"
+                                type="object"
+                                class="btn-link text-warning"
+                            />
+                        </div>
+                        <field name="last_batch_received_at" readonly="1"/>
+                        <field name="last_master_pull_at" readonly="1"/>
+                    </group>
+                    <group>
+                        <field name="notes" placeholder="Notas operativas del backend y reglas de despliegue."/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_posipv_backend_settings" model="ir.actions.act_window">
+        <field name="name">Configuración backend</field>
+        <field name="res_model">posipv.backend.settings</field>
+        <field name="view_mode">form,list</field>
+    </record>
+
+    <menuitem
+        id="menu_posipv_backend_settings"
+        name="Servidor"
+        parent="menu_posipv_configuration"
+        action="action_posipv_backend_settings"
+        sequence="10"
+        groups="posipv.group_posipv_manager"/>
+</odoo>

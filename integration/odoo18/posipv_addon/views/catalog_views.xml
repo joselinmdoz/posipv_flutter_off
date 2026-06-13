@@ -1,0 +1,219 @@
+<odoo>
+    <record id="view_posipv_catalog_product_tree" model="ir.ui.view">
+        <field name="name">posipv.catalog.product.tree</field>
+        <field name="model">posipv.catalog.product</field>
+        <field name="arch" type="xml">
+            <list string="Productos espejo">
+                <field name="name"/>
+                <field name="sku"/>
+                <field name="sale_price"/>
+                <field name="cost_price"/>
+                <field name="currency_code"/>
+                <field name="product_type"/>
+                <field name="received_at"/>
+            </list>
+        </field>
+    </record>
+    <record id="view_posipv_catalog_product_form" model="ir.ui.view">
+        <field name="name">posipv.catalog.product.form</field>
+        <field name="model">posipv.catalog.product</field>
+        <field name="arch" type="xml">
+            <form string="Producto espejo POSIPV">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="external_uuid" readonly="1"/>
+                            <field name="device_id"/>
+                            <field name="product_id"/>
+                        </group>
+                        <group>
+                            <field name="sku"/>
+                            <field name="barcode"/>
+                            <field name="currency_code"/>
+                            <field name="received_at" readonly="1"/>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="sale_price"/>
+                        <field name="cost_price"/>
+                        <field name="category_name"/>
+                        <field name="product_type"/>
+                        <field name="unit_measure"/>
+                        <field name="order_costing_mode"/>
+                    </group>
+                    <field name="payload_json"/>
+                </sheet>
+            </form>
+        </field>
+    </record>
+    <record id="action_posipv_catalog_product" model="ir.actions.act_window">
+        <field name="name">Productos espejo</field>
+        <field name="res_model">posipv.catalog.product</field>
+        <field name="view_mode">list,form</field>
+    </record>
+    <menuitem id="menu_posipv_catalog_product" name="Productos" parent="menu_posipv_catalogs" action="action_posipv_catalog_product" sequence="10" groups="posipv.group_posipv_viewer"/>
+
+    <record id="view_posipv_catalog_customer_tree" model="ir.ui.view">
+        <field name="name">posipv.catalog.customer.tree</field>
+        <field name="model">posipv.catalog.customer</field>
+        <field name="arch" type="xml">
+            <list string="Clientes espejo">
+                <field name="name"/>
+                <field name="code"/>
+                <field name="phone"/>
+                <field name="email"/>
+                <field name="customer_type"/>
+                <field name="received_at"/>
+            </list>
+        </field>
+    </record>
+    <record id="view_posipv_catalog_customer_form" model="ir.ui.view">
+        <field name="name">posipv.catalog.customer.form</field>
+        <field name="model">posipv.catalog.customer</field>
+        <field name="arch" type="xml">
+            <form string="Cliente espejo POSIPV">
+                <sheet>
+                    <group>
+                        <field name="name"/>
+                        <field name="external_uuid" readonly="1"/>
+                        <field name="partner_id"/>
+                        <field name="device_id"/>
+                        <field name="code"/>
+                        <field name="identity_number"/>
+                        <field name="phone"/>
+                        <field name="email"/>
+                        <field name="customer_type"/>
+                        <field name="is_vip"/>
+                    </group>
+                    <field name="payload_json"/>
+                </sheet>
+            </form>
+        </field>
+    </record>
+    <record id="action_posipv_catalog_customer" model="ir.actions.act_window">
+        <field name="name">Clientes espejo</field>
+        <field name="res_model">posipv.catalog.customer</field>
+        <field name="view_mode">list,form</field>
+    </record>
+    <menuitem id="menu_posipv_catalog_customer" name="Clientes" parent="menu_posipv_catalogs" action="action_posipv_catalog_customer" sequence="20" groups="posipv.group_posipv_viewer"/>
+
+    <record id="view_posipv_catalog_employee_tree" model="ir.ui.view">
+        <field name="name">posipv.catalog.employee.tree</field>
+        <field name="model">posipv.catalog.employee</field>
+        <field name="arch" type="xml">
+            <list string="Empleados espejo">
+                <field name="name"/>
+                <field name="code"/>
+                <field name="identity_number"/>
+                <field name="associated_username"/>
+                <field name="received_at"/>
+            </list>
+        </field>
+    </record>
+    <record id="view_posipv_catalog_employee_form" model="ir.ui.view">
+        <field name="name">posipv.catalog.employee.form</field>
+        <field name="model">posipv.catalog.employee</field>
+        <field name="arch" type="xml">
+            <form string="Empleado espejo POSIPV">
+                <sheet>
+                    <group>
+                        <field name="name"/>
+                        <field name="external_uuid" readonly="1"/>
+                        <field name="employee_id"/>
+                        <field name="device_id"/>
+                        <field name="code"/>
+                        <field name="identity_number"/>
+                        <field name="sex"/>
+                        <field name="associated_username"/>
+                    </group>
+                    <field name="payload_json"/>
+                </sheet>
+            </form>
+        </field>
+    </record>
+    <record id="action_posipv_catalog_employee" model="ir.actions.act_window">
+        <field name="name">Empleados espejo</field>
+        <field name="res_model">posipv.catalog.employee</field>
+        <field name="view_mode">list,form</field>
+    </record>
+    <menuitem id="menu_posipv_catalog_employee" name="Empleados" parent="menu_posipv_catalogs" action="action_posipv_catalog_employee" sequence="30" groups="posipv.group_posipv_viewer"/>
+
+    <record id="view_posipv_catalog_warehouse_tree" model="ir.ui.view">
+        <field name="name">posipv.catalog.warehouse.tree</field>
+        <field name="model">posipv.catalog.warehouse</field>
+        <field name="arch" type="xml">
+            <list string="Almacenes espejo">
+                <field name="name"/>
+                <field name="warehouse_type"/>
+                <field name="warehouse_id"/>
+                <field name="received_at"/>
+            </list>
+        </field>
+    </record>
+    <record id="view_posipv_catalog_warehouse_form" model="ir.ui.view">
+        <field name="name">posipv.catalog.warehouse.form</field>
+        <field name="model">posipv.catalog.warehouse</field>
+        <field name="arch" type="xml">
+            <form string="Almacén espejo POSIPV">
+                <sheet>
+                    <group>
+                        <field name="name"/>
+                        <field name="external_uuid" readonly="1"/>
+                        <field name="warehouse_id"/>
+                        <field name="warehouse_type"/>
+                        <field name="device_id"/>
+                    </group>
+                    <field name="payload_json"/>
+                </sheet>
+            </form>
+        </field>
+    </record>
+    <record id="action_posipv_catalog_warehouse" model="ir.actions.act_window">
+        <field name="name">Almacenes espejo</field>
+        <field name="res_model">posipv.catalog.warehouse</field>
+        <field name="view_mode">list,form</field>
+    </record>
+    <menuitem id="menu_posipv_catalog_warehouse" name="Almacenes" parent="menu_posipv_catalogs" action="action_posipv_catalog_warehouse" sequence="40" groups="posipv.group_posipv_viewer"/>
+
+    <record id="view_posipv_catalog_terminal_tree" model="ir.ui.view">
+        <field name="name">posipv.catalog.terminal.tree</field>
+        <field name="model">posipv.catalog.terminal</field>
+        <field name="arch" type="xml">
+            <list string="TPV espejo">
+                <field name="name"/>
+                <field name="code"/>
+                <field name="currency_code"/>
+                <field name="warehouse_external_uuid"/>
+                <field name="received_at"/>
+            </list>
+        </field>
+    </record>
+    <record id="view_posipv_catalog_terminal_form" model="ir.ui.view">
+        <field name="name">posipv.catalog.terminal.form</field>
+        <field name="model">posipv.catalog.terminal</field>
+        <field name="arch" type="xml">
+            <form string="TPV espejo POSIPV">
+                <sheet>
+                    <group>
+                        <field name="name"/>
+                        <field name="external_uuid" readonly="1"/>
+                        <field name="pos_config_id"/>
+                        <field name="device_id"/>
+                        <field name="code"/>
+                        <field name="warehouse_external_uuid"/>
+                        <field name="currency_code"/>
+                    </group>
+                    <field name="payment_methods_json"/>
+                    <field name="payload_json"/>
+                </sheet>
+            </form>
+        </field>
+    </record>
+    <record id="action_posipv_catalog_terminal" model="ir.actions.act_window">
+        <field name="name">TPV espejo</field>
+        <field name="res_model">posipv.catalog.terminal</field>
+        <field name="view_mode">list,form</field>
+    </record>
+    <menuitem id="menu_posipv_catalog_terminal" name="TPV" parent="menu_posipv_catalogs" action="action_posipv_catalog_terminal" sequence="50" groups="posipv.group_posipv_viewer"/>
+</odoo>

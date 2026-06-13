@@ -282,6 +282,10 @@ class _HomePageState extends ConsumerState<HomePage> {
         _buildOrdersMetricsAction(session);
     final VoidCallback? openLowStockMetricsTap =
         _buildLowStockMetricsAction(session);
+    final VoidCallback? openOrdersQuickActionTap =
+        SessionAccess.canAccessRoute(session, '/pedidos')
+            ? () => context.go('/pedidos')
+            : null;
 
     return AppScaffold(
       title: _businessName,
@@ -338,6 +342,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                 onSalesTap: openSalesMetricsTap,
                 onOrdersTap: openOrdersMetricsTap,
                 onLowStockTap: openLowStockMetricsTap,
+                onOrdersQuickActionTap: openOrdersQuickActionTap,
               ),
             ],
           ],

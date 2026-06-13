@@ -6,6 +6,8 @@ import '../../../shared/widgets/app_scaffold.dart';
 import '../../../shared/widgets/app_searchable_select_field.dart';
 import '../../auth/presentation/auth_providers.dart';
 import '../../clientes/presentation/cliente_form_page.dart';
+import '../../configuracion/data/configuracion_local_datasource.dart';
+import '../../configuracion/presentation/configuracion_providers.dart';
 import '../../configuracion/presentation/work_order_task_worker_roles_settings_page.dart';
 import '../data/pedidos_local_datasource.dart';
 import 'pedidos_providers.dart';
@@ -30,6 +32,8 @@ class _PedidoFormPageState extends ConsumerState<PedidoFormPage> {
   late final TextEditingController _titleCtrl;
   late final TextEditingController _descriptionCtrl;
   late final TextEditingController _noteCtrl;
+  late final TextEditingController _fixedCtrl;
+  late final TextEditingController _transferCtrl;
 
   bool _loading = true;
   bool _saving = false;
@@ -46,6 +50,10 @@ class _PedidoFormPageState extends ConsumerState<PedidoFormPage> {
   List<String> _taskWorkerRoleOptions = <String>[];
   List<WorkOrderProductItem> _items = <WorkOrderProductItem>[];
   List<WorkOrderAssignmentItem> _assignments = <WorkOrderAssignmentItem>[];
+  final Map<String, TextEditingController> _rateCtrls =
+      <String, TextEditingController>{};
+  String _localCurrencyCode = 'CUP';
+  String _foreignCurrencyCode = 'USD';
 
   static const String _noneOption = '__none__';
 
@@ -55,6 +63,8 @@ class _PedidoFormPageState extends ConsumerState<PedidoFormPage> {
     _titleCtrl = TextEditingController();
     _descriptionCtrl = TextEditingController();
     _noteCtrl = TextEditingController();
+    _fixedCtrl = TextEditingController();
+    _transferCtrl = TextEditingController();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
@@ -69,6 +79,11 @@ class _PedidoFormPageState extends ConsumerState<PedidoFormPage> {
     _titleCtrl.dispose();
     _descriptionCtrl.dispose();
     _noteCtrl.dispose();
+    _fixedCtrl.dispose();
+    _transferCtrl.dispose();
+    for (final TextEditingController controller in _rateCtrls.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -79,11 +94,16 @@ class _PedidoFormPageState extends ConsumerState<PedidoFormPage> {
     try {
       final PedidosLocalDataSource ds =
           ref.read(pedidosLocalDataSourceProvider);
+      final ConfiguracionLocalDataSource configDs =
+          ref.read(configuracionLocalDataSourceProvider);
+      final AppCurrencyConfig currencyConfig =
+          ref.read(currentAppConfigProvider).currencyConfig;
       final results = await Future.wait<dynamic>(<Future<dynamic>>[
         ds.listCustomerOptions(),
         ds.listEmployeeOptions(),
         ds.listProductOptions(),
         ds.listActiveTaskWorkerRoleOptions(),
+        configDs.loadWorkOrderPaymentDisplayConfig(),
         widget.isEditing
             ? ds.getOrderById(widget.orderId!)
             : Future<WorkOrderDetail?>.value(null),
@@ -96,7 +116,15 @@ class _PedidoFormPageState extends ConsumerState<PedidoFormPage> {
       final List<WorkOrderProductOption> products =
           results[2] as List<WorkOrderProductOption>;
       final List<String> taskWorkerRoles = results[3] as List<String>;
-      final WorkOrderDetail? detail = results[4] as WorkOrderDetail?;
+      final WorkOrderPaymentDisplayConfig paymentConfig =
+          results[4] as WorkOrderPaymentDisplayConfig;
+      final WorkOrderDetail? detail = results[5] as WorkOrderDetail?;
+      final WorkOrderPricingSnapshot initialPricingSnapshot =
+          detail?.pricingSnapshot ??
+              _fallbackPricingSnapshot(
+                currencyConfig: currencyConfig,
+                paymentConfig: paymentConfig,
+              );
 
       if (!mounted) {
         return;
@@ -120,6 +148,10 @@ class _PedidoFormPageState extends ConsumerState<PedidoFormPage> {
         _dueAt = _defaultIndicativeDueDate(base: _createdAt);
         _dueAtManuallyEdited = false;
       }
+      _applyPricingSnapshot(
+        snapshot: initialPricingSnapshot,
+        currencyConfig: currencyConfig,
+      );
 
       setState(() {
         _customerOptions = customers;
@@ -292,6 +324,134 @@ class _PedidoFormPageState extends ConsumerState<PedidoFormPage> {
     return refreshed;
   }
 
+  WorkOrderPricingSnapshot _fallbackPricingSnapshot({
+    required AppCurrencyConfig currencyConfig,
+    required WorkOrderPaymentDisplayConfig paymentConfig,
+  }) {
+    return WorkOrderPricingSnapshot(
+      capturedAt: DateTime.now(),
+      primaryCurrencyCode: currencyConfig.primaryCurrencyCode,
+      localCurrencyCode: paymentConfig.localCurrencyCode,
+      foreignCurrencyCode: paymentConfig.foreignCurrencyCode,
+      localCashFixedSurcharge: paymentConfig.localCashFixedSurcharge,
+      localTransferPercentSurcharge:
+          paymentConfig.localTransferPercentSurcharge,
+      ratesByCode: <String, double>{
+        for (final AppCurrencySetting row in currencyConfig.currencies)
+          row.code.trim().toUpperCase(): row.rateToPrimary,
+      },
+    );
+  }
+
+  List<AppCurrencySetting> _allCurrencies(AppCurrencyConfig currencyConfig) {
+    final Map<String, AppCurrencySetting> byCode = <String, AppCurrencySetting>{
+      for (final AppCurrencySetting currency in currencyConfig.currencies)
+        currency.code.trim().toUpperCase(): currency,
+    };
+    for (final MapEntry<String, TextEditingController> entry
+        in _rateCtrls.entries) {
+      byCode.putIfAbsent(
+        entry.key,
+        () => AppCurrencySetting(
+          code: entry.key,
+          symbol: currencyConfig.symbolForCode(entry.key),
+          rateToPrimary:
+              double.tryParse(entry.value.text.trim().replaceAll(',', '.')) ??
+                  1,
+        ),
+      );
+    }
+    return byCode.values.toList(growable: false)
+      ..sort((AppCurrencySetting a, AppCurrencySetting b) {
+        final String primary =
+            currencyConfig.primaryCurrencyCode.trim().toUpperCase();
+        if (a.code.trim().toUpperCase() == primary) {
+          return -1;
+        }
+        if (b.code.trim().toUpperCase() == primary) {
+          return 1;
+        }
+        return a.code.compareTo(b.code);
+      });
+  }
+
+  void _applyPricingSnapshot({
+    required WorkOrderPricingSnapshot snapshot,
+    required AppCurrencyConfig currencyConfig,
+  }) {
+    _localCurrencyCode = snapshot.localCurrencyCode.trim().toUpperCase();
+    _foreignCurrencyCode = snapshot.foreignCurrencyCode.trim().toUpperCase();
+    _fixedCtrl.text = snapshot.localCashFixedSurcharge.toStringAsFixed(2);
+    _transferCtrl.text =
+        snapshot.localTransferPercentSurcharge.toStringAsFixed(2);
+
+    final Set<String> nextCodes = <String>{
+      for (final AppCurrencySetting currency in currencyConfig.currencies)
+        currency.code.trim().toUpperCase(),
+      ...snapshot.ratesByCode.keys.map(
+        (String code) => code.trim().toUpperCase(),
+      ),
+    }..removeWhere((String code) => code.isEmpty);
+
+    final Set<String> staleCodes = _rateCtrls.keys
+        .where((String code) => !nextCodes.contains(code))
+        .toSet();
+    for (final String code in staleCodes) {
+      _rateCtrls.remove(code)?.dispose();
+    }
+
+    for (final String code in nextCodes) {
+      final AppCurrencySetting? currency = currencyConfig.currencyByCode(code);
+      final double rate =
+          snapshot.ratesByCode[code] ?? currency?.rateToPrimary ?? 1;
+      final TextEditingController controller = _rateCtrls.putIfAbsent(
+        code,
+        () => TextEditingController(),
+      );
+      controller.text = rate.toStringAsFixed(6);
+    }
+  }
+
+  WorkOrderPricingSnapshot _draftPricingSnapshot(
+      AppCurrencyConfig currencyConfig) {
+    final String primary =
+        currencyConfig.primaryCurrencyCode.trim().toUpperCase();
+    final Map<String, double> rates = <String, double>{};
+    for (final AppCurrencySetting currency in _allCurrencies(currencyConfig)) {
+      final double parsed = double.tryParse(
+            (_rateCtrls[currency.code]?.text.trim() ?? '').replaceAll(',', '.'),
+          ) ??
+          currency.rateToPrimary;
+      rates[currency.code.trim().toUpperCase()] = parsed <= 0 ? 1 : parsed;
+    }
+    rates[primary] = 1;
+    String local = _localCurrencyCode.trim().toUpperCase();
+    String foreign = _foreignCurrencyCode.trim().toUpperCase();
+    if (local.isEmpty) {
+      local = primary == 'CUP' ? 'CUP' : primary;
+    }
+    if (foreign.isEmpty || foreign == local) {
+      foreign = rates.keys.firstWhere(
+        (String code) => code != local,
+        orElse: () => local == 'USD' ? 'CUP' : 'USD',
+      );
+    }
+    if (foreign == local) {
+      foreign = local == primary ? 'USD' : primary;
+    }
+    return WorkOrderPricingSnapshot(
+      capturedAt: _createdAt ?? DateTime.now(),
+      primaryCurrencyCode: primary,
+      localCurrencyCode: local,
+      foreignCurrencyCode: foreign,
+      localCashFixedSurcharge:
+          double.tryParse(_fixedCtrl.text.trim().replaceAll(',', '.')) ?? 0,
+      localTransferPercentSurcharge:
+          double.tryParse(_transferCtrl.text.trim().replaceAll(',', '.')) ?? 0,
+      ratesByCode: rates,
+    );
+  }
+
   void _removeItem(int index) {
     setState(() {
       final List<WorkOrderProductItem> next =
@@ -312,6 +472,8 @@ class _PedidoFormPageState extends ConsumerState<PedidoFormPage> {
 
   Future<void> _save() async {
     final session = ref.read(currentSessionProvider);
+    final AppCurrencyConfig currencyConfig =
+        ref.read(currentAppConfigProvider).currencyConfig;
     if (session == null) {
       _show('No hay sesion activa.');
       return;
@@ -321,6 +483,13 @@ class _PedidoFormPageState extends ConsumerState<PedidoFormPage> {
       return;
     }
     if (_saving) {
+      return;
+    }
+    final WorkOrderPricingSnapshot pricingSnapshot =
+        _draftPricingSnapshot(currencyConfig);
+    if (pricingSnapshot.localCurrencyCode ==
+        pricingSnapshot.foreignCurrencyCode) {
+      _show('La moneda local y la moneda extranjera deben ser distintas.');
       return;
     }
 
@@ -334,6 +503,7 @@ class _PedidoFormPageState extends ConsumerState<PedidoFormPage> {
         items: _items,
         assignments: _assignments,
         createdAt: _createdAt ?? _defaultCreatedAt(),
+        pricingSnapshot: pricingSnapshot,
         customerId: _normalizeOption(_selectedCustomerId),
         description: _descriptionCtrl.text.trim(),
         note: _noteCtrl.text.trim(),
@@ -410,6 +580,9 @@ class _PedidoFormPageState extends ConsumerState<PedidoFormPage> {
 
   @override
   Widget build(BuildContext context) {
+    final AppCurrencyConfig currencyConfig =
+        ref.watch(currentAppConfigProvider).currencyConfig;
+    final List<AppCurrencySetting> currencies = _allCurrencies(currencyConfig);
     final bool canManage = ref.watch(currentSessionProvider)?.hasPermission(
               AppPermissionKeys.ordersManage,
             ) ??
@@ -663,6 +836,158 @@ class _PedidoFormPageState extends ConsumerState<PedidoFormPage> {
                         fontWeight: FontWeight.w500,
                         height: 1.4,
                       ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                _SectionCard(
+                  title: 'Cotizacion fijada',
+                  children: <Widget>[
+                    const Text(
+                      'El pedido conserva su propia tasa de cambio. Puedes ajustarla aqui y luego modificarla de nuevo desde cobro y cotizacion si lo necesitas.',
+                      style: TextStyle(
+                        color: Color(0xFF64748B),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    const _FieldLabel('Monedas de cobro'),
+                    const SizedBox(height: 8),
+                    LayoutBuilder(
+                      builder:
+                          (BuildContext context, BoxConstraints constraints) {
+                        final bool stackFields = constraints.maxWidth < 520;
+                        final Widget localField =
+                            DropdownButtonFormField<String>(
+                          initialValue: _localCurrencyCode,
+                          isExpanded: true,
+                          decoration: _inputDecoration('Moneda local'),
+                          items: currencies
+                              .map(
+                                (AppCurrencySetting currency) =>
+                                    DropdownMenuItem<String>(
+                                  value: currency.code,
+                                  child: Text(
+                                    '${currency.code} (${currency.symbol})',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              )
+                              .toList(growable: false),
+                          onChanged: canManage && !_saving
+                              ? (String? value) {
+                                  if (value == null) {
+                                    return;
+                                  }
+                                  setState(() => _localCurrencyCode = value);
+                                }
+                              : null,
+                        );
+                        final Widget foreignField =
+                            DropdownButtonFormField<String>(
+                          initialValue: _foreignCurrencyCode,
+                          isExpanded: true,
+                          decoration: _inputDecoration('Moneda extranjera'),
+                          items: currencies
+                              .map(
+                                (AppCurrencySetting currency) =>
+                                    DropdownMenuItem<String>(
+                                  value: currency.code,
+                                  child: Text(
+                                    '${currency.code} (${currency.symbol})',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              )
+                              .toList(growable: false),
+                          onChanged: canManage && !_saving
+                              ? (String? value) {
+                                  if (value == null) {
+                                    return;
+                                  }
+                                  setState(() => _foreignCurrencyCode = value);
+                                }
+                              : null,
+                        );
+                        if (stackFields) {
+                          return Column(
+                            children: <Widget>[
+                              localField,
+                              const SizedBox(height: 12),
+                              foreignField,
+                            ],
+                          );
+                        }
+                        return Row(
+                          children: <Widget>[
+                            Expanded(child: localField),
+                            const SizedBox(width: 12),
+                            Expanded(child: foreignField),
+                          ],
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 14),
+                    const _FieldLabel('Tasas congeladas del pedido'),
+                    const SizedBox(height: 8),
+                    ...currencies.map(
+                      (AppCurrencySetting currency) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: TextField(
+                          controller: _rateCtrls[currency.code],
+                          enabled: canManage && !_saving,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: _inputDecoration(
+                            currency.code == currencyConfig.primaryCurrencyCode
+                                ? '${currency.code} se mantiene como 1.00 por ser la moneda principal'
+                                : 'Tasa hacia ${currencyConfig.primaryCurrencyCode}',
+                          ).copyWith(
+                            labelText: '${currency.code} (${currency.symbol})',
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Ejemplo: si la principal es CUP y 1 USD = 650 CUP, la tasa de USD debe quedar como 0.001538.',
+                      style: TextStyle(
+                        color: Color(0xFF64748B),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: TextField(
+                            controller: _fixedCtrl,
+                            enabled: canManage && !_saving,
+                            keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true),
+                            decoration: _inputDecoration(
+                              'Recargo fijo al convertir a efectivo local',
+                            ).copyWith(labelText: 'Recargo efectivo local'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: _transferCtrl,
+                            enabled: canManage && !_saving,
+                            keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true),
+                            decoration: _inputDecoration(
+                              'Porcentaje extra sobre el total local',
+                            ).copyWith(labelText: 'Recargo transferencia %'),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

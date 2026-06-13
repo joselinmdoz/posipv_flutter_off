@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../sync_cloud/data/cloud_sync_local_datasource.dart';
 
 class ClienteListItem {
   const ClienteListItem({
@@ -138,10 +139,15 @@ class ClienteUpsertInput {
 }
 
 class ClientesLocalDataSource {
-  ClientesLocalDataSource(this._db, {Uuid? uuid})
-      : _uuid = uuid ?? const Uuid();
+  ClientesLocalDataSource(
+    this._db, {
+    CloudSyncLocalDataSource? cloudSyncLocalDataSource,
+    Uuid? uuid,
+  })  : _cloudSyncLocalDataSource = cloudSyncLocalDataSource,
+        _uuid = uuid ?? const Uuid();
 
   final AppDatabase _db;
+  final CloudSyncLocalDataSource? _cloudSyncLocalDataSource;
   final Uuid _uuid;
   final Random _random = Random.secure();
 
@@ -415,6 +421,7 @@ class ClientesLocalDataSource {
             adminNote: Value(_normalizeOptional(input.adminNote)),
           ),
         );
+    await _enqueueCustomerSync(id);
     return id;
   }
 
@@ -456,6 +463,7 @@ class ClientesLocalDataSource {
     if (updated == 0) {
       throw Exception('No se encontro el cliente para editar.');
     }
+    await _enqueueCustomerSync(cleanId);
   }
 
   Future<void> deactivateClient(String clientId) async {
@@ -471,6 +479,7 @@ class ClientesLocalDataSource {
         updatedAt: Value(DateTime.now()),
       ),
     );
+    await _enqueueCustomerSync(cleanId);
   }
 
   ClienteListItem _mapListItem(QueryRow row) {
@@ -561,6 +570,40 @@ class ClientesLocalDataSource {
       return 10000;
     }
     return value;
+  }
+
+  Future<void> _enqueueCustomerSync(String clientId) async {
+    if (_cloudSyncLocalDataSource == null) {
+      return;
+    }
+    final Customer? customer = await (_db.select(_db.customers)
+          ..where((Customers tbl) => tbl.id.equals(clientId.trim())))
+        .getSingleOrNull();
+    if (customer == null) {
+      return;
+    }
+    await _cloudSyncLocalDataSource.enqueueChange(
+      entityType: 'customers',
+      entityId: customer.id,
+      operation: 'upsert',
+      sourceModule: 'clientes',
+      payload: <String, Object?>{
+        'id': customer.id,
+        'code': customer.code,
+        'name': customer.fullName,
+        'identity_number': customer.identityNumber,
+        'phone': customer.phone,
+        'email': customer.email,
+        'address': customer.address,
+        'company': customer.company,
+        'customer_type': customer.customerType,
+        'is_vip': customer.isVip,
+        'discount_bps': customer.discountBps,
+        'is_active': customer.isActive,
+        'updated_at':
+            (customer.updatedAt ?? customer.createdAt).toIso8601String(),
+      },
+    );
   }
 
   String _transactionIconForTitle(String title) {

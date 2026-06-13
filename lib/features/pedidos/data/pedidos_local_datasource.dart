@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../../../core/db/app_database.dart';
 import '../../configuracion/data/configuracion_local_datasource.dart';
 import '../../productos/domain/product_order_costing_mode.dart';
+import '../../sync_cloud/data/cloud_sync_local_datasource.dart';
 
 class WorkOrderStatusCatalog {
   const WorkOrderStatusCatalog._();
@@ -52,19 +53,205 @@ class WorkOrderPaymentStatusCatalog {
   const WorkOrderPaymentStatusCatalog._();
 
   static const String unpaid = 'unpaid';
+  static const String partial = 'partial';
   static const String paid = 'paid';
 
-  static const List<String> all = <String>[unpaid, paid];
+  static const List<String> all = <String>[unpaid, partial, paid];
 
   static String label(String value) {
     switch (value.trim()) {
       case paid:
         return 'Cobrado';
+      case partial:
+        return 'Parcialmente pagado';
       case unpaid:
       default:
         return 'Pendiente de cobro';
     }
   }
+}
+
+int computeWorkOrderComparableDueCents({
+  required List<WorkOrderPaymentValue> paymentValues,
+  required List<WorkOrderCostTotal> totals,
+  required WorkOrderPricingSnapshot pricingSnapshot,
+  String? preferredQuoteLabel,
+}) {
+  final String comparableCurrencyCode =
+      pricingSnapshot.localCurrencyCode.trim().toUpperCase().isEmpty
+          ? pricingSnapshot.primaryCurrencyCode.trim().toUpperCase()
+          : pricingSnapshot.localCurrencyCode.trim().toUpperCase();
+  final List<WorkOrderPaymentValue> positiveVariants = paymentValues
+      .where((WorkOrderPaymentValue row) => row.amountCents > 0)
+      .toList(growable: false);
+  final String preferred = (preferredQuoteLabel ?? '').trim().toLowerCase();
+  if (preferred.isNotEmpty) {
+    for (final WorkOrderPaymentValue row in positiveVariants) {
+      if (row.label.trim().toLowerCase() != preferred) {
+        continue;
+      }
+      return _convertPaymentValueToComparableCurrency(
+        value: row,
+        targetCurrencyCode: comparableCurrencyCode,
+        pricingSnapshot: pricingSnapshot,
+      );
+    }
+  }
+  if (positiveVariants.isNotEmpty) {
+    final List<int> comparableValues = positiveVariants
+        .map(
+          (WorkOrderPaymentValue row) =>
+              _convertPaymentValueToComparableCurrency(
+            value: row,
+            targetCurrencyCode: comparableCurrencyCode,
+            pricingSnapshot: pricingSnapshot,
+          ),
+        )
+        .where((int value) => value > 0)
+        .toList(growable: false);
+    if (comparableValues.isNotEmpty) {
+      comparableValues.sort();
+      return comparableValues.first;
+    }
+  }
+  if (totals.isEmpty) {
+    return 0;
+  }
+  return _convertTotalsToComparableCurrency(
+    totals: totals,
+    targetCurrencyCode: comparableCurrencyCode,
+    pricingSnapshot: pricingSnapshot,
+  );
+}
+
+int computeWorkOrderComparablePaidCents({
+  required List<WorkOrderRecordedPaymentLine> lines,
+  required WorkOrderPricingSnapshot pricingSnapshot,
+}) {
+  final String comparableCurrencyCode =
+      pricingSnapshot.localCurrencyCode.trim().toUpperCase().isEmpty
+          ? pricingSnapshot.primaryCurrencyCode.trim().toUpperCase()
+          : pricingSnapshot.localCurrencyCode.trim().toUpperCase();
+  int total = 0;
+  for (final WorkOrderRecordedPaymentLine line in lines) {
+    if (line.enteredAmountCents <= 0) {
+      continue;
+    }
+    total += _convertCentsToComparableCurrency(
+      amountCents: line.enteredAmountCents,
+      sourceCurrencyCode: line.currencyCode,
+      targetCurrencyCode: comparableCurrencyCode,
+      pricingSnapshot: pricingSnapshot,
+      useLocalCashRate: false,
+    );
+  }
+  return total;
+}
+
+String deriveWorkOrderPaymentStatus({
+  required List<WorkOrderRecordedPaymentLine> lines,
+  required WorkOrderPricingSnapshot pricingSnapshot,
+  required List<WorkOrderPaymentValue> paymentValues,
+  required List<WorkOrderCostTotal> totals,
+}) {
+  if (lines.isEmpty) {
+    return WorkOrderPaymentStatusCatalog.unpaid;
+  }
+  final int paidComparable = computeWorkOrderComparablePaidCents(
+    lines: lines,
+    pricingSnapshot: pricingSnapshot,
+  );
+  final int dueComparable = totals.isEmpty
+      ? computeWorkOrderComparableDueCents(
+          paymentValues: paymentValues,
+          totals: totals,
+          pricingSnapshot: pricingSnapshot,
+        )
+      : _convertTotalsToComparableCurrency(
+          totals: totals,
+          targetCurrencyCode:
+              pricingSnapshot.localCurrencyCode.trim().toUpperCase().isEmpty
+                  ? pricingSnapshot.primaryCurrencyCode.trim().toUpperCase()
+                  : pricingSnapshot.localCurrencyCode.trim().toUpperCase(),
+          pricingSnapshot: pricingSnapshot,
+        );
+  if (dueComparable <= 0) {
+    return paidComparable > 0
+        ? WorkOrderPaymentStatusCatalog.paid
+        : WorkOrderPaymentStatusCatalog.unpaid;
+  }
+  if (paidComparable >= dueComparable) {
+    return WorkOrderPaymentStatusCatalog.paid;
+  }
+  return paidComparable > 0
+      ? WorkOrderPaymentStatusCatalog.partial
+      : WorkOrderPaymentStatusCatalog.unpaid;
+}
+
+int _convertTotalsToComparableCurrency({
+  required List<WorkOrderCostTotal> totals,
+  required String targetCurrencyCode,
+  required WorkOrderPricingSnapshot pricingSnapshot,
+}) {
+  int total = 0;
+  for (final WorkOrderCostTotal row in totals) {
+    total += _convertCentsToComparableCurrency(
+      amountCents: row.totalCostCents,
+      sourceCurrencyCode: row.currencyCode,
+      targetCurrencyCode: targetCurrencyCode,
+      pricingSnapshot: pricingSnapshot,
+      useLocalCashRate: false,
+    );
+  }
+  return total;
+}
+
+int _convertPaymentValueToComparableCurrency({
+  required WorkOrderPaymentValue value,
+  required String targetCurrencyCode,
+  required WorkOrderPricingSnapshot pricingSnapshot,
+}) {
+  return _convertCentsToComparableCurrency(
+    amountCents: value.amountCents,
+    sourceCurrencyCode: value.currencyCode,
+    targetCurrencyCode: targetCurrencyCode,
+    pricingSnapshot: pricingSnapshot,
+    useLocalCashRate: false,
+  );
+}
+
+int _convertCentsToComparableCurrency({
+  required int amountCents,
+  required String sourceCurrencyCode,
+  required String targetCurrencyCode,
+  required WorkOrderPricingSnapshot pricingSnapshot,
+  required bool useLocalCashRate,
+}) {
+  final String source = sourceCurrencyCode.trim().toUpperCase();
+  final String target = targetCurrencyCode.trim().toUpperCase();
+  if (source == target) {
+    return amountCents;
+  }
+  final String primary =
+      pricingSnapshot.primaryCurrencyCode.trim().toUpperCase();
+  final double sourceRate = pricingSnapshot.ratesByCode[source] ?? 1;
+  final double targetRate = pricingSnapshot.ratesByCode[target] ?? 1;
+  final double sourceAmount = amountCents / 100;
+  final double amountInPrimary = source == primary
+      ? sourceAmount
+      : sourceAmount / (sourceRate <= 0 ? 1 : sourceRate);
+  final bool applyCashRate = useLocalCashRate &&
+      source == pricingSnapshot.foreignCurrencyCode.trim().toUpperCase() &&
+      target == pricingSnapshot.localCurrencyCode.trim().toUpperCase() &&
+      source != target;
+  final double resolvedTargetRate = applyCashRate
+      ? ((targetRate <= 0 ? 1 : targetRate) +
+          pricingSnapshot.localCashFixedSurcharge)
+      : (targetRate <= 0 ? 1 : targetRate);
+  final double targetAmount = target == primary
+      ? amountInPrimary
+      : amountInPrimary * resolvedTargetRate;
+  return (targetAmount * 100).round();
 }
 
 class WorkOrderRecordedPaymentLine {
@@ -73,7 +260,12 @@ class WorkOrderRecordedPaymentLine {
     required this.methodLabel,
     required this.currencyCode,
     required this.enteredAmountCents,
+    required this.primaryCurrencyCode,
+    required this.equivalentAmountCents,
+    required this.appliedRateToPrimary,
     required this.paidAt,
+    this.quoteLabel,
+    this.pricingCapturedAt,
     this.transactionId,
     this.note,
   });
@@ -82,17 +274,39 @@ class WorkOrderRecordedPaymentLine {
   final String methodLabel;
   final String currencyCode;
   final int enteredAmountCents;
+  final String primaryCurrencyCode;
+  final int equivalentAmountCents;
+  final double appliedRateToPrimary;
   final DateTime paidAt;
+  final String? quoteLabel;
+  final DateTime? pricingCapturedAt;
   final String? transactionId;
   final String? note;
 
   factory WorkOrderRecordedPaymentLine.fromJson(Map<String, Object?> json) {
+    final int enteredAmountCents =
+        _intValue(json['enteredAmountCents'], fallback: 0);
+    final String currencyCode = _string(json['currencyCode'], fallback: 'CUP');
     return WorkOrderRecordedPaymentLine(
       methodCode: _string(json['methodCode'], fallback: 'cash'),
       methodLabel: _string(json['methodLabel'], fallback: 'Efectivo'),
-      currencyCode: _string(json['currencyCode'], fallback: 'CUP'),
-      enteredAmountCents: _intValue(json['enteredAmountCents'], fallback: 0),
+      currencyCode: currencyCode,
+      enteredAmountCents: enteredAmountCents,
+      primaryCurrencyCode: _string(
+        json['primaryCurrencyCode'],
+        fallback: currencyCode,
+      ),
+      equivalentAmountCents: _intValue(
+        json['equivalentAmountCents'],
+        fallback: enteredAmountCents,
+      ),
+      appliedRateToPrimary: _doubleValue(
+        json['appliedRateToPrimary'],
+        fallback: 1,
+      ),
       paidAt: _dateValue(json['paidAt']) ?? DateTime.now(),
+      quoteLabel: _nullableString(json['quoteLabel']),
+      pricingCapturedAt: _dateValue(json['pricingCapturedAt']),
       transactionId: _nullableString(json['transactionId']),
       note: _nullableString(json['note']),
     );
@@ -104,7 +318,12 @@ class WorkOrderRecordedPaymentLine {
       'methodLabel': methodLabel,
       'currencyCode': currencyCode,
       'enteredAmountCents': enteredAmountCents,
+      'primaryCurrencyCode': primaryCurrencyCode,
+      'equivalentAmountCents': equivalentAmountCents,
+      'appliedRateToPrimary': appliedRateToPrimary,
       'paidAt': paidAt.toIso8601String(),
+      'quoteLabel': quoteLabel,
+      'pricingCapturedAt': pricingCapturedAt?.toIso8601String(),
       'transactionId': transactionId,
       'note': note,
     };
@@ -985,6 +1204,7 @@ class WorkOrderUpsertInput {
     required this.items,
     required this.assignments,
     required this.createdAt,
+    required this.pricingSnapshot,
     this.customerId,
     this.description,
     this.note,
@@ -998,6 +1218,7 @@ class WorkOrderUpsertInput {
   final List<WorkOrderProductItem> items;
   final List<WorkOrderAssignmentItem> assignments;
   final DateTime createdAt;
+  final WorkOrderPricingSnapshot pricingSnapshot;
   final String? customerId;
   final String? description;
   final String? note;
@@ -1007,6 +1228,7 @@ class WorkOrderUpsertInput {
 class WorkOrderTaskCreateInput {
   const WorkOrderTaskCreateInput({
     required this.title,
+    required this.createdAt,
     required this.materials,
     required this.wasteMaterials,
     required this.workers,
@@ -1015,6 +1237,7 @@ class WorkOrderTaskCreateInput {
   });
 
   final String title;
+  final DateTime createdAt;
   final String? description;
   final List<WorkOrderTaskMaterialItem> materials;
   final List<WorkOrderTaskMaterialItem> wasteMaterials;
@@ -1037,9 +1260,15 @@ class WorkOrderPaymentUpdateInput {
 }
 
 class PedidosLocalDataSource {
-  PedidosLocalDataSource(this._db, {Uuid? uuid}) : _uuid = uuid ?? const Uuid();
+  PedidosLocalDataSource(
+    this._db, {
+    CloudSyncLocalDataSource? cloudSyncLocalDataSource,
+    Uuid? uuid,
+  })  : _cloudSyncLocalDataSource = cloudSyncLocalDataSource,
+        _uuid = uuid ?? const Uuid();
 
   final AppDatabase _db;
+  final CloudSyncLocalDataSource? _cloudSyncLocalDataSource;
   final Uuid _uuid;
   static const String _taskTypesCatalogKey = 'work_order_task_types_catalog_v1';
   static const String _taskWorkerRolesCatalogKey =
@@ -1075,11 +1304,41 @@ class PedidosLocalDataSource {
         );
   }
 
+  Future<void> _enqueueOrderSync(
+    String orderId, {
+    WorkOrder? existing,
+    bool isActive = true,
+    String? overrideStatus,
+  }) async {
+    if (_cloudSyncLocalDataSource == null) {
+      return;
+    }
+    final WorkOrder? order = existing ??
+        await (_db.select(_db.workOrders)
+              ..where((WorkOrders tbl) => tbl.id.equals(orderId.trim())))
+            .getSingleOrNull();
+    if (order == null) {
+      return;
+    }
+    await _cloudSyncLocalDataSource.enqueueWorkOrderUpsert(
+      order,
+      isActive: isActive,
+      overrideStatus: overrideStatus,
+      sourceModule: 'pedidos',
+    );
+  }
+
   Future<WorkOrderDashboardSummary> loadDashboardSummary({
     DateTime? createdFrom,
     DateTime? createdTo,
     String dateCriterion = WorkOrderDateFilterCriterion.createdAt,
   }) async {
+    final ConfiguracionLocalDataSource configDs =
+        ConfiguracionLocalDataSource(_db);
+    final AppCurrencyConfig currencyConfig =
+        await configDs.loadCurrencyConfig();
+    final WorkOrderPaymentDisplayConfig paymentConfig =
+        await configDs.loadWorkOrderPaymentDisplayConfig();
     final DateTime today = DateTime.now();
     final DateTime todayDate = DateTime(today.year, today.month, today.day);
     final List<WorkOrder> rows = await (_db.select(_db.workOrders)).get();
@@ -1116,7 +1375,44 @@ class PedidosLocalDataSource {
         continue;
       }
       final String status = _normalizeStatus(row.status);
-      final String paymentStatus = _normalizePaymentStatus(row.paymentStatus);
+      final List<WorkOrderCostTotal> quotedTotals =
+          _parseCostTotalsJson(row.quotedTotalsJson);
+      final WorkOrderPricingSnapshot? pricingSnapshot =
+          _resolvePricingSnapshotForDisplay(
+        _parsePricingSnapshotJson(row.pricingSnapshotJson),
+        currencyConfig: currencyConfig,
+        paymentConfig: paymentConfig,
+        referenceDate: row.createdAt,
+      );
+      final List<WorkOrderRecordedPaymentLine> paymentLines =
+          _parsePaymentLinesJson(row.paymentLinesJson);
+      final List<WorkOrderProductItem> items = _parseItems(row.itemsJson, row);
+      final _RequestedOrderCostSummary requestedCostSummary =
+          quotedTotals.isEmpty
+              ? await _buildRequestedOrderCostSummary(
+                  items: items,
+                  tasks: tasks,
+                )
+              : const _RequestedOrderCostSummary(
+                  lines: <WorkOrderRequestedCostLine>[],
+                  totals: <WorkOrderCostTotal>[],
+                );
+      final List<WorkOrderCostTotal> effectiveTotals =
+          quotedTotals.isEmpty ? requestedCostSummary.totals : quotedTotals;
+      final List<WorkOrderPaymentValue> paymentValues = pricingSnapshot == null
+          ? _parsePaymentValuesJson(row.quotedPaymentVariantsJson)
+          : _buildPaymentValuesFromSnapshot(
+              totals: effectiveTotals,
+              pricingSnapshot: pricingSnapshot,
+            );
+      final String paymentStatus = pricingSnapshot == null
+          ? _normalizePaymentStatus(row.paymentStatus)
+          : deriveWorkOrderPaymentStatus(
+              lines: paymentLines,
+              pricingSnapshot: pricingSnapshot,
+              paymentValues: paymentValues,
+              totals: effectiveTotals,
+            );
       final bool isActiveStatus =
           WorkOrderStatusCatalog.activeStatuses.contains(status);
       final bool isCancelled = status == WorkOrderStatusCatalog.cancelled;
@@ -1305,6 +1601,12 @@ class PedidosLocalDataSource {
     String dateCriterion = WorkOrderDateFilterCriterion.createdAt,
     int limit = 200,
   }) async {
+    final ConfiguracionLocalDataSource configDs =
+        ConfiguracionLocalDataSource(_db);
+    final AppCurrencyConfig currencyConfig =
+        await configDs.loadCurrencyConfig();
+    final WorkOrderPaymentDisplayConfig paymentConfig =
+        await configDs.loadWorkOrderPaymentDisplayConfig();
     final String normalizedStatus = _normalizeStatusFilter(statusFilter);
     final String normalizedType = typeFilter.trim();
     final List<WorkOrder> rows = await (_db.select(_db.workOrders)
@@ -1355,10 +1657,44 @@ class PedidosLocalDataSource {
       );
       final List<WorkOrderCostTotal> quotedTotals =
           _parseCostTotalsJson(row.quotedTotalsJson);
+      final WorkOrderPricingSnapshot? rawPricingSnapshot =
+          _parsePricingSnapshotJson(row.pricingSnapshotJson);
+      final WorkOrderPricingSnapshot? resolvedPricingSnapshot =
+          _resolvePricingSnapshotForDisplay(
+        rawPricingSnapshot,
+        currencyConfig: currencyConfig,
+        paymentConfig: paymentConfig,
+        referenceDate: row.createdAt,
+      );
+      final List<WorkOrderCostTotal> effectiveTotals =
+          quotedTotals.isEmpty ? requestedCostSummary.totals : quotedTotals;
       final List<WorkOrderPaymentValue> paymentValues =
-          _parsePaymentValuesJson(row.quotedPaymentVariantsJson);
+          resolvedPricingSnapshot == null
+              ? _parsePaymentValuesJson(row.quotedPaymentVariantsJson)
+              : _buildPaymentValuesFromSnapshot(
+                  totals: effectiveTotals,
+                  pricingSnapshot: resolvedPricingSnapshot,
+                );
       final List<WorkOrderRecordedPaymentLine> paymentLines =
           _parsePaymentLinesJson(row.paymentLinesJson);
+      final String resolvedPaymentStatus = resolvedPricingSnapshot == null
+          ? _normalizePaymentStatus(row.paymentStatus)
+          : deriveWorkOrderPaymentStatus(
+              lines: paymentLines,
+              pricingSnapshot: resolvedPricingSnapshot,
+              paymentValues: paymentValues,
+              totals: effectiveTotals,
+            );
+      await _repairStoredWorkOrderQuoteArtifactsIfNeeded(
+        row: row,
+        rawPricingSnapshot: rawPricingSnapshot,
+        resolvedPricingSnapshot: resolvedPricingSnapshot,
+        storedPaymentValues: _parsePaymentValuesJson(
+          row.quotedPaymentVariantsJson,
+        ),
+        resolvedPaymentValues: paymentValues,
+        resolvedPaymentStatus: resolvedPaymentStatus,
+      );
       final String title = _displayTitle(row.title, items);
       final String customerName = (row.customerNameSnapshot ?? '').trim();
 
@@ -1389,9 +1725,8 @@ class PedidosLocalDataSource {
           assignmentSummary: assignmentSummary,
           itemCount: items.length,
           hasMaterialUsage: hasMaterialUsage,
-          orderTotalCosts:
-              quotedTotals.isEmpty ? requestedCostSummary.totals : quotedTotals,
-          paymentStatus: _normalizePaymentStatus(row.paymentStatus),
+          orderTotalCosts: effectiveTotals,
+          paymentStatus: resolvedPaymentStatus,
           paymentValues: paymentValues,
           createdAt: row.createdAt,
           paymentLines: paymentLines,
@@ -1441,16 +1776,53 @@ class PedidosLocalDataSource {
         _parseRequestedCostLinesJson(dbRow.quotedRequestedLinesJson);
     final List<WorkOrderCostTotal> quotedTotals =
         _parseCostTotalsJson(dbRow.quotedTotalsJson);
-    final List<WorkOrderPaymentValue> paymentValues =
-        _parsePaymentValuesJson(dbRow.quotedPaymentVariantsJson);
-    final WorkOrderPricingSnapshot? pricingSnapshot =
+    final ConfiguracionLocalDataSource configDs =
+        ConfiguracionLocalDataSource(_db);
+    final AppCurrencyConfig currencyConfig =
+        await configDs.loadCurrencyConfig();
+    final WorkOrderPaymentDisplayConfig paymentConfig =
+        await configDs.loadWorkOrderPaymentDisplayConfig();
+    final WorkOrderPricingSnapshot? rawPricingSnapshot =
         _parsePricingSnapshotJson(dbRow.pricingSnapshotJson);
+    final WorkOrderPricingSnapshot? pricingSnapshot =
+        _resolvePricingSnapshotForDisplay(
+      rawPricingSnapshot,
+      currencyConfig: currencyConfig,
+      paymentConfig: paymentConfig,
+      referenceDate: dbRow.createdAt,
+    );
     final List<WorkOrderRecordedPaymentLine> paymentLines =
         _parsePaymentLinesJson(dbRow.paymentLinesJson);
     final _RequestedOrderCostSummary requestedCostSummary =
         await _buildRequestedOrderCostSummary(
       items: items,
       tasks: tasks,
+    );
+    final List<WorkOrderCostTotal> effectiveTotals =
+        quotedTotals.isEmpty ? requestedCostSummary.totals : quotedTotals;
+    final List<WorkOrderPaymentValue> paymentValues = pricingSnapshot == null
+        ? _parsePaymentValuesJson(dbRow.quotedPaymentVariantsJson)
+        : _buildPaymentValuesFromSnapshot(
+            totals: effectiveTotals,
+            pricingSnapshot: pricingSnapshot,
+          );
+    final String resolvedPaymentStatus = pricingSnapshot == null
+        ? _normalizePaymentStatus(dbRow.paymentStatus)
+        : deriveWorkOrderPaymentStatus(
+            lines: paymentLines,
+            pricingSnapshot: pricingSnapshot,
+            paymentValues: paymentValues,
+            totals: effectiveTotals,
+          );
+    await _repairStoredWorkOrderQuoteArtifactsIfNeeded(
+      row: dbRow,
+      rawPricingSnapshot: rawPricingSnapshot,
+      resolvedPricingSnapshot: pricingSnapshot,
+      storedPaymentValues: _parsePaymentValuesJson(
+        dbRow.quotedPaymentVariantsJson,
+      ),
+      resolvedPaymentValues: paymentValues,
+      resolvedPaymentStatus: resolvedPaymentStatus,
     );
 
     return WorkOrderDetail(
@@ -1479,7 +1851,7 @@ class PedidosLocalDataSource {
       updatedAt: dbRow.updatedAt,
       dueAt: dbRow.dueAt,
       completedAt: dbRow.completedAt,
-      paymentStatus: _normalizePaymentStatus(dbRow.paymentStatus),
+      paymentStatus: resolvedPaymentStatus,
       paymentValues: paymentValues,
       pricingSnapshot: pricingSnapshot,
       paymentLines: paymentLines,
@@ -1493,8 +1865,7 @@ class PedidosLocalDataSource {
       requestedCostLines: quotedRequestedLines.isEmpty
           ? requestedCostSummary.lines
           : quotedRequestedLines,
-      totalCosts:
-          quotedTotals.isEmpty ? requestedCostSummary.totals : quotedTotals,
+      totalCosts: effectiveTotals,
     );
   }
 
@@ -1936,9 +2307,11 @@ class PedidosLocalDataSource {
       items: items,
       assignments: assignments,
     );
-    final _WorkOrderQuoteSnapshot quoteSnapshot = await _buildQuoteSnapshot(
+    final _WorkOrderQuoteSnapshot quoteSnapshot =
+        await _buildQuoteSnapshotWithPricingSnapshot(
       items: items,
       tasks: const <WorkOrderTaskItem>[],
+      pricingSnapshot: input.pricingSnapshot,
     );
 
     await _db.into(_db.workOrders).insert(
@@ -1996,6 +2369,7 @@ class PedidosLocalDataSource {
         'createdAt': createdAt.toIso8601String(),
       },
     );
+    await _enqueueOrderSync(id);
     return id;
   }
 
@@ -2029,21 +2403,21 @@ class PedidosLocalDataSource {
     final String nextItemsJson = _encodeItems(items);
     final WorkOrderPricingSnapshot? existingPricingSnapshot =
         _parsePricingSnapshotJson(existing.pricingSnapshotJson);
+    final WorkOrderPricingSnapshot nextPricingSnapshot =
+        _normalizePricingSnapshot(input.pricingSnapshot);
+    final bool pricingChanged = existingPricingSnapshot == null ||
+        !_pricingSnapshotsEqual(existingPricingSnapshot, nextPricingSnapshot);
     final bool shouldRefreshQuote = nextItemsJson !=
             _encodeItems(_parseItems(existing.itemsJson, existing)) ||
-        _parseCostTotalsJson(existing.quotedTotalsJson).isEmpty;
+        _parseCostTotalsJson(existing.quotedTotalsJson).isEmpty ||
+        pricingChanged;
     _WorkOrderQuoteSnapshot? quoteSnapshot;
     if (shouldRefreshQuote) {
-      quoteSnapshot = existingPricingSnapshot == null
-          ? await _buildQuoteSnapshot(
-              items: items,
-              tasks: currentTasks,
-            )
-          : await _buildQuoteSnapshotWithPricingSnapshot(
-              items: items,
-              tasks: currentTasks,
-              pricingSnapshot: existingPricingSnapshot,
-            );
+      quoteSnapshot = await _buildQuoteSnapshotWithPricingSnapshot(
+        items: items,
+        tasks: currentTasks,
+        pricingSnapshot: nextPricingSnapshot,
+      );
     }
 
     await (_db.update(_db.workOrders)
@@ -2110,6 +2484,7 @@ class PedidosLocalDataSource {
         'quoteRefreshed': shouldRefreshQuote,
       },
     );
+    await _enqueueOrderSync(orderId);
   }
 
   Future<void> updateOrderStatus({
@@ -2160,6 +2535,7 @@ class PedidosLocalDataSource {
         'fromStatus': previousStatus,
       },
     );
+    await _enqueueOrderSync(orderId);
   }
 
   Future<void> updateOrderPaymentStatus({
@@ -2199,6 +2575,7 @@ class PedidosLocalDataSource {
         'fromPaymentStatus': previous,
       },
     );
+    await _enqueueOrderSync(orderId);
   }
 
   Future<void> deleteOrder({
@@ -2214,6 +2591,13 @@ class PedidosLocalDataSource {
 
     final List<WorkOrderTaskItem> tasks = _parseTasks(existing.tasksJson);
     await _deleteOrderTaskImages(tasks);
+
+    await _enqueueOrderSync(
+      orderId,
+      existing: existing,
+      isActive: false,
+      overrideStatus: WorkOrderStatusCatalog.cancelled,
+    );
 
     await (_db.delete(_db.workOrders)
           ..where((WorkOrders tbl) => tbl.id.equals(orderId)))
@@ -2260,7 +2644,7 @@ class PedidosLocalDataSource {
         id: _uuid.v4(),
         title: title,
         description: _normalizeOptional(input.description),
-        createdAt: DateTime.now(),
+        createdAt: input.createdAt,
         materials: materials,
         wasteMaterials: wasteMaterials,
         workers: workers,
@@ -2294,12 +2678,14 @@ class PedidosLocalDataSource {
       entityId: orderId,
       payload: <String, Object?>{
         'taskTitle': title,
+        'taskCreatedAt': input.createdAt.toIso8601String(),
         'materials': materials.length,
         'waste': wasteMaterials.length,
         'workers': workers.length,
         'images': imagePaths.length,
       },
     );
+    await _enqueueOrderSync(orderId);
   }
 
   Future<void> updateTaskInOrder({
@@ -2335,6 +2721,7 @@ class PedidosLocalDataSource {
     tasks[index] = tasks[index].copyWith(
       title: title,
       description: _normalizeOptional(input.description),
+      createdAt: input.createdAt,
       materials: materials,
       wasteMaterials: wasteMaterials,
       workers: workers,
@@ -2368,12 +2755,14 @@ class PedidosLocalDataSource {
       payload: <String, Object?>{
         'taskId': taskId,
         'taskTitle': title,
+        'taskCreatedAt': input.createdAt.toIso8601String(),
         'materials': materials.length,
         'waste': wasteMaterials.length,
         'workers': workers.length,
         'images': imagePaths.length,
       },
     );
+    await _enqueueOrderSync(orderId);
   }
 
   Future<void> deleteTaskFromOrder({
@@ -2424,6 +2813,7 @@ class PedidosLocalDataSource {
         'taskId': taskId,
       },
     );
+    await _enqueueOrderSync(orderId);
   }
 
   Future<void> updateTaskImages({
@@ -2466,6 +2856,7 @@ class PedidosLocalDataSource {
         'images': sanitized.length,
       },
     );
+    await _enqueueOrderSync(orderId);
   }
 
   Future<void> _deleteOrderTaskImages(List<WorkOrderTaskItem> tasks) async {
@@ -2525,9 +2916,6 @@ class PedidosLocalDataSource {
     final DateTime now = DateTime.now();
     final List<WorkOrderRecordedPaymentLine> lines =
         _sanitizePaymentLines(input.paymentLines);
-    final String normalizedStatus = lines.isEmpty
-        ? WorkOrderPaymentStatusCatalog.unpaid
-        : WorkOrderPaymentStatusCatalog.paid;
     final WorkOrderPricingSnapshot pricingSnapshot =
         _normalizePricingSnapshot(input.pricingSnapshot);
     final List<WorkOrderCostTotal> quotedTotals =
@@ -2551,6 +2939,12 @@ class PedidosLocalDataSource {
         _buildPaymentValuesFromSnapshot(
       totals: sourceTotals,
       pricingSnapshot: pricingSnapshot,
+    );
+    final String normalizedStatus = deriveWorkOrderPaymentStatus(
+      lines: lines,
+      pricingSnapshot: pricingSnapshot,
+      paymentValues: paymentValues,
+      totals: sourceTotals,
     );
     final DateTime? paidAt =
         lines.isEmpty ? null : (input.paidAt ?? lines.last.paidAt);
@@ -2581,6 +2975,7 @@ class PedidosLocalDataSource {
         'pricingSnapshot': pricingSnapshot.toJson(),
       },
     );
+    await _enqueueOrderSync(orderId);
   }
 
   List<WorkOrderAssignmentItem> _sanitizeAssignments(
@@ -3585,8 +3980,19 @@ class PedidosLocalDataSource {
       items: items,
       tasks: tasks,
     );
+    final ConfiguracionLocalDataSource configDs =
+        ConfiguracionLocalDataSource(_db);
+    final AppCurrencyConfig currencyConfig =
+        await configDs.loadCurrencyConfig();
+    final WorkOrderPaymentDisplayConfig paymentConfig =
+        await configDs.loadWorkOrderPaymentDisplayConfig();
     final WorkOrderPricingSnapshot normalized =
-        _normalizePricingSnapshot(pricingSnapshot);
+        _resolvePricingSnapshotForDisplay(
+              pricingSnapshot,
+              currencyConfig: currencyConfig,
+              paymentConfig: paymentConfig,
+            ) ??
+            _normalizePricingSnapshot(pricingSnapshot);
     final List<WorkOrderPaymentValue> paymentValues =
         _buildPaymentValuesFromSnapshot(
       totals: requested.totals,
@@ -3709,8 +4115,9 @@ class PedidosLocalDataSource {
       if (code.isEmpty) {
         continue;
       }
-      rates[code] =
-          entry.value.isFinite && entry.value > 0 ? _roundTo2(entry.value) : 1;
+      rates[code] = entry.value.isFinite && entry.value > 0
+          ? _roundRatePrecision(entry.value)
+          : 1;
     }
     if (!rates.containsKey(primary)) {
       rates[primary] = 1;
@@ -3718,10 +4125,10 @@ class PedidosLocalDataSource {
       rates[primary] = 1;
     }
     if (!rates.containsKey(local)) {
-      rates[local] = local == primary ? 1 : 1;
+      rates[local] = local == primary ? 1 : 0;
     }
     if (!rates.containsKey(foreign)) {
-      rates[foreign] = foreign == primary ? 1 : 1;
+      rates[foreign] = foreign == primary ? 1 : 0;
     }
     return WorkOrderPricingSnapshot(
       capturedAt: snapshot.capturedAt,
@@ -3742,6 +4149,321 @@ class PedidosLocalDataSource {
     );
   }
 
+  WorkOrderPricingSnapshot? _resolvePricingSnapshotForDisplay(
+    WorkOrderPricingSnapshot? snapshot, {
+    required AppCurrencyConfig currencyConfig,
+    required WorkOrderPaymentDisplayConfig paymentConfig,
+    DateTime? referenceDate,
+  }) {
+    final String primary =
+        currencyConfig.primaryCurrencyCode.trim().toUpperCase();
+    final Map<String, double> configRates = <String, double>{
+      for (final AppCurrencySetting row in currencyConfig.currencies)
+        row.code.trim().toUpperCase(): _configuredRateForDate(
+          currencyCode: row.code,
+          currencyConfig: currencyConfig,
+          referenceDate: referenceDate,
+        ),
+    };
+    final ({String local, String foreign}) fallbackPair =
+        _resolvePricingCurrencyPair(
+      localCurrencyCode: paymentConfig.localCurrencyCode,
+      foreignCurrencyCode: paymentConfig.foreignCurrencyCode,
+      primaryCurrencyCode: primary,
+      availableCodes: <String>{
+        ...configRates.keys,
+        if (snapshot != null)
+          ...snapshot.ratesByCode.keys.map(
+            (String value) => value.trim().toUpperCase(),
+          ),
+      },
+    );
+    final String local = fallbackPair.local;
+    final String foreign = fallbackPair.foreign;
+
+    if (snapshot == null) {
+      return WorkOrderPricingSnapshot(
+        capturedAt: DateTime.now(),
+        primaryCurrencyCode: primary,
+        localCurrencyCode: local,
+        foreignCurrencyCode: foreign,
+        localCashFixedSurcharge: paymentConfig.localCashFixedSurcharge,
+        localTransferPercentSurcharge:
+            paymentConfig.localTransferPercentSurcharge,
+        ratesByCode: configRates,
+      );
+    }
+
+    final WorkOrderPricingSnapshot normalized =
+        _normalizePricingSnapshot(snapshot);
+    final ({String local, String foreign}) resolvedPair =
+        _resolvePricingCurrencyPair(
+      localCurrencyCode: normalized.localCurrencyCode,
+      foreignCurrencyCode: normalized.foreignCurrencyCode,
+      primaryCurrencyCode: primary,
+      availableCodes: <String>{
+        ...configRates.keys,
+        ...normalized.ratesByCode.keys.map(
+          (String value) => value.trim().toUpperCase(),
+        ),
+      },
+      fallbackLocalCurrencyCode: local,
+      fallbackForeignCurrencyCode: foreign,
+    );
+    final Map<String, double> resolvedRates =
+        Map<String, double>.from(normalized.ratesByCode);
+
+    void ensureRate(String code) {
+      if (code.isEmpty) {
+        return;
+      }
+      final double? configuredRate = configRates[code];
+      final double? existingRate = resolvedRates[code];
+      if (code == primary) {
+        resolvedRates[code] = 1;
+        return;
+      }
+      if (configuredRate == null || configuredRate <= 0) {
+        if (existingRate == null || existingRate <= 0) {
+          resolvedRates[code] = 1;
+        }
+        return;
+      }
+      if (existingRate == null ||
+          existingRate <= 0 ||
+          ((existingRate - 1).abs() < 0.0001 &&
+              (configuredRate - 1).abs() > 0.0001)) {
+        resolvedRates[code] = configuredRate;
+      }
+    }
+
+    for (final String code in configRates.keys) {
+      ensureRate(code);
+    }
+    ensureRate(primary);
+    ensureRate(local);
+    ensureRate(foreign);
+
+    return WorkOrderPricingSnapshot(
+      capturedAt: normalized.capturedAt,
+      primaryCurrencyCode: normalized.primaryCurrencyCode.trim().isEmpty
+          ? primary
+          : normalized.primaryCurrencyCode.trim().toUpperCase(),
+      localCurrencyCode: resolvedPair.local,
+      foreignCurrencyCode: resolvedPair.foreign,
+      localCashFixedSurcharge: normalized.localCashFixedSurcharge < 0
+          ? paymentConfig.localCashFixedSurcharge
+          : normalized.localCashFixedSurcharge,
+      localTransferPercentSurcharge:
+          normalized.localTransferPercentSurcharge < 0
+              ? paymentConfig.localTransferPercentSurcharge
+              : normalized.localTransferPercentSurcharge,
+      ratesByCode: resolvedRates,
+    );
+  }
+
+  ({String local, String foreign}) _resolvePricingCurrencyPair({
+    required String localCurrencyCode,
+    required String foreignCurrencyCode,
+    required String primaryCurrencyCode,
+    required Set<String> availableCodes,
+    String? fallbackLocalCurrencyCode,
+    String? fallbackForeignCurrencyCode,
+  }) {
+    final List<String> codes = availableCodes
+        .map((String code) => code.trim().toUpperCase())
+        .where((String code) => code.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+
+    String fallbackLocal =
+        fallbackLocalCurrencyCode?.trim().toUpperCase() ?? '';
+    String fallbackForeign =
+        fallbackForeignCurrencyCode?.trim().toUpperCase() ?? '';
+
+    if (fallbackLocal.isEmpty || !codes.contains(fallbackLocal)) {
+      if (codes.contains('CUP')) {
+        fallbackLocal = 'CUP';
+      } else if (codes.contains(primaryCurrencyCode)) {
+        fallbackLocal = primaryCurrencyCode;
+      } else {
+        fallbackLocal = codes.isEmpty ? primaryCurrencyCode : codes.first;
+      }
+    }
+
+    if (fallbackForeign.isEmpty ||
+        !codes.contains(fallbackForeign) ||
+        fallbackForeign == fallbackLocal) {
+      if (codes.contains('USD') && 'USD' != fallbackLocal) {
+        fallbackForeign = 'USD';
+      } else {
+        fallbackForeign = codes.firstWhere(
+          (String code) => code != fallbackLocal,
+          orElse: () => fallbackLocal,
+        );
+      }
+    }
+
+    String local = localCurrencyCode.trim().toUpperCase();
+    String foreign = foreignCurrencyCode.trim().toUpperCase();
+
+    if (local.isEmpty || !codes.contains(local)) {
+      local = fallbackLocal;
+    }
+    if (foreign.isEmpty || !codes.contains(foreign) || foreign == local) {
+      foreign = fallbackForeign;
+    }
+    if (foreign == local) {
+      foreign = codes.firstWhere(
+        (String code) => code != local,
+        orElse: () =>
+            fallbackForeign == local ? primaryCurrencyCode : fallbackForeign,
+      );
+    }
+    if (foreign == local) {
+      foreign =
+          local == primaryCurrencyCode ? fallbackForeign : primaryCurrencyCode;
+    }
+    if (foreign == local) {
+      foreign = local == 'USD' ? 'CUP' : 'USD';
+    }
+
+    return (local: local, foreign: foreign);
+  }
+
+  double _configuredRateForDate({
+    required String currencyCode,
+    required AppCurrencyConfig currencyConfig,
+    DateTime? referenceDate,
+  }) {
+    final String code = currencyCode.trim().toUpperCase();
+    final String primary =
+        currencyConfig.primaryCurrencyCode.trim().toUpperCase();
+    if (code.isEmpty || code == primary) {
+      return 1;
+    }
+
+    final DateTime? targetDate = referenceDate?.toUtc();
+    final List<AppExchangeRateHistoryEntry> candidates =
+        currencyConfig.rateHistory.where((AppExchangeRateHistoryEntry entry) {
+      return entry.currencyCode.trim().toUpperCase() == code &&
+          entry.baseCurrencyCode.trim().toUpperCase() == primary &&
+          entry.rateToBase.isFinite &&
+          entry.rateToBase > 0;
+    }).toList(growable: false);
+
+    if (targetDate != null && candidates.isNotEmpty) {
+      for (final AppExchangeRateHistoryEntry entry in candidates) {
+        if (!entry.changedAt.toUtc().isAfter(targetDate)) {
+          return _roundRatePrecision(entry.rateToBase);
+        }
+      }
+      return _roundRatePrecision(candidates.last.rateToBase);
+    }
+
+    final AppCurrencySetting? current = currencyConfig.currencyByCode(code);
+    final double currentRate = current?.rateToPrimary ?? 1;
+    return _roundRatePrecision(
+      currentRate.isFinite && currentRate > 0 ? currentRate : 1,
+    );
+  }
+
+  double _roundRatePrecision(double value) {
+    if (!value.isFinite) {
+      return 1;
+    }
+    return (value * 100000000).round() / 100000000;
+  }
+
+  bool _pricingSnapshotsEqual(
+    WorkOrderPricingSnapshot left,
+    WorkOrderPricingSnapshot right,
+  ) {
+    final WorkOrderPricingSnapshot a = _normalizePricingSnapshot(left);
+    final WorkOrderPricingSnapshot b = _normalizePricingSnapshot(right);
+    if (a.primaryCurrencyCode != b.primaryCurrencyCode ||
+        a.localCurrencyCode != b.localCurrencyCode ||
+        a.foreignCurrencyCode != b.foreignCurrencyCode) {
+      return false;
+    }
+    if ((a.localCashFixedSurcharge - b.localCashFixedSurcharge).abs() >
+            0.0001 ||
+        (a.localTransferPercentSurcharge - b.localTransferPercentSurcharge)
+                .abs() >
+            0.0001) {
+      return false;
+    }
+    final Set<String> keys = <String>{
+      ...a.ratesByCode.keys,
+      ...b.ratesByCode.keys,
+    };
+    for (final String key in keys) {
+      final double leftRate = a.ratesByCode[key] ?? 0;
+      final double rightRate = b.ratesByCode[key] ?? 0;
+      if ((leftRate - rightRate).abs() > 0.0001) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool _paymentValuesEqual(
+    List<WorkOrderPaymentValue> left,
+    List<WorkOrderPaymentValue> right,
+  ) {
+    if (left.length != right.length) {
+      return false;
+    }
+    for (int index = 0; index < left.length; index += 1) {
+      final WorkOrderPaymentValue a = left[index];
+      final WorkOrderPaymentValue b = right[index];
+      if (a.label.trim() != b.label.trim() ||
+          a.currencyCode.trim().toUpperCase() !=
+              b.currencyCode.trim().toUpperCase() ||
+          a.amountCents != b.amountCents) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Future<void> _repairStoredWorkOrderQuoteArtifactsIfNeeded({
+    required WorkOrder row,
+    required WorkOrderPricingSnapshot? rawPricingSnapshot,
+    required WorkOrderPricingSnapshot? resolvedPricingSnapshot,
+    required List<WorkOrderPaymentValue> storedPaymentValues,
+    required List<WorkOrderPaymentValue> resolvedPaymentValues,
+    required String resolvedPaymentStatus,
+  }) async {
+    if (resolvedPricingSnapshot == null) {
+      return;
+    }
+    final bool pricingChanged = rawPricingSnapshot == null ||
+        !_pricingSnapshotsEqual(rawPricingSnapshot, resolvedPricingSnapshot);
+    final bool paymentValuesChanged =
+        !_paymentValuesEqual(storedPaymentValues, resolvedPaymentValues);
+    final bool paymentStatusChanged =
+        _normalizePaymentStatus(row.paymentStatus) != resolvedPaymentStatus;
+    if (!pricingChanged && !paymentValuesChanged && !paymentStatusChanged) {
+      return;
+    }
+
+    await (_db.update(_db.workOrders)
+          ..where((WorkOrders tbl) => tbl.id.equals(row.id)))
+        .write(
+      WorkOrdersCompanion(
+        pricingSnapshotJson:
+            Value(jsonEncode(resolvedPricingSnapshot.toJson())),
+        quotedPaymentVariantsJson: Value(
+          _encodePaymentValues(resolvedPaymentValues),
+        ),
+        paymentStatus: Value(resolvedPaymentStatus),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+    await _enqueueOrderSync(row.id);
+  }
+
   List<WorkOrderRecordedPaymentLine> _sanitizePaymentLines(
     List<WorkOrderRecordedPaymentLine> lines,
   ) {
@@ -3760,7 +4482,19 @@ class PedidosLocalDataSource {
             currencyCode: line.currencyCode.trim().toUpperCase(),
             enteredAmountCents:
                 line.enteredAmountCents < 0 ? 0 : line.enteredAmountCents,
+            primaryCurrencyCode:
+                line.primaryCurrencyCode.trim().toUpperCase().isEmpty
+                    ? line.currencyCode.trim().toUpperCase()
+                    : line.primaryCurrencyCode.trim().toUpperCase(),
+            equivalentAmountCents:
+                line.equivalentAmountCents < 0 ? 0 : line.equivalentAmountCents,
+            appliedRateToPrimary: line.appliedRateToPrimary.isFinite &&
+                    line.appliedRateToPrimary > 0
+                ? _roundTo2(line.appliedRateToPrimary)
+                : 1,
             paidAt: line.paidAt,
+            quoteLabel: _normalizeOptional(line.quoteLabel),
+            pricingCapturedAt: line.pricingCapturedAt,
             transactionId: _normalizeOptional(line.transactionId),
             note: _normalizeOptional(line.note),
           ),
@@ -3797,6 +4531,8 @@ class PedidosLocalDataSource {
     double total = 0;
     for (final WorkOrderTaskItem task in tasks) {
       for (final WorkOrderTaskMaterialItem item in task.materials) {
+        // La merma se registra en `wasteMaterials`, pero no forma parte
+        // del valor facturable al cliente.
         if (_usesSquareMeters(item.unitLabel) && item.qty > 0) {
           total = _roundTo2(total + item.qty);
         }
@@ -3862,7 +4598,9 @@ class PedidosLocalDataSource {
 
   String? _normalizeOptional(String? value) {
     final String clean = (value ?? '').trim();
-    if (clean.isEmpty) {
+    if (clean.isEmpty ||
+        clean.toLowerCase() == 'false' ||
+        clean.toLowerCase() == 'null') {
       return null;
     }
     return clean;
@@ -4045,7 +4783,15 @@ int _intValue(Object? value, {required int fallback}) {
 }
 
 String? _nullableString(Object? value) {
-  final String clean = (value as String? ?? '').trim();
+  if (value == null || value is bool) {
+    return null;
+  }
+  final String clean = value.toString().trim();
+  if (clean.isEmpty ||
+      clean.toLowerCase() == 'false' ||
+      clean.toLowerCase() == 'null') {
+    return null;
+  }
   return clean.isEmpty ? null : clean;
 }
 

@@ -37,6 +37,7 @@ import '../features/reportes/presentation/ipv_reportes_page.dart';
 import '../features/reportes/presentation/ipv_manual_page.dart';
 import '../features/reportes/presentation/lots_status_page.dart';
 import '../features/sync_manual/presentation/manual_sync_page.dart';
+import '../features/sync_cloud/presentation/cloud_sync_settings_page.dart';
 import '../features/tpv/presentation/tpv_page.dart';
 import '../features/tpv/presentation/tpv_employees_page.dart';
 import '../features/tpv/presentation/employee_profile_page.dart';
@@ -217,6 +218,10 @@ final Provider<GoRouter> appRouterProvider = Provider<GoRouter>((Ref ref) {
       GoRoute(
         path: '/configuracion-seguridad',
         builder: (context, state) => const SecurityPage(),
+      ),
+      GoRoute(
+        path: '/sync-cloud',
+        builder: (context, state) => const CloudSyncSettingsPage(),
       ),
       GoRoute(
         path: '/configuracion-monedas',

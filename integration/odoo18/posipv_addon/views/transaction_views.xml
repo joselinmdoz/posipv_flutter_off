@@ -1,0 +1,364 @@
+<odoo>
+    <record id="view_posipv_sale_tree" model="ir.ui.view">
+        <field name="name">posipv.sale.tree</field>
+        <field name="model">posipv.sale</field>
+        <field name="arch" type="xml">
+            <list string="Ventas espejo">
+                <field name="folio"/>
+                <field name="sale_datetime"/>
+                <field name="customer_name"/>
+                <field name="cashier_name"/>
+                <field name="total_amount"/>
+                <field name="status"/>
+                <field name="device_id"/>
+            </list>
+        </field>
+    </record>
+    <record id="view_posipv_sale_form" model="ir.ui.view">
+        <field name="name">posipv.sale.form</field>
+        <field name="model">posipv.sale</field>
+        <field name="arch" type="xml">
+            <form string="Venta espejo POSIPV">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="folio"/>
+                            <field name="customer_name"/>
+                            <field name="cashier_name"/>
+                            <field name="terminal_name"/>
+                        </group>
+                        <group>
+                            <field name="warehouse_name"/>
+                            <field name="sale_datetime"/>
+                            <field name="subtotal_amount"/>
+                            <field name="tax_amount"/>
+                            <field name="total_amount"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Líneas">
+                            <field name="line_ids">
+                                <list editable="bottom">
+                                    <field name="product_name"/>
+                                    <field name="product_sku"/>
+                                    <field name="qty"/>
+                                    <field name="unit_price"/>
+                                    <field name="unit_cost"/>
+                                    <field name="line_total"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Pagos">
+                            <field name="payment_ids">
+                                <list editable="bottom">
+                                    <field name="method"/>
+                                    <field name="amount"/>
+                                    <field name="source_currency_code"/>
+                                    <field name="source_amount"/>
+                                    <field name="transaction_id"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Datos sincronizados">
+                            <field name="payload_json"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+    <record id="action_posipv_sale" model="ir.actions.act_window">
+        <field name="name">Ventas espejo</field>
+        <field name="res_model">posipv.sale</field>
+        <field name="view_mode">list,form</field>
+    </record>
+    <menuitem id="menu_posipv_sale" name="Ventas" parent="menu_posipv_transactions" action="action_posipv_sale" sequence="10" groups="posipv.group_posipv_viewer"/>
+
+    <record id="view_posipv_stock_movement_tree" model="ir.ui.view">
+        <field name="name">posipv.stock.movement.tree</field>
+        <field name="model">posipv.stock.movement</field>
+        <field name="arch" type="xml">
+            <list string="Movimientos espejo">
+                <field name="movement_datetime"/>
+                <field name="product_name"/>
+                <field name="warehouse_name"/>
+                <field name="movement_type"/>
+                <field name="qty"/>
+                <field name="reason_code"/>
+                <field name="is_voided"/>
+            </list>
+        </field>
+    </record>
+    <record id="view_posipv_stock_movement_form" model="ir.ui.view">
+        <field name="name">posipv.stock.movement.form</field>
+        <field name="model">posipv.stock.movement</field>
+        <field name="arch" type="xml">
+            <form string="Movimiento espejo POSIPV">
+                <sheet>
+                    <group>
+                        <field name="name"/>
+                        <field name="external_uuid" readonly="1"/>
+                        <field name="movement_datetime"/>
+                        <field name="product_name"/>
+                        <field name="product_sku"/>
+                        <field name="warehouse_name"/>
+                        <field name="movement_type"/>
+                        <field name="qty"/>
+                        <field name="reason_code"/>
+                        <field name="movement_source"/>
+                        <field name="ref_type"/>
+                        <field name="ref_id"/>
+                        <field name="is_voided"/>
+                        <field name="created_by_name"/>
+                    </group>
+                    <field name="payload_json"/>
+                </sheet>
+            </form>
+        </field>
+    </record>
+    <record id="action_posipv_stock_movement" model="ir.actions.act_window">
+        <field name="name">Movimientos espejo</field>
+        <field name="res_model">posipv.stock.movement</field>
+        <field name="view_mode">list,form</field>
+    </record>
+    <menuitem id="menu_posipv_stock_movement" name="Movimientos" parent="menu_posipv_transactions" action="action_posipv_stock_movement" sequence="20" groups="posipv.group_posipv_viewer"/>
+
+    <record id="view_posipv_work_order_tree" model="ir.ui.view">
+        <field name="name">posipv.work.order.tree</field>
+        <field name="model">posipv.work.order</field>
+        <field name="arch" type="xml">
+            <list string="Pedidos espejo"
+                  decoration-info="status == 'pending'"
+                  decoration-primary="status == 'in_progress'"
+                  decoration-warning="status == 'ready'"
+                  decoration-success="status == 'delivered'"
+                  decoration-danger="status in ('cancelled', 'deleted')">
+                <field name="folio"/>
+                <field name="source_created_at"/>
+                <field name="title"/>
+                <field name="customer_name"/>
+                <field name="status_label" string="Estado"/>
+                <field name="payment_status_label" string="Cobro"/>
+                <field name="task_count"/>
+                <field name="quoted_amount_usd" sum="Total USD"/>
+                <field name="quoted_amount_cup_cash" sum="Total CUP efectivo"/>
+                <field name="quoted_amount_cup_transfer" sum="Total CUP transferencia"/>
+                <field name="due_at"/>
+                <field name="device_id"/>
+            </list>
+        </field>
+    </record>
+    <record id="view_posipv_work_order_search" model="ir.ui.view">
+        <field name="name">posipv.work.order.search</field>
+        <field name="model">posipv.work.order</field>
+        <field name="arch" type="xml">
+            <search string="Buscar pedidos espejo">
+                <field name="folio"/>
+                <field name="title"/>
+                <field name="customer_name"/>
+                <field name="assigned_employee_name"/>
+                <field name="work_type"/>
+                <field name="device_id"/>
+                <field name="source_created_at"/>
+                <field name="due_at"/>
+                <separator/>
+                <filter name="status_pending" string="Pendientes" domain="[('status', '=', 'pending')]"/>
+                <filter name="status_in_progress" string="En producción" domain="[('status', '=', 'in_progress')]"/>
+                <filter name="status_ready" string="Pendientes a entregar" domain="[('status', '=', 'ready')]"/>
+                <filter name="status_delivered" string="Finalizados" domain="[('status', '=', 'delivered')]"/>
+                <filter name="status_cancelled" string="Cancelados" domain="[('status', 'in', ['cancelled', 'deleted'])]"/>
+                <filter name="payment_unpaid" string="Pendientes de cobro" domain="[('payment_status', '=', 'unpaid')]"/>
+                <filter name="payment_partial" string="Parcialmente pagados" domain="[('payment_status', '=', 'partial')]"/>
+                <filter name="payment_paid" string="Cobrados" domain="[('payment_status', '=', 'paid')]"/>
+                <filter name="with_tasks" string="Con trabajos" domain="[('task_count', '&gt;', 0)]"/>
+                <filter name="with_quote" string="Con cotización" domain="['|', ('quoted_amount_usd', '&gt;', 0), '|', ('quoted_amount_cup_cash', '&gt;', 0), ('quoted_amount_cup_transfer', '&gt;', 0)]"/>
+                <filter name="overdue" string="Vencidos" domain="[('is_overdue', '=', True)]"/>
+                <group expand="0" string="Agrupar por">
+                    <filter name="group_status" string="Estado" context="{'group_by': 'status'}"/>
+                    <filter name="group_payment" string="Cobro" context="{'group_by': 'payment_status'}"/>
+                    <filter name="group_customer" string="Cliente" context="{'group_by': 'customer_name'}"/>
+                    <filter name="group_device" string="Dispositivo" context="{'group_by': 'device_id'}"/>
+                    <filter name="group_work_type" string="Tipo de trabajo" context="{'group_by': 'work_type'}"/>
+                    <filter name="group_created_month" string="Mes del pedido" context="{'group_by': 'source_created_at:month'}"/>
+                    <filter name="group_due_month" string="Mes de entrega" context="{'group_by': 'due_at:month'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+    <record id="view_posipv_work_order_kanban" model="ir.ui.view">
+        <field name="name">posipv.work.order.kanban</field>
+        <field name="model">posipv.work.order</field>
+        <field name="arch" type="xml">
+            <kanban default_group_by="status" class="o_kanban_mobile">
+                <field name="folio"/>
+                <field name="title"/>
+                <field name="customer_name"/>
+                <field name="status_label"/>
+                <field name="payment_status_label"/>
+                <field name="source_created_at"/>
+                <field name="due_at"/>
+                <field name="task_count"/>
+                <field name="requested_items_count"/>
+                <field name="quoted_amount_usd"/>
+                <field name="quoted_amount_cup_cash"/>
+                <field name="quoted_amount_cup_transfer"/>
+                <templates>
+                    <t t-name="kanban-box">
+                        <div class="oe_kanban_global_click o_kanban_record">
+                            <div><strong><field name="folio"/></strong></div>
+                            <div class="mt8"><strong><field name="title"/></strong></div>
+                            <div class="text-muted mt4"><field name="customer_name"/></div>
+                            <div class="mt8">
+                                <span class="badge rounded-pill text-bg-info me-1"><field name="status_label"/></span>
+                                <span class="badge rounded-pill text-bg-secondary"><field name="payment_status_label"/></span>
+                            </div>
+                            <div class="mt8 text-muted">
+                                <div>Pedido: <field name="source_created_at"/></div>
+                                <div>Entrega: <field name="due_at"/></div>
+                            </div>
+                            <div class="mt8">
+                                <div>Productos: <field name="requested_items_count"/> | Trabajos: <field name="task_count"/></div>
+                                <div>USD: <field name="quoted_amount_usd"/></div>
+                                <div>CUP Efec.: <field name="quoted_amount_cup_cash"/> | CUP Transf.: <field name="quoted_amount_cup_transfer"/></div>
+                            </div>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+    <record id="view_posipv_work_order_graph" model="ir.ui.view">
+        <field name="name">posipv.work.order.graph</field>
+        <field name="model">posipv.work.order</field>
+        <field name="arch" type="xml">
+            <graph string="Panel de pedidos" type="bar">
+                <field name="source_created_at" interval="month"/>
+                <field name="quoted_amount_usd" type="measure"/>
+                <field name="quoted_amount_cup_cash" type="measure"/>
+                <field name="quoted_amount_cup_transfer" type="measure"/>
+            </graph>
+        </field>
+    </record>
+    <record id="view_posipv_work_order_pivot" model="ir.ui.view">
+        <field name="name">posipv.work.order.pivot</field>
+        <field name="model">posipv.work.order</field>
+        <field name="arch" type="xml">
+            <pivot string="Análisis de pedidos">
+                <field name="status" type="row"/>
+                <field name="payment_status" type="col"/>
+                <field name="quoted_amount_usd" type="measure"/>
+                <field name="quoted_amount_cup_cash" type="measure"/>
+                <field name="quoted_amount_cup_transfer" type="measure"/>
+                <field name="task_count" type="measure"/>
+                <field name="requested_items_count" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+    <record id="view_posipv_work_order_form" model="ir.ui.view">
+        <field name="name">posipv.work.order.form</field>
+        <field name="model">posipv.work.order</field>
+        <field name="arch" type="xml">
+            <form string="Pedido espejo POSIPV">
+                <header>
+                    <button name="%(action_report_posipv_work_order_detail)d"
+                            string="Imprimir informe"
+                            type="action"
+                            class="btn-primary"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="folio"/>
+                            <field name="title"/>
+                            <field name="customer_name"/>
+                            <field name="status_label" readonly="1"/>
+                            <field name="payment_status_label" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="priority_label" readonly="1"/>
+                            <field name="work_type"/>
+                            <field name="assigned_employee_name"/>
+                            <field name="qty"/>
+                            <field name="unit_label"/>
+                            <field name="source_created_at"/>
+                            <field name="source_updated_at"/>
+                            <field name="due_at"/>
+                            <field name="device_id"/>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="description"/>
+                    </group>
+                    <group string="Panel informativo">
+                        <group>
+                            <field name="requested_items_count" readonly="1"/>
+                            <field name="task_count" readonly="1"/>
+                            <field name="assigned_team_count" readonly="1"/>
+                            <field name="payment_line_count" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="quoted_amount_usd" readonly="1"/>
+                            <field name="quoted_amount_cup_cash" readonly="1"/>
+                            <field name="quoted_amount_cup_transfer" readonly="1"/>
+                            <field name="quoted_amount_cup_other" readonly="1"/>
+                        </group>
+                    </group>
+                    <group string="Costos y trazabilidad">
+                        <group>
+                            <field name="material_line_count" readonly="1"/>
+                            <field name="waste_line_count" readonly="1"/>
+                            <field name="worker_assignment_count" readonly="1"/>
+                            <field name="is_overdue" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="completed_at"/>
+                            <field name="delivered_at"/>
+                            <field name="paid_at"/>
+                            <field name="note"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Resumen del pedido">
+                            <field name="items_json"/>
+                            <field name="assignments_json"/>
+                        </page>
+                        <page string="Trabajos">
+                            <field name="task_ids">
+                                <list>
+                                    <field name="title"/>
+                                    <field name="created_at"/>
+                                    <field name="description"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Cotización y pagos">
+                            <field name="quoted_totals_json"/>
+                            <field name="quoted_requested_lines_json"/>
+                            <field name="quoted_payment_variants_json"/>
+                            <field name="pricing_snapshot_json"/>
+                            <field name="payment_lines_json"/>
+                        </page>
+                        <page string="Datos sincronizados">
+                            <field name="payload_json"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+    <record id="action_posipv_work_order_dashboard" model="ir.actions.act_window">
+        <field name="name">Panel de pedidos</field>
+        <field name="res_model">posipv.work.order</field>
+        <field name="view_mode">graph,pivot,kanban,list,form</field>
+        <field name="search_view_id" ref="view_posipv_work_order_search"/>
+    </record>
+    <record id="action_posipv_work_order" model="ir.actions.act_window">
+        <field name="name">Pedidos espejo</field>
+        <field name="res_model">posipv.work.order</field>
+        <field name="view_mode">kanban,list,form,pivot,graph</field>
+        <field name="search_view_id" ref="view_posipv_work_order_search"/>
+    </record>
+    <menuitem id="menu_posipv_work_order" name="Pedidos" parent="menu_posipv_transactions" action="action_posipv_work_order" sequence="30" groups="posipv.group_posipv_viewer"/>
+    <menuitem id="menu_posipv_work_order_dashboard" name="Panel Pedidos" parent="menu_posipv_monitoring" action="action_posipv_work_order_dashboard" sequence="25" groups="posipv.group_posipv_viewer"/>
+</odoo>

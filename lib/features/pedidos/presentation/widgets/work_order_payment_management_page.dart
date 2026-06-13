@@ -11,6 +11,7 @@ class WorkOrderPaymentManagementPage extends StatefulWidget {
     required this.orderFolio,
     required this.orderTotals,
     required this.initialPricingSnapshot,
+    required this.initialPaymentValues,
     required this.initialPaymentLines,
     required this.currencyConfig,
     required this.paymentMethods,
@@ -19,6 +20,7 @@ class WorkOrderPaymentManagementPage extends StatefulWidget {
   final String orderFolio;
   final List<WorkOrderCostTotal> orderTotals;
   final WorkOrderPricingSnapshot initialPricingSnapshot;
+  final List<WorkOrderPaymentValue> initialPaymentValues;
   final List<WorkOrderRecordedPaymentLine> initialPaymentLines;
   final AppCurrencyConfig currencyConfig;
   final List<AppPaymentMethodSetting> paymentMethods;
@@ -30,7 +32,7 @@ class WorkOrderPaymentManagementPage extends StatefulWidget {
 
 class _WorkOrderPaymentManagementPageState
     extends State<WorkOrderPaymentManagementPage> {
-  late DateTime? _paidAt;
+  late DateTime _paidAt;
   late String _localCurrencyCode;
   late String _foreignCurrencyCode;
   late final TextEditingController _fixedCtrl;
@@ -44,7 +46,7 @@ class _WorkOrderPaymentManagementPageState
     super.initState();
     _paidAt = widget.initialPaymentLines.isNotEmpty
         ? widget.initialPaymentLines.last.paidAt
-        : null;
+        : DateTime.now();
     _localCurrencyCode =
         widget.initialPricingSnapshot.localCurrencyCode.trim().toUpperCase();
     _foreignCurrencyCode =
@@ -59,9 +61,10 @@ class _WorkOrderPaymentManagementPageState
     );
     for (final AppCurrencySetting currency in _allCurrencies) {
       _rateCtrls[currency.code] = TextEditingController(
-        text: (widget.initialPricingSnapshot.ratesByCode[currency.code] ??
-                currency.rateToPrimary)
-            .toStringAsFixed(2),
+        text: _roundRatePrecision(
+          widget.initialPricingSnapshot.ratesByCode[currency.code] ??
+              currency.rateToPrimary,
+        ).toString(),
       );
     }
     _lines.addAll(
@@ -115,10 +118,11 @@ class _WorkOrderPaymentManagementPageState
   WorkOrderPricingSnapshot get _draftSnapshot {
     final Map<String, double> rates = <String, double>{};
     for (final AppCurrencySetting currency in _allCurrencies) {
-      final double parsed =
-          double.tryParse(_rateCtrls[currency.code]?.text.trim() ?? '') ??
-              currency.rateToPrimary;
-      rates[currency.code] = _roundTo2(parsed <= 0 ? 1 : parsed);
+      final double parsed = double.tryParse(
+            (_rateCtrls[currency.code]?.text.trim() ?? '').replaceAll(',', '.'),
+          ) ??
+          currency.rateToPrimary;
+      rates[currency.code] = _roundRatePrecision(parsed <= 0 ? 1 : parsed);
     }
     final String primary =
         widget.initialPricingSnapshot.primaryCurrencyCode.trim().toUpperCase();
@@ -128,23 +132,87 @@ class _WorkOrderPaymentManagementPageState
       primaryCurrencyCode: primary,
       localCurrencyCode: _localCurrencyCode,
       foreignCurrencyCode: _foreignCurrencyCode,
-      localCashFixedSurcharge:
-          _roundTo2(double.tryParse(_fixedCtrl.text.trim()) ?? 0),
-      localTransferPercentSurcharge:
-          _roundTo2(double.tryParse(_transferCtrl.text.trim()) ?? 0),
+      localCashFixedSurcharge: _roundTo2(
+        double.tryParse(_fixedCtrl.text.trim().replaceAll(',', '.')) ?? 0,
+      ),
+      localTransferPercentSurcharge: _roundTo2(
+        double.tryParse(_transferCtrl.text.trim().replaceAll(',', '.')) ?? 0,
+      ),
       ratesByCode: rates,
     );
   }
 
-  List<WorkOrderPaymentValue> get _previewValues =>
-      buildWorkOrderPaymentVariantsFromSnapshot(
-        totals: widget.orderTotals,
+  List<WorkOrderPaymentValue> get _previewValues {
+    return buildWorkOrderPaymentVariantsFromSnapshot(
+      totals: widget.orderTotals,
+      pricingSnapshot: _draftSnapshot,
+    );
+  }
+
+  List<WorkOrderRecordedPaymentLine> get _previewPaymentLines => _lines
+      .map(
+        (_PaymentLineDraft line) => line.toModel(
+          widget.paymentMethods,
+          _draftSnapshot,
+        ),
+      )
+      .where(
+        (WorkOrderRecordedPaymentLine line) => line.enteredAmountCents > 0,
+      )
+      .toList(growable: false);
+
+  int get _paidComparableCents => computeWorkOrderComparablePaidCents(
+        lines: _previewPaymentLines,
         pricingSnapshot: _draftSnapshot,
       );
 
-  String get _derivedPaymentStatus => _lines.isEmpty
-      ? WorkOrderPaymentStatusCatalog.unpaid
-      : WorkOrderPaymentStatusCatalog.paid;
+  String get _derivedPaymentStatus => deriveWorkOrderPaymentStatus(
+        lines: _previewPaymentLines,
+        pricingSnapshot: _draftSnapshot,
+        paymentValues: _previewValues,
+        totals: widget.orderTotals,
+      );
+
+  String get _comparableCurrencyCode =>
+      _draftSnapshot.localCurrencyCode.trim().toUpperCase().isEmpty
+          ? _draftSnapshot.primaryCurrencyCode.trim().toUpperCase()
+          : _draftSnapshot.localCurrencyCode.trim().toUpperCase();
+
+  int _remainingForVariant(WorkOrderPaymentValue row) {
+    final int paidInRowCurrency = _convertComparableToCurrency(
+      amountCents: _paidComparableCents,
+      sourceCurrencyCode: _comparableCurrencyCode,
+      targetCurrencyCode: row.currencyCode,
+    );
+    final int remaining = row.amountCents - paidInRowCurrency;
+    return remaining <= 0 ? 0 : remaining;
+  }
+
+  int _convertComparableToCurrency({
+    required int amountCents,
+    required String sourceCurrencyCode,
+    required String targetCurrencyCode,
+  }) {
+    final String source = sourceCurrencyCode.trim().toUpperCase();
+    final String target = targetCurrencyCode.trim().toUpperCase();
+    if (amountCents <= 0) {
+      return 0;
+    }
+    if (source == target) {
+      return amountCents;
+    }
+    final String primary =
+        _draftSnapshot.primaryCurrencyCode.trim().toUpperCase();
+    final double sourceRate = _draftSnapshot.ratesByCode[source] ?? 1;
+    final double targetRate = _draftSnapshot.ratesByCode[target] ?? 1;
+    final double sourceAmount = amountCents / 100;
+    final double amountInPrimary = source == primary
+        ? sourceAmount
+        : sourceAmount / (sourceRate <= 0 ? 1 : sourceRate);
+    final double targetAmount =
+        target == primary ? amountInPrimary : amountInPrimary * targetRate;
+    return (targetAmount * 100).round();
+  }
 
   void _show(String message) {
     ScaffoldMessenger.of(context)
@@ -153,7 +221,7 @@ class _WorkOrderPaymentManagementPageState
   }
 
   Future<void> _pickPaidAt() async {
-    final DateTime base = _paidAt ?? DateTime.now();
+    final DateTime base = _paidAt;
     final DateTime? date = await showDatePicker(
       context: context,
       firstDate: DateTime(base.year - 2),
@@ -184,7 +252,10 @@ class _WorkOrderPaymentManagementPageState
 
   Future<void> _editLine({int? index}) async {
     final _PaymentLineDraft base = index == null
-        ? _PaymentLineDraft.empty(_defaultMethodCode)
+        ? _PaymentLineDraft.empty(
+            _defaultMethodCode,
+            paidAt: _paidAt,
+          )
         : _lines[index];
     final _PaymentLineDraft? edited = await showDialog<_PaymentLineDraft>(
       context: context,
@@ -193,6 +264,7 @@ class _WorkOrderPaymentManagementPageState
         paymentMethods: widget.paymentMethods,
         currencies: _allCurrencies,
         suggestedValues: _previewValues,
+        pricingSnapshot: _draftSnapshot,
       ),
     );
     if (edited == null || !mounted) {
@@ -204,6 +276,7 @@ class _WorkOrderPaymentManagementPageState
       } else {
         _lines[index] = edited;
       }
+      _paidAt = edited.paidAt;
     });
   }
 
@@ -229,15 +302,7 @@ class _WorkOrderPaymentManagementPageState
       _show('La moneda local y la extranjera deben ser distintas.');
       return;
     }
-    final List<WorkOrderRecordedPaymentLine> lines = _lines
-        .map((_PaymentLineDraft line) => line.toModel(widget.paymentMethods))
-        .where(
-            (WorkOrderRecordedPaymentLine line) => line.enteredAmountCents > 0)
-        .toList(growable: false);
-    if (_lines.isNotEmpty && (_paidAt == null)) {
-      _show('Selecciona la fecha y hora del cobro.');
-      return;
-    }
+    final List<WorkOrderRecordedPaymentLine> lines = _previewPaymentLines;
     Navigator.of(context).pop(
       WorkOrderPaymentUpdateInput(
         paymentStatus: _derivedPaymentStatus,
@@ -281,10 +346,7 @@ class _WorkOrderPaymentManagementPageState
                   children: <Widget>[
                     Expanded(
                       child: Text(
-                        _derivedPaymentStatus ==
-                                WorkOrderPaymentStatusCatalog.paid
-                            ? 'El pedido ya tiene pagos registrados.'
-                            : 'El pedido seguirá pendiente de pago hasta que registres al menos una línea de pago.',
+                        _paymentStatusHint(_derivedPaymentStatus),
                         style: const TextStyle(
                           color: Color(0xFF475569),
                           fontWeight: FontWeight.w600,
@@ -297,8 +359,7 @@ class _WorkOrderPaymentManagementPageState
                       label: WorkOrderPaymentStatusCatalog.label(
                         _derivedPaymentStatus,
                       ),
-                      isPaid: _derivedPaymentStatus ==
-                          WorkOrderPaymentStatusCatalog.paid,
+                      status: _derivedPaymentStatus,
                     ),
                   ],
                 ),
@@ -308,12 +369,10 @@ class _WorkOrderPaymentManagementPageState
                   leading: const Icon(Icons.event_available_rounded),
                   title: const Text('Fecha del cobro'),
                   subtitle: Text(
-                    _paidAt == null
-                        ? 'Aun no definida'
-                        : _fmtDateTime(_paidAt!),
+                    _fmtDateTime(_paidAt),
                   ),
                   trailing: OutlinedButton(
-                    onPressed: _lines.isNotEmpty ? _pickPaidAt : null,
+                    onPressed: _pickPaidAt,
                     child: const Text('Elegir'),
                   ),
                 ),
@@ -322,139 +381,39 @@ class _WorkOrderPaymentManagementPageState
           ),
           const SizedBox(height: 16),
           _SectionCard(
-            title: 'Cotización congelada',
-            subtitle: 'Modifica la tasa y reglas solo para este pedido.',
+            title: 'Valores del pedido',
+            subtitle: 'Total y saldo pendiente según la cotización del pedido.',
             child: Column(
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        key: ValueKey<String>('local-$_localCurrencyCode'),
-                        initialValue: _localCurrencyCode,
-                        decoration:
-                            const InputDecoration(labelText: 'Moneda local'),
-                        items: _allCurrencies
-                            .map(
-                              (AppCurrencySetting currency) =>
-                                  DropdownMenuItem<String>(
-                                value: currency.code,
-                                child: Text(
-                                  '${currency.code} (${currency.symbol})',
-                                ),
-                              ),
-                            )
-                            .toList(growable: false),
-                        onChanged: (String? value) {
-                          if (value == null) {
-                            return;
-                          }
-                          setState(() => _localCurrencyCode = value);
-                        },
+              children: _previewValues.map(
+                (WorkOrderPaymentValue row) {
+                  final int remainingCents = _remainingForVariant(row);
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      row.label,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    subtitle: Text(
+                      _previewPaymentLines.isEmpty
+                          ? 'Pendiente: ${_formatMoney(row.amountCents, row.currencyCode)}'
+                          : 'Pendiente: ${_formatMoney(remainingCents, row.currencyCode)}',
+                      style: TextStyle(
+                        color: remainingCents <= 0
+                            ? const Color(0xFF047857)
+                            : const Color(0xFF64748B),
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        key: ValueKey<String>('foreign-$_foreignCurrencyCode'),
-                        initialValue: _foreignCurrencyCode,
-                        decoration: const InputDecoration(
-                          labelText: 'Moneda extranjera',
-                        ),
-                        items: _allCurrencies
-                            .map(
-                              (AppCurrencySetting currency) =>
-                                  DropdownMenuItem<String>(
-                                value: currency.code,
-                                child: Text(
-                                  '${currency.code} (${currency.symbol})',
-                                ),
-                              ),
-                            )
-                            .toList(growable: false),
-                        onChanged: (String? value) {
-                          if (value == null) {
-                            return;
-                          }
-                          setState(() => _foreignCurrencyCode = value);
-                        },
+                    trailing: Text(
+                      _formatMoney(row.amountCents, row.currencyCode),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF1152D4),
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: TextField(
-                        controller: _fixedCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: const InputDecoration(
-                          labelText: 'Recargo tasa efectivo',
-                          hintText: '5.00',
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextField(
-                        controller: _transferCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: const InputDecoration(
-                          labelText: 'Recargo transferencia %',
-                          hintText: '10.00',
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                ..._allCurrencies.map(
-                  (AppCurrencySetting currency) => Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: TextField(
-                      controller: _rateCtrls[currency.code],
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: InputDecoration(
-                        labelText:
-                            'Tasa ${currency.code} respecto a ${widget.initialPricingSnapshot.primaryCurrencyCode}',
-                        prefixText: '${currency.symbol} ',
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          _SectionCard(
-            title: 'Variantes del pedido',
-            subtitle: 'Vista previa con la cotización actual de este pedido.',
-            child: Column(
-              children: _previewValues
-                  .map(
-                    (WorkOrderPaymentValue row) => ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(
-                        row.label,
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      trailing: Text(
-                        _formatMoney(row.amountCents, row.currencyCode),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF1152D4),
-                        ),
-                      ),
-                    ),
-                  )
-                  .toList(growable: false),
+                  );
+                },
+              ).toList(growable: false),
             ),
           ),
           const SizedBox(height: 16),
@@ -478,6 +437,8 @@ class _WorkOrderPaymentManagementPageState
                     children: _lines.asMap().entries.map((entry) {
                       final int index = entry.key;
                       final _PaymentLineDraft line = entry.value;
+                      final WorkOrderRecordedPaymentLine previewLine =
+                          line.toModel(widget.paymentMethods, _draftSnapshot);
                       return Container(
                         margin: const EdgeInsets.only(bottom: 10),
                         padding: const EdgeInsets.all(12),
@@ -523,6 +484,25 @@ class _WorkOrderPaymentManagementPageState
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
+                            if (previewLine.primaryCurrencyCode !=
+                                previewLine.currencyCode) ...<Widget>[
+                              const SizedBox(height: 4),
+                              Text(
+                                'Equiv. ${previewLine.primaryCurrencyCode}: ${_formatMoney(previewLine.equivalentAmountCents, previewLine.primaryCurrencyCode)}',
+                                style: const TextStyle(
+                                  color: Color(0xFF475569),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Tasa aplicada: 1 ${previewLine.currencyCode} = ${previewLine.appliedRateToPrimary.toStringAsFixed(2)} ${previewLine.primaryCurrencyCode}',
+                                style: const TextStyle(
+                                  color: Color(0xFF64748B),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
                             const SizedBox(height: 4),
                             Text(
                               _fmtDateTime(line.paidAt),
@@ -536,6 +516,17 @@ class _WorkOrderPaymentManagementPageState
                                 padding: const EdgeInsets.only(top: 4),
                                 child: Text(
                                   'Transacción: ${line.transactionId}',
+                                  style: const TextStyle(
+                                    color: Color(0xFF475569),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            if ((line.quoteLabel ?? '').trim().isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(
+                                  'Variante usada: ${line.quoteLabel}',
                                   style: const TextStyle(
                                     color: Color(0xFF475569),
                                     fontWeight: FontWeight.w600,
@@ -579,6 +570,21 @@ class _WorkOrderPaymentManagementPageState
   }
 
   double _roundTo2(double value) => (value * 100).round() / 100;
+
+  double _roundRatePrecision(double value) =>
+      (value * 100000000).round() / 100000000;
+}
+
+String _paymentStatusHint(String status) {
+  switch (status) {
+    case WorkOrderPaymentStatusCatalog.paid:
+      return 'La suma de los pagos ya cubre el valor del pedido.';
+    case WorkOrderPaymentStatusCatalog.partial:
+      return 'El pedido tiene pagos registrados, pero todavía no cubren el valor total.';
+    case WorkOrderPaymentStatusCatalog.unpaid:
+    default:
+      return 'El pedido seguirá pendiente de pago hasta que registres al menos una línea de pago.';
+  }
 }
 
 class _SectionCard extends StatelessWidget {
@@ -648,29 +654,42 @@ class _SectionCard extends StatelessWidget {
 class _StatusPill extends StatelessWidget {
   const _StatusPill({
     required this.label,
-    required this.isPaid,
+    required this.status,
   });
 
   final String label;
-  final bool isPaid;
+  final String status;
 
   @override
   Widget build(BuildContext context) {
+    final ({Color bg, Color fg}) palette = _paymentStatusPalette(status);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
-        color: isPaid ? const Color(0xFFDCFCE7) : const Color(0xFFFFEDD5),
+        color: palette.bg,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         label,
         style: TextStyle(
-          color: isPaid ? const Color(0xFF047857) : const Color(0xFFB45309),
+          color: palette.fg,
           fontWeight: FontWeight.w800,
           fontSize: 12,
         ),
       ),
     );
+  }
+}
+
+({Color bg, Color fg}) _paymentStatusPalette(String status) {
+  switch (status) {
+    case WorkOrderPaymentStatusCatalog.paid:
+      return (bg: const Color(0xFFDCFCE7), fg: const Color(0xFF047857));
+    case WorkOrderPaymentStatusCatalog.partial:
+      return (bg: const Color(0xFFFEF3C7), fg: const Color(0xFFB45309));
+    case WorkOrderPaymentStatusCatalog.unpaid:
+    default:
+      return (bg: const Color(0xFFFEE2E2), fg: const Color(0xFFB91C1C));
   }
 }
 
@@ -681,17 +700,21 @@ class _PaymentLineDraft {
     required this.currencyCode,
     required this.amountCents,
     required this.paidAt,
+    this.quoteLabel,
     this.transactionId,
     this.note,
   });
 
-  factory _PaymentLineDraft.empty(String methodCode) {
+  factory _PaymentLineDraft.empty(
+    String methodCode, {
+    DateTime? paidAt,
+  }) {
     return _PaymentLineDraft(
       methodCode: methodCode,
       methodLabel: defaultPaymentMethodLabel(methodCode),
       currencyCode: 'CUP',
       amountCents: 0,
-      paidAt: DateTime.now(),
+      paidAt: paidAt ?? DateTime.now(),
     );
   }
 
@@ -702,6 +725,7 @@ class _PaymentLineDraft {
       currencyCode: line.currencyCode,
       amountCents: line.enteredAmountCents,
       paidAt: line.paidAt,
+      quoteLabel: line.quoteLabel,
       transactionId: line.transactionId,
       note: line.note,
     );
@@ -712,23 +736,41 @@ class _PaymentLineDraft {
   final String currencyCode;
   final int amountCents;
   final DateTime paidAt;
+  final String? quoteLabel;
   final String? transactionId;
   final String? note;
 
   WorkOrderRecordedPaymentLine toModel(
     List<AppPaymentMethodSetting> methods,
+    WorkOrderPricingSnapshot pricingSnapshot,
   ) {
     final AppPaymentMethodSetting? selected =
         methods.cast<AppPaymentMethodSetting?>().firstWhere(
               (AppPaymentMethodSetting? item) => item?.code == methodCode,
               orElse: () => null,
             );
+    final String primaryCurrencyCode =
+        pricingSnapshot.primaryCurrencyCode.trim().toUpperCase();
+    final double rateToPrimary = _paymentLineRateToPrimary(
+      currencyCode: currencyCode,
+      pricingSnapshot: pricingSnapshot,
+    );
+    final int equivalentAmountCents = _paymentLineEquivalentToPrimary(
+      amountCents: amountCents,
+      currencyCode: currencyCode,
+      pricingSnapshot: pricingSnapshot,
+    );
     return WorkOrderRecordedPaymentLine(
       methodCode: methodCode,
       methodLabel: selected?.label ?? methodLabel,
       currencyCode: currencyCode,
       enteredAmountCents: amountCents,
+      primaryCurrencyCode: primaryCurrencyCode,
+      equivalentAmountCents: equivalentAmountCents,
+      appliedRateToPrimary: rateToPrimary,
       paidAt: paidAt,
+      quoteLabel: quoteLabel,
+      pricingCapturedAt: pricingSnapshot.capturedAt,
       transactionId: transactionId,
       note: note,
     );
@@ -741,12 +783,14 @@ class _PaymentLineDialog extends StatefulWidget {
     required this.paymentMethods,
     required this.currencies,
     required this.suggestedValues,
+    required this.pricingSnapshot,
   });
 
   final _PaymentLineDraft initial;
   final List<AppPaymentMethodSetting> paymentMethods;
   final List<AppCurrencySetting> currencies;
   final List<WorkOrderPaymentValue> suggestedValues;
+  final WorkOrderPricingSnapshot pricingSnapshot;
 
   @override
   State<_PaymentLineDialog> createState() => _PaymentLineDialogState();
@@ -756,6 +800,7 @@ class _PaymentLineDialogState extends State<_PaymentLineDialog> {
   late String _methodCode;
   late String _currencyCode;
   late DateTime _paidAt;
+  late String? _quoteLabel;
   late final TextEditingController _amountCtrl;
   late final TextEditingController _transactionCtrl;
   late final TextEditingController _noteCtrl;
@@ -766,6 +811,7 @@ class _PaymentLineDialogState extends State<_PaymentLineDialog> {
     _methodCode = widget.initial.methodCode;
     _currencyCode = widget.initial.currencyCode;
     _paidAt = widget.initial.paidAt;
+    _quoteLabel = widget.initial.quoteLabel;
     _amountCtrl = TextEditingController(
       text: (widget.initial.amountCents / 100).toStringAsFixed(2),
     );
@@ -790,10 +836,30 @@ class _PaymentLineDialogState extends State<_PaymentLineDialog> {
     return method?.isOnline ?? false;
   }
 
+  int get _parsedAmountCents =>
+      (((double.tryParse(_amountCtrl.text.trim()) ?? 0) * 100)).round();
+
+  WorkOrderPricingSnapshot get _pricingSnapshot => widget.pricingSnapshot;
+
+  String get _primaryCurrencyCode =>
+      _pricingSnapshot.primaryCurrencyCode.trim().toUpperCase();
+
+  int get _equivalentAmountCents => _paymentLineEquivalentToPrimary(
+        amountCents: _parsedAmountCents < 0 ? 0 : _parsedAmountCents,
+        currencyCode: _currencyCode,
+        pricingSnapshot: _pricingSnapshot,
+      );
+
+  double get _appliedRateToPrimary => _paymentLineRateToPrimary(
+        currencyCode: _currencyCode,
+        pricingSnapshot: _pricingSnapshot,
+      );
+
   void _applySuggestedValue(WorkOrderPaymentValue value) {
     setState(() {
       _currencyCode = value.currencyCode;
       _amountCtrl.text = (value.amountCents / 100).toStringAsFixed(2);
+      _quoteLabel = value.label;
       final String lowerLabel = value.label.toLowerCase();
       if (lowerLabel.contains('transfer')) {
         final AppPaymentMethodSetting? transfer =
@@ -849,8 +915,7 @@ class _PaymentLineDialogState extends State<_PaymentLineDialog> {
   }
 
   void _save() {
-    final int amountCents =
-        (((double.tryParse(_amountCtrl.text.trim()) ?? 0) * 100)).round();
+    final int amountCents = _parsedAmountCents;
     if (amountCents <= 0) {
       ScaffoldMessenger.of(context)
         ..clearSnackBars()
@@ -880,6 +945,7 @@ class _PaymentLineDialogState extends State<_PaymentLineDialog> {
         currencyCode: _currencyCode,
         amountCents: amountCents,
         paidAt: _paidAt,
+        quoteLabel: _quoteLabel,
         transactionId: _transactionCtrl.text.trim().isEmpty
             ? null
             : _transactionCtrl.text.trim(),
@@ -913,7 +979,10 @@ class _PaymentLineDialogState extends State<_PaymentLineDialog> {
                 if (value == null) {
                   return;
                 }
-                setState(() => _methodCode = value);
+                setState(() {
+                  _methodCode = value;
+                  _quoteLabel = null;
+                });
               },
             ),
             const SizedBox(height: 12),
@@ -960,7 +1029,10 @@ class _PaymentLineDialogState extends State<_PaymentLineDialog> {
                 if (value == null) {
                   return;
                 }
-                setState(() => _currencyCode = value);
+                setState(() {
+                  _currencyCode = value;
+                  _quoteLabel = null;
+                });
               },
             ),
             const SizedBox(height: 12),
@@ -969,6 +1041,61 @@ class _PaymentLineDialogState extends State<_PaymentLineDialog> {
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
               decoration: const InputDecoration(labelText: 'Monto'),
+              onChanged: (_) {
+                if (_quoteLabel != null) {
+                  setState(() => _quoteLabel = null);
+                } else {
+                  setState(() {});
+                }
+              },
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text(
+                    'Resumen de la línea',
+                    style: TextStyle(
+                      color: Color(0xFF0F172A),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Equivalente en $_primaryCurrencyCode: ${_formatMoney(_equivalentAmountCents, _primaryCurrencyCode)}',
+                    style: const TextStyle(
+                      color: Color(0xFF475569),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Tasa aplicada: 1 $_currencyCode = ${_appliedRateToPrimary.toStringAsFixed(2)} $_primaryCurrencyCode',
+                    style: const TextStyle(
+                      color: Color(0xFF64748B),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if ((_quoteLabel ?? '').trim().isNotEmpty) ...<Widget>[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Variante usada: $_quoteLabel',
+                      style: const TextStyle(
+                        color: Color(0xFF64748B),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -1022,4 +1149,47 @@ class _PaymentLineDialogState extends State<_PaymentLineDialog> {
     final String minute = local.minute.toString().padLeft(2, '0');
     return '$day/$month/$year · $hour:$minute';
   }
+
+  String _formatMoney(int cents, String currencyCode) {
+    final AppCurrencySetting? setting =
+        widget.currencies.cast<AppCurrencySetting?>().firstWhere(
+              (AppCurrencySetting? row) => row?.code == currencyCode,
+              orElse: () => null,
+            );
+    final String symbol = setting?.symbol ?? '${currencyCode.toUpperCase()} ';
+    return '$symbol${(cents / 100).toStringAsFixed(2)}';
+  }
+}
+
+double _paymentLineRateToPrimary({
+  required String currencyCode,
+  required WorkOrderPricingSnapshot pricingSnapshot,
+}) {
+  final String source = currencyCode.trim().toUpperCase();
+  final String primary =
+      pricingSnapshot.primaryCurrencyCode.trim().toUpperCase();
+  if (source == primary) {
+    return 1;
+  }
+  final double sourceRate = pricingSnapshot.ratesByCode[source] ?? 1;
+  final double safeRate = sourceRate <= 0 ? 1 : sourceRate;
+  return ((1 / safeRate) * 100).round() / 100;
+}
+
+int _paymentLineEquivalentToPrimary({
+  required int amountCents,
+  required String currencyCode,
+  required WorkOrderPricingSnapshot pricingSnapshot,
+}) {
+  final String source = currencyCode.trim().toUpperCase();
+  final String primary =
+      pricingSnapshot.primaryCurrencyCode.trim().toUpperCase();
+  if (source == primary) {
+    return amountCents;
+  }
+  final double sourceRate = pricingSnapshot.ratesByCode[source] ?? 1;
+  final double safeRate = sourceRate <= 0 ? 1 : sourceRate;
+  final double sourceAmount = amountCents / 100;
+  final double amountInPrimary = sourceAmount / safeRate;
+  return (amountInPrimary * 100).round();
 }

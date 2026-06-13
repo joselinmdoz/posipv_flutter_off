@@ -328,6 +328,7 @@ class AppPermissionsCatalog {
     '/configuracion-roles-trabajo-pedidos': AppPermissionKeys.ordersManage,
     '/configuracion-archivados': AppPermissionKeys.usersManage,
     '/configuracion-metodos-pago': AppPermissionKeys.settingsData,
+    '/sync-cloud': AppPermissionKeys.settingsData,
     '/configuracion-usuarios': AppPermissionKeys.usersManage,
     '/configuracion-roles': AppPermissionKeys.usersManage,
     '/configuracion-dashboard-widgets':

@@ -1,0 +1,91 @@
+<odoo>
+    <record id="view_posipv_work_order_dashboard_form" model="ir.ui.view">
+        <field name="name">posipv.work.order.dashboard.form</field>
+        <field name="model">posipv.work.order.dashboard</field>
+        <field name="arch" type="xml">
+            <form string="Panel informativo de pedidos">
+                <header>
+                    <button name="action_view_orders" string="Ver pedidos" type="object" class="btn-primary"/>
+                    <button name="action_print_orders_report" string="Informe de pedidos PDF" type="object"/>
+                    <button name="action_print_materials_report" string="Materiales y merma PDF" type="object"/>
+                    <button name="action_clear_filters" string="Limpiar filtros" type="object" class="btn-secondary"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1>Panel informativo de pedidos</h1>
+                        <div class="text-muted">
+                            Filtra los pedidos del taller, revisa indicadores y exporta reportes PDF con el mismo criterio aplicado.
+                        </div>
+                    </div>
+                    <group string="Filtros">
+                        <group>
+                            <field name="date_basis"/>
+                            <field name="date_from"/>
+                            <field name="date_to"/>
+                            <field name="search_text"/>
+                            <field name="device_id"/>
+                            <field name="customer_name"/>
+                        </group>
+                        <group>
+                            <field name="assigned_employee_name"/>
+                            <field name="status"/>
+                            <field name="payment_status"/>
+                            <field name="priority"/>
+                            <field name="overdue_only"/>
+                            <field name="with_tasks_only"/>
+                            <field name="with_payments_only"/>
+                        </group>
+                    </group>
+                    <group string="Resumen general" col="3">
+                        <group>
+                            <field name="total_orders" readonly="1"/>
+                            <field name="total_pending" readonly="1"/>
+                            <field name="total_in_progress" readonly="1"/>
+                            <field name="total_ready" readonly="1"/>
+                            <field name="total_delivered" readonly="1"/>
+                            <field name="total_cancelled" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="total_unpaid" readonly="1"/>
+                            <field name="total_partial" readonly="1"/>
+                            <field name="total_paid" readonly="1"/>
+                            <field name="total_payment_lines" readonly="1"/>
+                            <field name="total_tasks" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="total_material_lines" readonly="1"/>
+                            <field name="total_waste_lines" readonly="1"/>
+                            <field name="quoted_amount_usd" readonly="1"/>
+                            <field name="quoted_amount_cup_cash" readonly="1"/>
+                            <field name="quoted_amount_cup_transfer" readonly="1"/>
+                        </group>
+                    </group>
+                    <group string="Acciones">
+                        <div class="o_form_label" colspan="2">
+                            Usa los botones superiores para abrir los pedidos filtrados o generar los reportes del panel actual.
+                        </div>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_posipv_work_order_dashboard_panel" model="ir.actions.act_window">
+        <field name="name">Panel principal</field>
+        <field name="res_model">posipv.work.order.dashboard</field>
+        <field name="view_mode">form</field>
+        <field name="target">current</field>
+        <field name="context">{}</field>
+    </record>
+
+    <record id="menu_posipv_monitoring" model="ir.ui.menu">
+        <field name="action" ref="action_posipv_work_order_dashboard_panel"/>
+    </record>
+
+    <menuitem id="menu_posipv_work_order_dashboard_panel"
+              name="Panel principal"
+              parent="menu_posipv_monitoring"
+              action="action_posipv_work_order_dashboard_panel"
+              sequence="5"
+              groups="posipv.group_posipv_viewer"/>
+</odoo>

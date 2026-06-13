@@ -1,0 +1,206 @@
+<odoo>
+    <record id="action_report_posipv_work_order_detail" model="ir.actions.report">
+        <field name="name">Informe detallado de pedidos</field>
+        <field name="model">posipv.work.order</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">posipv.report_work_orders_detail</field>
+        <field name="report_file">posipv.report_work_orders_detail</field>
+        <field name="binding_model_id" ref="model_posipv_work_order"/>
+        <field name="binding_type">report</field>
+        <field name="print_report_name">'Pedido - %s' % (object.folio or object.name)</field>
+    </record>
+
+    <template id="report_work_orders_detail">
+        <t t-call="web.html_container">
+            <t t-foreach="orders" t-as="order_data">
+                <t t-set="order" t-value="order_data['record']"/>
+                <t t-call="web.external_layout">
+                    <div class="page">
+                        <h2>Informe detallado del pedido</h2>
+                        <h3 t-esc="order.folio"/>
+                        <table class="table table-sm table-borderless mb16">
+                            <tbody>
+                                <tr>
+                                    <td><strong>Cliente</strong></td>
+                                    <td t-esc="order.customer_name or '-'"/>
+                                    <td><strong>Estado</strong></td>
+                                    <td t-esc="order_data['status_label']"/>
+                                </tr>
+                                <tr>
+                                    <td><strong>Título</strong></td>
+                                    <td t-esc="order.title"/>
+                                    <td><strong>Cobro</strong></td>
+                                    <td t-esc="order_data['payment_label']"/>
+                                </tr>
+                                <tr>
+                                    <td><strong>Prioridad</strong></td>
+                                    <td t-esc="order_data['priority_label']"/>
+                                    <td><strong>Tipo de trabajo</strong></td>
+                                    <td t-esc="order.work_type or '-'"/>
+                                </tr>
+                                <tr>
+                                    <td><strong>Creado</strong></td>
+                                    <td t-esc="order.source_created_at or '-'"/>
+                                    <td><strong>Entrega</strong></td>
+                                    <td t-esc="order.due_at or '-'"/>
+                                </tr>
+                                <tr>
+                                    <td><strong>Responsable principal</strong></td>
+                                    <td t-esc="order.assigned_employee_name or '-'"/>
+                                    <td><strong>Dispositivo</strong></td>
+                                    <td t-esc="order.device_id.name or '-'"/>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <h4>Panel informativo</h4>
+                        <table class="table table-sm table-bordered mb16">
+                            <thead>
+                                <tr>
+                                    <th>USD</th>
+                                    <th>CUP efectivo</th>
+                                    <th>CUP transferencia</th>
+                                    <th>Trabajos</th>
+                                    <th>Materiales</th>
+                                    <th>Pagos</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td t-esc="order.quoted_amount_usd"/>
+                                    <td t-esc="order.quoted_amount_cup_cash"/>
+                                    <td t-esc="order.quoted_amount_cup_transfer"/>
+                                    <td t-esc="order.task_count"/>
+                                    <td t-esc="order.material_line_count"/>
+                                    <td t-esc="order.payment_line_count"/>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <h4>Productos solicitados</h4>
+                        <table class="table table-sm table-bordered mb16">
+                            <thead>
+                                <tr>
+                                    <th>Producto</th>
+                                    <th>SKU</th>
+                                    <th>Cantidad</th>
+                                    <th>Unidad</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr t-foreach="order_data['items']" t-as="item">
+                                    <td t-esc="item.get('productName')"/>
+                                    <td t-esc="item.get('productSku')"/>
+                                    <td t-esc="item.get('qty')"/>
+                                    <td t-esc="item.get('unitLabel')"/>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <h4>Responsables asignados</h4>
+                        <table class="table table-sm table-bordered mb16">
+                            <thead>
+                                <tr>
+                                    <th>Empleado</th>
+                                    <th>Código</th>
+                                    <th>Rol</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr t-foreach="order_data['assignments']" t-as="assignment">
+                                    <td t-esc="assignment.get('employeeName')"/>
+                                    <td t-esc="assignment.get('employeeCode')"/>
+                                    <td t-esc="assignment.get('roleName')"/>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <h4>Trabajos realizados</h4>
+                        <t t-foreach="order_data['tasks']" t-as="task">
+                            <div class="mb8">
+                                <strong t-esc="task['title']"/>
+                                <div t-if="task['description']" t-esc="task['description']"/>
+                                <div><strong>Fecha:</strong> <span t-esc="task['created_at'] or '-'"/></div>
+                                <div class="mt8"><strong>Materiales</strong></div>
+                                <ul>
+                                    <li t-foreach="task['materials']" t-as="material">
+                                        <span t-esc="material.get('productName')"/> -
+                                        <span t-esc="material.get('qty')"/> <span t-esc="material.get('unitLabel')"/>
+                                    </li>
+                                </ul>
+                                <div class="mt8"><strong>Merma</strong></div>
+                                <ul>
+                                    <li t-foreach="task['waste_materials']" t-as="waste">
+                                        <span t-esc="waste.get('productName')"/> -
+                                        <span t-esc="waste.get('qty')"/> <span t-esc="waste.get('unitLabel')"/>
+                                    </li>
+                                </ul>
+                                <div class="mt8"><strong>Trabajadores</strong></div>
+                                <ul>
+                                    <li t-foreach="task['workers']" t-as="worker">
+                                        <span t-esc="worker.get('employeeName')"/> -
+                                        <span t-esc="worker.get('roleName')"/>
+                                    </li>
+                                </ul>
+                            </div>
+                        </t>
+
+                        <h4>Variantes de cobro y pagos</h4>
+                        <table class="table table-sm table-bordered mb16">
+                            <thead>
+                                <tr>
+                                    <th>Concepto</th>
+                                    <th>Moneda</th>
+                                    <th>Monto</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr t-foreach="order_data['quoted_payment_variants']" t-as="variant">
+                                    <td t-esc="variant.get('label')"/>
+                                    <td t-esc="variant.get('currency_code')"/>
+                                    <td t-esc="variant.get('amount')"/>
+                                </tr>
+                                <tr t-foreach="order_data['payment_lines']" t-as="payment">
+                                    <td>
+                                        <span t-esc="payment.get('method_label')"/>
+                                        <t t-if="payment.get('quote_label')">
+                                            <br/>
+                                            <small>Variante: <span t-esc="payment.get('quote_label')"/></small>
+                                        </t>
+                                        <t t-if="payment.get('transaction_id')">
+                                            <br/>
+                                            <small>ID transacción: <span t-esc="payment.get('transaction_id')"/></small>
+                                        </t>
+                                    </td>
+                                    <td>
+                                        <div t-esc="payment.get('currency_code')"/>
+                                        <small>
+                                            Equiv.
+                                            <span t-esc="payment.get('primary_currency_code')"/>:
+                                            <span t-esc="payment.get('equivalent_amount')"/>
+                                        </small>
+                                    </td>
+                                    <td>
+                                        <div t-esc="payment.get('amount')"/>
+                                        <small>
+                                            Tasa: 1
+                                            <span t-esc="payment.get('currency_code')"/>
+                                            =
+                                            <span t-esc="payment.get('applied_rate_to_primary')"/>
+                                            <span t-esc="payment.get('primary_currency_code')"/>
+                                        </small>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <div t-if="order.note">
+                            <h4>Observaciones</h4>
+                            <p t-esc="order.note"/>
+                        </div>
+                    </div>
+                </t>
+            </t>
+        </t>
+    </template>
+</odoo>

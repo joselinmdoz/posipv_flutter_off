@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 class HomeQuickActions extends StatelessWidget {
   final VoidCallback onNewSaleTap;
   final VoidCallback onAddStockTap;
+  final VoidCallback? onOrdersTap;
 
   const HomeQuickActions({
     super.key,
     required this.onNewSaleTap,
     required this.onAddStockTap,
+    this.onOrdersTap,
   });
 
   @override
@@ -28,9 +30,12 @@ class HomeQuickActions extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        Row(
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
           children: [
-            Expanded(
+            SizedBox(
+              width: 220,
               child: ElevatedButton.icon(
                 onPressed: onNewSaleTap,
                 icon: const Icon(Icons.add_shopping_cart_rounded, size: 20),
@@ -51,21 +56,25 @@ class HomeQuickActions extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
+            SizedBox(
+              width: 220,
               child: OutlinedButton.icon(
                 onPressed: onAddStockTap,
                 icon: const Icon(Icons.add_box_rounded, size: 20),
                 label: const Text('Añadir Stock'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: isDark ? Colors.white : const Color(0xFF334155),
-                  backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                  foregroundColor:
+                      isDark ? Colors.white : const Color(0xFF334155),
+                  backgroundColor:
+                      isDark ? const Color(0xFF1E293B) : Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                   side: BorderSide(
-                    color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                    color: isDark
+                        ? const Color(0xFF334155)
+                        : const Color(0xFFE2E8F0),
                   ),
                   textStyle: const TextStyle(
                     fontSize: 14,
@@ -74,6 +83,34 @@ class HomeQuickActions extends StatelessWidget {
                 ),
               ),
             ),
+            if (onOrdersTap != null)
+              SizedBox(
+                width: 220,
+                child: OutlinedButton.icon(
+                  onPressed: onOrdersTap,
+                  icon: const Icon(Icons.receipt_long_rounded, size: 20),
+                  label: const Text('Pedidos'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor:
+                        isDark ? Colors.white : const Color(0xFF334155),
+                    backgroundColor:
+                        isDark ? const Color(0xFF1E293B) : Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    side: BorderSide(
+                      color: isDark
+                          ? const Color(0xFF334155)
+                          : const Color(0xFFE2E8F0),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ],

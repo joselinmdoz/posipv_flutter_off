@@ -1,0 +1,278 @@
+<odoo>
+    <record id="action_report_posipv_work_order_filtered" model="ir.actions.report">
+        <field name="name">Informe de pedidos filtrados</field>
+        <field name="model">posipv.work.order.dashboard</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">posipv.report_work_orders_filtered</field>
+        <field name="report_file">posipv.report_work_orders_filtered</field>
+        <field name="print_report_name">'Informe_Pedidos_POSIPV'</field>
+    </record>
+
+    <record id="action_report_posipv_work_order_materials" model="ir.actions.report">
+        <field name="name">Informe de materiales y merma</field>
+        <field name="model">posipv.work.order.dashboard</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">posipv.report_work_orders_materials</field>
+        <field name="report_file">posipv.report_work_orders_materials</field>
+        <field name="print_report_name">'Informe_Materiales_Merma_POSIPV'</field>
+    </record>
+
+    <template id="report_work_orders_filtered">
+        <t t-call="web.html_container">
+            <t t-foreach="dashboards" t-as="dashboard">
+                <t t-call="web.external_layout">
+                    <div class="page">
+                        <h2>Informe de pedidos del taller</h2>
+                        <p>Generado desde el panel principal de POSIPV con los filtros aplicados.</p>
+
+                        <h4>Resumen de filtros</h4>
+                        <table class="table table-sm table-bordered mb16">
+                            <tbody>
+                                <tr><td><strong>Base del rango</strong></td><td t-esc="dashboard['filter_summary']['base_rango']"/></tr>
+                                <tr><td><strong>Desde</strong></td><td t-esc="dashboard['filter_summary']['desde'] or '-'"/></tr>
+                                <tr><td><strong>Hasta</strong></td><td t-esc="dashboard['filter_summary']['hasta'] or '-'"/></tr>
+                                <tr><td><strong>Búsqueda</strong></td><td t-esc="dashboard['filter_summary']['busqueda']"/></tr>
+                                <tr><td><strong>Estado</strong></td><td t-esc="dashboard['filter_summary']['estado']"/></tr>
+                                <tr><td><strong>Cobro</strong></td><td t-esc="dashboard['filter_summary']['cobro']"/></tr>
+                                <tr><td><strong>Prioridad</strong></td><td t-esc="dashboard['filter_summary']['prioridad']"/></tr>
+                                <tr><td><strong>Dispositivo</strong></td><td t-esc="dashboard['filter_summary']['dispositivo']"/></tr>
+                                <tr><td><strong>Cliente</strong></td><td t-esc="dashboard['filter_summary']['cliente']"/></tr>
+                                <tr><td><strong>Responsable</strong></td><td t-esc="dashboard['filter_summary']['responsable']"/></tr>
+                            </tbody>
+                        </table>
+
+                        <t t-if="not dashboard['orders']">
+                            <p>No se encontraron pedidos con los filtros seleccionados.</p>
+                        </t>
+                        <t t-foreach="dashboard['orders']" t-as="order_data">
+                            <t t-set="order" t-value="order_data['record']"/>
+                            <div class="mt16">
+                                <h3 t-esc="order.folio"/>
+                                <table class="table table-sm table-borderless mb8">
+                                    <tbody>
+                                        <tr>
+                                            <td><strong>Cliente</strong></td>
+                                            <td t-esc="order.customer_name or '-'"/>
+                                            <td><strong>Estado</strong></td>
+                                            <td t-esc="order_data['status_label']"/>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Título</strong></td>
+                                            <td t-esc="order.title"/>
+                                            <td><strong>Cobro</strong></td>
+                                            <td t-esc="order_data['payment_label']"/>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Prioridad</strong></td>
+                                            <td t-esc="order_data['priority_label']"/>
+                                            <td><strong>Responsable</strong></td>
+                                            <td t-esc="order.assigned_employee_name or '-'"/>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Creado</strong></td>
+                                            <td t-esc="order.source_created_at or '-'"/>
+                                            <td><strong>Entrega</strong></td>
+                                            <td t-esc="order.due_at or '-'"/>
+                                        </tr>
+                                    </tbody>
+                                </table>
+
+                                <table class="table table-sm table-bordered mb8">
+                                    <thead>
+                                        <tr>
+                                            <th>USD</th>
+                                            <th>CUP efectivo</th>
+                                            <th>CUP transferencia</th>
+                                            <th>Trabajos</th>
+                                            <th>Materiales</th>
+                                            <th>Merma</th>
+                                            <th>Pagos</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td t-esc="order.quoted_amount_usd"/>
+                                            <td t-esc="order.quoted_amount_cup_cash"/>
+                                            <td t-esc="order.quoted_amount_cup_transfer"/>
+                                            <td t-esc="order.task_count"/>
+                                            <td t-esc="order.material_line_count"/>
+                                            <td t-esc="order.waste_line_count"/>
+                                            <td t-esc="order.payment_line_count"/>
+                                        </tr>
+                                    </tbody>
+                                </table>
+
+                                <h4>Productos solicitados</h4>
+                                <table class="table table-sm table-bordered mb8">
+                                    <thead>
+                                        <tr>
+                                            <th>Producto</th>
+                                            <th>SKU</th>
+                                            <th>Cantidad</th>
+                                            <th>Unidad</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr t-foreach="order_data['items']" t-as="item">
+                                            <td t-esc="item.get('productName') or '-'"/>
+                                            <td t-esc="item.get('productSku') or '-'"/>
+                                            <td t-esc="item.get('qty') or 0"/>
+                                            <td t-esc="item.get('unitLabel') or '-'"/>
+                                        </tr>
+                                    </tbody>
+                                </table>
+
+                                <h4>Pagos registrados</h4>
+                                <table class="table table-sm table-bordered mb8">
+                                    <thead>
+                                        <tr>
+                                            <th>Método</th>
+                                            <th>Moneda</th>
+                                            <th>Monto</th>
+                                            <th>Fecha</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr t-foreach="order_data['payments']" t-as="payment">
+                                            <td>
+                                                <span t-esc="payment.get('method_label')"/>
+                                                <t t-if="payment.get('quote_label')">
+                                                    <br/>
+                                                    <small>Variante: <span t-esc="payment.get('quote_label')"/></small>
+                                                </t>
+                                            </td>
+                                            <td t-esc="payment.get('currency_code')"/>
+                                            <td t-esc="payment.get('amount')"/>
+                                            <td t-esc="payment.get('paid_at')"/>
+                                        </tr>
+                                    </tbody>
+                                </table>
+
+                                <h4>Trabajos realizados</h4>
+                                <t t-foreach="order_data['tasks']" t-as="task">
+                                    <div class="mb8">
+                                        <strong t-esc="task['title']"/>
+                                        <div t-if="task['description']" t-esc="task['description']"/>
+                                        <div><strong>Fecha:</strong> <span t-esc="task['created_at'] or '-'"/></div>
+                                        <div><strong>Materiales:</strong> <span t-esc="len(task['materials'])"/></div>
+                                        <div><strong>Merma:</strong> <span t-esc="len(task['waste_materials'])"/></div>
+                                    </div>
+                                </t>
+                                <div t-if="order.note">
+                                    <strong>Observaciones:</strong>
+                                    <span t-esc="order.note"/>
+                                </div>
+                                <div class="mt16"><hr/></div>
+                            </div>
+                        </t>
+                    </div>
+                </t>
+            </t>
+        </t>
+    </template>
+
+    <template id="report_work_orders_materials">
+        <t t-call="web.html_container">
+            <t t-foreach="dashboards" t-as="dashboard">
+                <t t-call="web.external_layout">
+                    <div class="page">
+                        <h2>Informe de consumo de materiales y merma</h2>
+                        <p>Desglose por pedido y por trabajo realizado.</p>
+
+                        <h4>Resumen de filtros</h4>
+                        <table class="table table-sm table-bordered mb16">
+                            <tbody>
+                                <tr><td><strong>Base del rango</strong></td><td t-esc="dashboard['filter_summary']['base_rango']"/></tr>
+                                <tr><td><strong>Desde</strong></td><td t-esc="dashboard['filter_summary']['desde'] or '-'"/></tr>
+                                <tr><td><strong>Hasta</strong></td><td t-esc="dashboard['filter_summary']['hasta'] or '-'"/></tr>
+                                <tr><td><strong>Estado</strong></td><td t-esc="dashboard['filter_summary']['estado']"/></tr>
+                                <tr><td><strong>Cobro</strong></td><td t-esc="dashboard['filter_summary']['cobro']"/></tr>
+                            </tbody>
+                        </table>
+
+                        <t t-if="not dashboard['orders']">
+                            <p>No se encontraron pedidos con los filtros seleccionados.</p>
+                        </t>
+                        <t t-foreach="dashboard['orders']" t-as="order_data">
+                            <t t-set="order" t-value="order_data['record']"/>
+                            <div class="mt16">
+                                <h3>
+                                    <span t-esc="order.folio"/>
+                                    -
+                                    <span t-esc="order.title"/>
+                                </h3>
+                                <p>
+                                    <strong>Cliente:</strong>
+                                    <span t-esc="order.customer_name or '-'"/>
+                                    |
+                                    <strong>Estado:</strong>
+                                    <span t-esc="order_data['status_label']"/>
+                                </p>
+                                <p>
+                                    <strong>Líneas de materiales:</strong>
+                                    <span t-esc="order_data['material_count']"/>
+                                    |
+                                    <strong>Líneas de merma:</strong>
+                                    <span t-esc="order_data['waste_count']"/>
+                                </p>
+
+                                <t t-foreach="order_data['tasks']" t-as="task">
+                                    <div class="mb8">
+                                        <h4 t-esc="task['title']"/>
+                                        <div><strong>Fecha:</strong> <span t-esc="task['created_at'] or '-'"/></div>
+                                        <div t-if="task['description']"><strong>Descripción:</strong> <span t-esc="task['description']"/></div>
+
+                                        <table class="table table-sm table-bordered mt8">
+                                            <thead>
+                                                <tr>
+                                                    <th colspan="4">Materiales consumidos</th>
+                                                </tr>
+                                                <tr>
+                                                    <th>Producto</th>
+                                                    <th>SKU</th>
+                                                    <th>Cantidad</th>
+                                                    <th>Unidad</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr t-foreach="task['materials']" t-as="material">
+                                                    <td t-esc="material.get('productName') or '-'"/>
+                                                    <td t-esc="material.get('productSku') or '-'"/>
+                                                    <td t-esc="material.get('qty') or 0"/>
+                                                    <td t-esc="material.get('unitLabel') or '-'"/>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+
+                                        <table class="table table-sm table-bordered mt8">
+                                            <thead>
+                                                <tr>
+                                                    <th colspan="4">Merma registrada en este trabajo</th>
+                                                </tr>
+                                                <tr>
+                                                    <th>Producto</th>
+                                                    <th>SKU</th>
+                                                    <th>Cantidad</th>
+                                                    <th>Unidad</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr t-foreach="task['waste_materials']" t-as="waste">
+                                                    <td t-esc="waste.get('productName') or '-'"/>
+                                                    <td t-esc="waste.get('productSku') or '-'"/>
+                                                    <td t-esc="waste.get('qty') or 0"/>
+                                                    <td t-esc="waste.get('unitLabel') or '-'"/>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </t>
+                                <div class="mt16"><hr/></div>
+                            </div>
+                        </t>
+                    </div>
+                </t>
+            </t>
+        </t>
+    </template>
+</odoo>

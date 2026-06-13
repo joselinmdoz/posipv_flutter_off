@@ -5,6 +5,7 @@ import '../../data/pedidos_local_datasource.dart';
 enum WorkOrdersDashboardMenuAction {
   exportPdf,
   sharePdf,
+  cloudSync,
 }
 
 class WorkOrdersDashboardPanel extends StatelessWidget {
@@ -118,6 +119,16 @@ class WorkOrdersDashboardPanel extends StatelessWidget {
                         Icon(Icons.share_outlined),
                         SizedBox(width: 10),
                         Text('Compartir informe'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem<WorkOrdersDashboardMenuAction>(
+                    value: WorkOrdersDashboardMenuAction.cloudSync,
+                    child: Row(
+                      children: <Widget>[
+                        Icon(Icons.cloud_sync_outlined),
+                        SizedBox(width: 10),
+                        Text('Sincronización cloud'),
                       ],
                     ),
                   ),

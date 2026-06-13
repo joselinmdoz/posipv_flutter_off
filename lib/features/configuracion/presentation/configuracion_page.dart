@@ -384,11 +384,6 @@ class _ConfiguracionPageState extends ConsumerState<ConfiguracionPage> {
                   subtitle: 'Copias de seguridad y CSV',
                   onTap: canManageData ? _openDataManagement : null,
                 ),
-                // ConfigOptionTile(
-                //   icon: Icons.sync_rounded,
-                //   title: 'Sincronización en línea',
-                //   onTap: _showSoon,
-                // ),
                 ConfigOptionTile(
                   icon: Icons.add_circle_outline_rounded,
                   title: 'Configuración de transacciones',

@@ -36,6 +36,7 @@ class PedidoTaskFormPage extends ConsumerStatefulWidget {
 class _PedidoTaskFormPageState extends ConsumerState<PedidoTaskFormPage> {
   final ImagePicker _imagePicker = ImagePicker();
   late final TextEditingController _descriptionCtrl;
+  late DateTime _taskCreatedAt;
 
   List<String> _taskTypeOptions = <String>[];
   List<WorkOrderTaskMaterialItem> _materials = <WorkOrderTaskMaterialItem>[];
@@ -58,6 +59,7 @@ class _PedidoTaskFormPageState extends ConsumerState<PedidoTaskFormPage> {
     final WorkOrderTaskItem? initialTask = widget.initialTask;
     if (initialTask != null) {
       _descriptionCtrl.text = initialTask.description ?? '';
+      _taskCreatedAt = initialTask.createdAt;
       _materials = List<WorkOrderTaskMaterialItem>.of(initialTask.materials);
       _wasteMaterials =
           List<WorkOrderTaskMaterialItem>.of(initialTask.wasteMaterials);
@@ -71,7 +73,41 @@ class _PedidoTaskFormPageState extends ConsumerState<PedidoTaskFormPage> {
       }
     } else if (_taskTypeOptions.isNotEmpty) {
       _selectedTaskType = _taskTypeOptions.first;
+      _taskCreatedAt = DateTime.now();
+    } else {
+      _taskCreatedAt = DateTime.now();
     }
+  }
+
+  Future<void> _pickTaskCreatedAt() async {
+    final DateTime? date = await showDatePicker(
+      context: context,
+      firstDate: DateTime(_taskCreatedAt.year - 3),
+      lastDate: DateTime(_taskCreatedAt.year + 3),
+      initialDate: _taskCreatedAt,
+      helpText: 'Fecha del trabajo',
+    );
+    if (date == null || !mounted) {
+      return;
+    }
+    final TimeOfDay? time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_taskCreatedAt),
+    );
+    if (!mounted) {
+      return;
+    }
+    final TimeOfDay resolvedTime =
+        time ?? TimeOfDay.fromDateTime(_taskCreatedAt);
+    setState(() {
+      _taskCreatedAt = DateTime(
+        date.year,
+        date.month,
+        date.day,
+        resolvedTime.hour,
+        resolvedTime.minute,
+      );
+    });
   }
 
   @override
@@ -281,6 +317,7 @@ class _PedidoTaskFormPageState extends ConsumerState<PedidoTaskFormPage> {
     Navigator.of(context).pop(
       WorkOrderTaskCreateInput(
         title: taskType,
+        createdAt: _taskCreatedAt,
         description: _descriptionCtrl.text.trim(),
         materials: _materials,
         wasteMaterials: _wasteMaterials,
@@ -372,6 +409,17 @@ class _PedidoTaskFormPageState extends ConsumerState<PedidoTaskFormPage> {
                 maxLines: 5,
                 decoration: _inputDecoration(
                   'Describe lo que se hizo en esta etapa...',
+                ),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.event_available_rounded),
+                title: const Text('Fecha y hora del trabajo'),
+                subtitle: Text(_fmtDateTime(_taskCreatedAt)),
+                trailing: OutlinedButton(
+                  onPressed: _pickTaskCreatedAt,
+                  child: const Text('Editar'),
                 ),
               ),
               const SizedBox(height: 18),
@@ -589,6 +637,16 @@ class _PedidoTaskFormPageState extends ConsumerState<PedidoTaskFormPage> {
       return value.toStringAsFixed(0);
     }
     return value.toStringAsFixed(2);
+  }
+
+  String _fmtDateTime(DateTime value) {
+    final DateTime local = value.toLocal();
+    final String day = local.day.toString().padLeft(2, '0');
+    final String month = local.month.toString().padLeft(2, '0');
+    final String year = local.year.toString();
+    final String hour = local.hour.toString().padLeft(2, '0');
+    final String minute = local.minute.toString().padLeft(2, '0');
+    return '$day/$month/$year · $hour:$minute';
   }
 
   InputDecoration _inputDecoration(String hintText) {

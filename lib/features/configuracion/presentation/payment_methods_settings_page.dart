@@ -371,6 +371,19 @@ class _WorkOrderPaymentConfigCardState
   }
 
   void _submit() {
+    if (_localCurrencyCode.trim().toUpperCase() ==
+        _foreignCurrencyCode.trim().toUpperCase()) {
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text(
+              'La moneda local y la moneda extranjera deben ser distintas.',
+            ),
+          ),
+        );
+      return;
+    }
     final double fixed =
         double.tryParse(_fixedCtrl.text.trim().replaceAll(',', '.')) ?? 0;
     final double percent =

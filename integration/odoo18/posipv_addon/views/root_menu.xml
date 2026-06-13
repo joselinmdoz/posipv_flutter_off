@@ -1,0 +1,35 @@
+<odoo>
+    <menuitem
+        id="menu_posipv_root"
+        name="Centro POSIPV"
+        sequence="5"
+        groups="posipv.group_posipv_viewer"/>
+
+    <menuitem
+        id="menu_posipv_monitoring"
+        name="Monitoreo"
+        parent="menu_posipv_root"
+        sequence="10"
+        groups="posipv.group_posipv_viewer"/>
+
+    <menuitem
+        id="menu_posipv_catalogs"
+        name="Catálogos espejo"
+        parent="menu_posipv_root"
+        sequence="20"
+        groups="posipv.group_posipv_viewer"/>
+
+    <menuitem
+        id="menu_posipv_transactions"
+        name="Operaciones espejo"
+        parent="menu_posipv_root"
+        sequence="30"
+        groups="posipv.group_posipv_viewer"/>
+
+    <menuitem
+        id="menu_posipv_configuration"
+        name="Configuración"
+        parent="menu_posipv_root"
+        sequence="40"
+        groups="posipv.group_posipv_manager"/>
+</odoo>

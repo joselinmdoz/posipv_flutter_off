@@ -1,0 +1,13 @@
+<odoo>
+    <record id="group_posipv_viewer" model="res.groups">
+        <field name="name">POSIPV Viewer</field>
+        <field name="category_id" ref="base.module_category_hidden"/>
+    </record>
+
+    <record id="group_posipv_manager" model="res.groups">
+        <field name="name">POSIPV Manager</field>
+        <field name="category_id" ref="base.module_category_hidden"/>
+        <field name="implied_ids" eval="[(4, ref('group_posipv_viewer'))]"/>
+        <field name="users" eval="[(4, ref('base.user_admin'))]"/>
+    </record>
+</odoo>

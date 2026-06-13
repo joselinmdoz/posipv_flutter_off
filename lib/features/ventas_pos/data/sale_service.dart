@@ -8,6 +8,7 @@ import '../../../core/licensing/license_models.dart';
 import '../../../core/licensing/license_service.dart';
 import '../../../core/security/app_permissions.dart';
 import '../../../core/utils/app_result.dart';
+import '../../sync_cloud/data/cloud_sync_local_datasource.dart';
 import '../domain/sale_models.dart';
 
 class ArchivedSaleView {
@@ -124,12 +125,15 @@ class SaleService {
   SaleService(
     this._db, {
     required OfflineLicenseService licenseService,
+    CloudSyncLocalDataSource? cloudSyncLocalDataSource,
     Uuid? uuid,
   })  : _licenseService = licenseService,
+        _cloudSyncLocalDataSource = cloudSyncLocalDataSource,
         _uuid = uuid ?? const Uuid();
 
   final AppDatabase _db;
   final OfflineLicenseService _licenseService;
+  final CloudSyncLocalDataSource? _cloudSyncLocalDataSource;
   final Uuid _uuid;
 
   Future<AppResult<CreateSaleResult>> createSale(CreateSaleInput input) async {
@@ -506,6 +510,10 @@ class SaleService {
         );
       });
 
+      await _enqueueSaleSync(
+        result.saleId,
+        syncedAt: input.createdAt?.toLocal() ?? DateTime.now(),
+      );
       return AppSuccess<CreateSaleResult>(result);
     } on _SaleException catch (e) {
       return AppFailure<CreateSaleResult>(e.message);
@@ -924,6 +932,10 @@ class SaleService {
             ),
           );
     });
+    await _enqueueSaleSync(
+      safeSaleId,
+      syncedAt: input.createdAt?.toLocal() ?? DateTime.now(),
+    );
   }
 
   Future<List<ArchivedSaleView>> listArchivedSales({
@@ -1172,6 +1184,11 @@ class SaleService {
             ),
           );
     });
+    await _enqueueSaleSync(
+      safeSaleId,
+      overrideStatus: 'archived',
+      syncedAt: DateTime.now(),
+    );
   }
 
   Future<void> restoreArchivedSale({
@@ -1319,6 +1336,11 @@ class SaleService {
             ),
           );
     });
+    await _enqueueSaleSync(
+      safeSaleId,
+      overrideStatus: 'posted',
+      syncedAt: DateTime.now(),
+    );
   }
 
   Future<void> permanentlyDeleteArchivedSale({
@@ -1379,6 +1401,12 @@ class SaleService {
       }
 
       final String archivedFolio = sale.folio;
+      await _enqueueSaleSync(
+        safeSaleId,
+        isActive: false,
+        overrideStatus: 'deleted',
+        syncedAt: DateTime.now(),
+      );
       await _db.customStatement(
         '''
         DELETE FROM sale_item_lot_allocations
@@ -2555,6 +2583,172 @@ class SaleService {
           row.warehouseId.isNotEmpty &&
           row.signedDelta.abs() > 0.000001;
     }).toList(growable: false);
+  }
+
+  Future<void> _enqueueSaleSync(
+    String saleId, {
+    bool isActive = true,
+    String? overrideStatus,
+    DateTime? syncedAt,
+  }) async {
+    if (_cloudSyncLocalDataSource == null) {
+      return;
+    }
+    final List<QueryRow> headerRows = await _db.customSelect(
+      '''
+      SELECT
+        s.id AS sale_id,
+        s.folio AS folio,
+        s.status AS status,
+        s.created_at AS created_at,
+        s.subtotal_cents AS subtotal_cents,
+        s.tax_cents AS tax_cents,
+        s.total_cents AS total_cents,
+        COALESCE(w.name, 'Sin almacén') AS warehouse_name,
+        COALESCE(t.name, '') AS terminal_name,
+        COALESCE(c.full_name, '') AS customer_name,
+        COALESCE(
+          NULLIF(TRIM(MIN(e.name)), ''),
+          NULLIF(TRIM(u.username), ''),
+          'Sin usuario'
+        ) AS cashier_name
+      FROM sales s
+      LEFT JOIN warehouses w ON w.id = s.warehouse_id
+      LEFT JOIN pos_terminals t ON t.id = s.terminal_id
+      LEFT JOIN customers c ON c.id = s.customer_id
+      LEFT JOIN users u ON u.id = s.cashier_id
+      LEFT JOIN pos_session_employees se ON se.session_id = s.terminal_session_id
+      LEFT JOIN employees e ON e.id = se.employee_id
+      WHERE s.id = ?
+      GROUP BY
+        s.id,
+        s.folio,
+        s.status,
+        s.created_at,
+        s.subtotal_cents,
+        s.tax_cents,
+        s.total_cents,
+        w.name,
+        t.name,
+        c.full_name,
+        u.username
+      LIMIT 1
+      ''',
+      variables: <Variable<Object>>[
+        Variable<String>(saleId.trim()),
+      ],
+    ).get();
+    if (headerRows.isEmpty) {
+      return;
+    }
+    final QueryRow header = headerRows.first;
+    final List<QueryRow> lineRows = await _db.customSelect(
+      '''
+      SELECT
+        si.id AS sale_item_id,
+        si.qty AS qty,
+        si.unit_price_cents AS unit_price_cents,
+        si.unit_cost_cents AS unit_cost_cents,
+        si.tax_rate_bps AS tax_rate_bps,
+        si.line_total_cents AS line_total_cents,
+        COALESCE(p.name, 'Producto') AS product_name,
+        COALESCE(p.sku, '-') AS product_sku
+      FROM sale_items si
+      LEFT JOIN products p ON p.id = si.product_id
+      WHERE si.sale_id = ?
+      ORDER BY si.id ASC
+      ''',
+      variables: <Variable<Object>>[
+        Variable<String>(saleId.trim()),
+      ],
+    ).get();
+    final List<QueryRow> paymentRows = await _db.customSelect(
+      '''
+      SELECT
+        id,
+        method,
+        amount_cents,
+        transaction_id,
+        source_currency_code,
+        source_amount_cents,
+        created_at
+      FROM payments
+      WHERE sale_id = ?
+      ORDER BY created_at ASC, id ASC
+      ''',
+      variables: <Variable<Object>>[
+        Variable<String>(saleId.trim()),
+      ],
+    ).get();
+
+    await _cloudSyncLocalDataSource.enqueueChange(
+      entityType: 'sales',
+      entityId: saleId.trim(),
+      operation: 'upsert',
+      sourceModule: 'ventas',
+      payload: <String, Object?>{
+        'id': saleId.trim(),
+        'folio': (header.readNullable<String>('folio') ?? '').trim(),
+        'warehouse_name':
+            (header.readNullable<String>('warehouse_name') ?? 'Sin almacén')
+                .trim(),
+        'terminal_name':
+            _normalizeOptional(header.readNullable<String>('terminal_name')),
+        'cashier_name':
+            (header.readNullable<String>('cashier_name') ?? 'Sin usuario')
+                .trim(),
+        'customer_name':
+            _normalizeOptional(header.readNullable<String>('customer_name')),
+        'subtotal': _centsToAmount(header.data['subtotal_cents']),
+        'tax': _centsToAmount(header.data['tax_cents']),
+        'total': _centsToAmount(header.data['total_cents']),
+        'status': overrideStatus ??
+            (header.readNullable<String>('status') ?? 'posted').trim(),
+        'created_at': (header.read<DateTime>('created_at')).toIso8601String(),
+        'updated_at': (syncedAt ?? DateTime.now()).toIso8601String(),
+        'is_active': isActive,
+        'lines': lineRows.map((QueryRow row) {
+          return <String, Object?>{
+            'id': (row.readNullable<String>('sale_item_id') ?? '').trim(),
+            'product_name':
+                (row.readNullable<String>('product_name') ?? 'Producto').trim(),
+            'product_sku':
+                (row.readNullable<String>('product_sku') ?? '-').trim(),
+            'qty': (row.data['qty'] as num?)?.toDouble() ?? 0,
+            'unit_price': _centsToAmount(row.data['unit_price_cents']),
+            'unit_cost': _centsToAmount(row.data['unit_cost_cents']),
+            'tax_rate_bps': (row.data['tax_rate_bps'] as num?)?.toInt() ?? 0,
+            'line_total': _centsToAmount(row.data['line_total_cents']),
+          };
+        }).toList(growable: false),
+        'payments': paymentRows.map((QueryRow row) {
+          final DateTime? createdAt = row.readNullable<DateTime>('created_at');
+          return <String, Object?>{
+            'id': (row.readNullable<String>('id') ?? '').trim(),
+            'method': (row.readNullable<String>('method') ?? '').trim(),
+            'amount': _centsToAmount(row.data['amount_cents']),
+            'transaction_id':
+                _normalizeOptional(row.readNullable<String>('transaction_id')),
+            'source_currency_code': _normalizeOptional(
+              row.readNullable<String>('source_currency_code'),
+            ),
+            'source_amount': _centsToAmount(
+              row.data['source_amount_cents'],
+              allowNull: true,
+            ),
+            'created_at': createdAt?.toIso8601String(),
+          };
+        }).toList(growable: false),
+      },
+    );
+  }
+
+  double? _centsToAmount(Object? raw, {bool allowNull = false}) {
+    if (raw == null) {
+      return allowNull ? null : 0;
+    }
+    final int cents = (raw as num?)?.toInt() ?? 0;
+    return cents / 100;
   }
 }
 

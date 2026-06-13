@@ -18,6 +18,7 @@ class HomeDashboardContent extends StatelessWidget {
     required this.onNewSaleTap,
     required this.onAddStockTap,
     required this.onViewAllActivityTap,
+    this.onOrdersQuickActionTap,
     this.onSalesTap,
     this.onOrdersTap,
     this.onLowStockTap,
@@ -32,6 +33,7 @@ class HomeDashboardContent extends StatelessWidget {
   final VoidCallback onNewSaleTap;
   final VoidCallback onAddStockTap;
   final VoidCallback? onViewAllActivityTap;
+  final VoidCallback? onOrdersQuickActionTap;
   final VoidCallback? onSalesTap;
   final VoidCallback? onOrdersTap;
   final VoidCallback? onLowStockTap;
@@ -90,6 +92,7 @@ class HomeDashboardContent extends StatelessWidget {
         return HomeQuickActions(
           onNewSaleTap: onNewSaleTap,
           onAddStockTap: onAddStockTap,
+          onOrdersTap: onOrdersQuickActionTap,
         );
       case DashboardWidgetKeys.recentActivity:
         return HomeRecentActivity(

@@ -579,21 +579,46 @@ class _PaymentStatePill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool isPaid = status == WorkOrderPaymentStatusCatalog.paid;
+    final ({Color bg, Color fg, String text}) config =
+        _paymentPillConfig(status);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: isPaid ? const Color(0xFFDCFCE7) : const Color(0xFFFFEDD5),
+        color: config.bg,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
-        isPaid ? 'Cobrado' : 'Pend. cobro',
+        config.text,
         style: TextStyle(
-          color: isPaid ? const Color(0xFF047857) : const Color(0xFFB45309),
+          color: config.fg,
           fontSize: 11,
           fontWeight: FontWeight.w800,
         ),
       ),
     );
+  }
+}
+
+({Color bg, Color fg, String text}) _paymentPillConfig(String status) {
+  switch (status) {
+    case WorkOrderPaymentStatusCatalog.paid:
+      return (
+        bg: const Color(0xFFDCFCE7),
+        fg: const Color(0xFF047857),
+        text: 'Cobrado',
+      );
+    case WorkOrderPaymentStatusCatalog.partial:
+      return (
+        bg: const Color(0xFFFEF3C7),
+        fg: const Color(0xFFB45309),
+        text: 'Pago parcial',
+      );
+    case WorkOrderPaymentStatusCatalog.unpaid:
+    default:
+      return (
+        bg: const Color(0xFFFEE2E2),
+        fg: const Color(0xFFB91C1C),
+        text: 'Pend. cobro',
+      );
   }
 }

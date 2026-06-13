@@ -114,3 +114,6 @@ flutter build appbundle --release
 
 levantar a app en debug
  flutter run -d afc25562 --debug
+
+adb reverse tcp:8062 tcp:8062
+flutter run -d afc25562
